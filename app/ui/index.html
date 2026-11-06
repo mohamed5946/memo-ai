@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memo AI</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo"><img src="assets/avatar-cat.png" alt="Memo"></div>
+    <div class="title">
+      <h1>Memo AI</h1>
+      <p data-i18n="subtitle">محلي • آمن • أوفلاين</p>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill" id="net-pill"><span class="dot"></span><span id="net-text">Online</span></span>
+    <button class="icon-btn btn-3d" id="pet-btn" title="إظهار / إخفاء الحيوان">🐾</button>
+    <button class="icon-btn btn-3d" id="island-btn" title="تصغير للجزيرة">➖</button>
+    <button class="icon-btn btn-3d" id="settings-btn" title="الإعدادات">⚙️</button>
+  </header>
+
+  <div class="avatar-wrap">
+    <div class="avatar-frame" id="avatar-frame">
+      <img src="assets/avatar-cat.png" alt="Memo the cat">
+    </div>
+    <div class="avatar-name" id="avatar-name">Memo 🐱</div>
+  </div>
+
+  <div class="chat" id="chat"></div>
+
+  <div class="status" id="status"></div>
+
+  <div class="composer">
+    <input class="text-input" id="text-input" type="text"
+           data-i18n-ph="input_placeholder" placeholder="اكتب رسالتك هنا...">
+    <button class="send-btn btn-3d" id="send-btn" title="إرسال">➤</button>
+    <button class="mic-btn" id="mic-btn" title="تحدث">🎙️</button>
+  </div>
+  <div class="mic-hint" data-i18n="mic_hint">اضغط على المايك وتكلم 5 ثواني</div>
+
+</div>
+
+<!-- ================= Settings ================= -->
+<div class="modal-backdrop" id="settings-modal">
+  <div class="modal">
+    <button class="close-x btn-3d" id="settings-close">✕</button>
+    <h2 data-i18n="settings_title">الإعدادات</h2>
+
+    <h3 data-i18n="sec_general">عام</h3>
+    <div class="field">
+      <label data-i18n="ai_name">اسم المساعد</label>
+      <input type="text" id="set-ai-name" value="Memo">
+    </div>
+    <div class="field">
+      <label data-i18n="user_name">المساعد يناديك بإيه؟</label>
+      <input type="text" id="set-user-name" value="Mohamed">
+    </div>
+    <div class="field">
+      <label data-i18n="language">لغة الواجهة</label>
+      <select id="set-language">
+        <option value="ar">العربية</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+    <label class="toggle"><input type="checkbox" id="set-greeting" checked>
+      <span data-i18n="greeting_toggle">التحية الصباحية عند التشغيل (مع الطقس)</span></label>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-pet" checked>
+      <span data-i18n="pet_toggle">إظهار الحيوان الأليف على الشاشة</span></label>
+
+    <h3 data-i18n="sec_voice">الصوت — 4 أصوات</h3>
+    <div class="voice-grid" id="voice-grid">
+      <button class="voice-card btn-3d" data-voice="boy_calm">
+        <div class="v-name">👦 <span data-i18n="v_boy1">ولد 1</span></div>
+        <div class="v-style" data-i18n="v_boy1_style">هادي ورزين</div>
+      </button>
+      <button class="voice-card btn-3d" data-voice="boy_fun">
+        <div class="v-name">😄 <span data-i18n="v_boy2">ولد 2</span></div>
+        <div class="v-style" data-i18n="v_boy2_style">مرح وخفيف</div>
+      </button>
+      <button class="voice-card btn-3d" data-voice="girl_warm">
+        <div class="v-name">👧 <span data-i18n="v_girl1">بنت 1</span></div>
+        <div class="v-style" data-i18n="v_girl1_style">دافية وودودة</div>
+      </button>
+      <button class="voice-card btn-3d" data-voice="girl_fast">
+        <div class="v-name">⚡ <span data-i18n="v_girl2">بنت 2</span></div>
+        <div class="v-style" data-i18n="v_girl2_style">عملية وسريعة</div>
+      </button>
+    </div>
+    <div class="field" style="margin-top:8px"><div class="hint" data-i18n="voice_hint">
+      الأصوات الأونلاين من Gemini، ولو مفيش نت الصوت الاحتياطي Piper (صوت واحد عربي).</div></div>
+
+    <h3 data-i18n="sec_avatar">الأفاتار</h3>
+    <div class="avatar-pick">
+      <button class="avatar-opt selected btn-3d" data-avatar="cat">
+        <img src="assets/avatar-cat.png" alt="Cat"><span data-i18n="av_cat">قطة</span>
+      </button>
+      <button class="avatar-opt soon btn-3d" data-avatar="dog">
+        <img src="assets/avatar-cat.png" alt="Dog" style="filter:grayscale(1)"><span>🐶 <span data-i18n="av_dog">كلب</span></span>
+        <div class="soon-tag" data-i18n="soon">قريباً</div>
+      </button>
+      <button class="avatar-opt soon btn-3d" data-avatar="boy">
+        <img src="assets/avatar-cat.png" alt="Boy" style="filter:grayscale(1)"><span>👦 <span data-i18n="av_boy">ولد</span></span>
+        <div class="soon-tag" data-i18n="soon2">قريباً</div>
+      </button>
+      <button class="avatar-opt soon btn-3d" data-avatar="girl">
+        <img src="assets/avatar-cat.png" alt="Girl" style="filter:grayscale(1)"><span>👧 <span data-i18n="av_girl">بنت</span></span>
+        <div class="soon-tag" data-i18n="soon3">قريباً</div>
+      </button>
+    </div>
+
+    <h3 data-i18n="sec_owner">وضع المالك</h3>
+    <div class="field">
+      <label data-i18n="owner_code">الكود السري (بتكتبه في الشات عشان تفتح وضع المالك)</label>
+      <input type="password" id="set-owner-code" placeholder="••••••••" autocomplete="off">
+      <div class="hint" data-i18n="owner_hint">الكود بيتخزن على جهازك بس، ومش بيظهر في أي سجل. سيبه فاضي لو مش عايز تغيّره.</div>
+    </div>
+
+    <h3 data-i18n="sec_logs">سجل التشخيص</h3>
+    <div class="log-box" id="log-box">...</div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost-btn btn-3d" id="logs-refresh">↻ <span data-i18n="logs_refresh">تحديث</span></button>
+      <button class="ghost-btn btn-3d" id="logs-copy">📋 <span data-i18n="logs_copy">نسخ السجل</span></button>
+    </div>
+
+    <h3 data-i18n="sec_updates">التحديثات</h3>
+    <div class="field"><div class="hint" id="update-status" data-i18n="update_idle">اضغط «التحقق من التحديثات» عشان تشوف لو فيه نسخة جديدة.</div></div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost-btn btn-3d" id="check-updates-btn">↻ <span data-i18n="check_updates">التحقق من التحديثات</span></button>
+      <button class="gold-btn btn-3d" id="install-update-btn" style="display:none">⬇️ <span data-i18n="install_update">تثبيت التحديث</span></button>
+    </div>
+
+    <h3 data-i18n="sec_about">عن المطور</h3>
+    <div class="about-box">
+      <div><b>Memo AI</b> v1.2.0</div>
+      <div data-i18n="about_by">صمم بواسطة <b>ENG/Mohamed El Sayed</b></div>
+      <div>📧 ma4670156@gmail.com</div>
+      <div>📱 01557887719</div>
+      <div style="margin-top:8px"><button class="gold-btn btn-3d" id="portfolio-btn">🌐 <span data-i18n="visit_site">زور الموقع</span></button></div>
+    </div>
+
+    <div class="todo-note" style="margin-top:16px" data-i18n="todo_note">
+      قيد التطوير (v2): ترجمة الشاشة، واتساب، المجلس متعدد النماذج، تنبيهات الجيميل والتقويم في التحية الصباحية، أصوات XTTS، وموديل 7B.
+    </div>
+
+    <div class="row" style="margin-top:20px; justify-content: space-between">
+      <button class="danger-btn btn-3d" id="quit-btn">⏻ <span data-i18n="quit">إغلاق البرنامج</span></button>
+      <button class="gold-btn btn-3d" id="settings-save">💾 <span data-i18n="save">حفظ</span></button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

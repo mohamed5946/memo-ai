@@ -1,0 +1,12 @@
+# Secrets - never commit real keys
+keys/*.txt
+!keys/README.txt
+# Python
+__pycache__/
+*.pyc
+*.pyo
+# User-specific runtime data
+app/data/settings.json
+app/data/logs/*.log
+# Local updater state
+app/data/update-state.json

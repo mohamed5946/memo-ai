@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Memo AI Pet</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* The window itself must paint NOTHING: only the cat (and, when parked,
+     the ball + bubble) may draw. Any background here = a visible rectangle. */
+  html, body { background: transparent; background-color: transparent;
+    overflow: hidden; width: 150px; height: 150px; }
+  body { cursor: grab; touch-action: none; }
+  body:active { cursor: grabbing; }
+
+  /* The cat image itself is transparent (background cut out) - so the
+     window shows ONLY the cat, no card, no white box, no circle frame. */
+  .pet { width: 150px; height: 150px; animation: bob 3.8s ease-in-out infinite; }
+  .pet img { width: 100%; height: 100%; object-fit: contain;
+    filter: drop-shadow(0 8px 14px rgba(0,0,0,0.45));
+    -webkit-user-drag: none; user-select: none; pointer-events: none; }
+  @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+
+  /* Hop arc while roaming: rise, then land with a squash. (Applied to the
+     img so it composes with the bob on the wrapper.) */
+  .pet img.hopping { animation: hop 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+  @keyframes hop {
+    0%   { transform: translateY(0) scale(1, 1); }
+    35%  { transform: translateY(-20px) scale(0.96, 1.05); }
+    70%  { transform: translateY(2px) scale(1.06, 0.92); }
+    100% { transform: translateY(0) scale(1, 1); }
+  }
+
+  /* Happy click reaction: joyful squash-and-stretch. */
+  .pet img.happy { animation: happy 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+  @keyframes happy {
+    0%   { transform: scale(1, 1); }
+    25%  { transform: scale(1.12, 0.85) translateY(3px); }
+    55%  { transform: scale(0.94, 1.1) translateY(-14px); }
+    75%  { transform: scale(1.05, 0.94) translateY(1px); }
+    100% { transform: scale(1, 1); }
+  }
+
+  /* "مياو!" speech bubble - appears above the cat on click. */
+  .bubble { position: absolute; top: 2px; right: 4px; z-index: 3;
+    background: #ffffff; color: #111827; font: 700 12px "Segoe UI", Tahoma, sans-serif;
+    padding: 4px 9px; border-radius: 12px; box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+    opacity: 0; transform: translateY(4px) scale(0.9); pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease; white-space: nowrap; }
+  .bubble::after { content: ""; position: absolute; bottom: -5px; right: 14px;
+    border: 5px solid transparent; border-top-color: #ffffff; border-bottom: 0; }
+  .bubble.show { opacity: 1; transform: translateY(0) scale(1); }
+
+  /* ---- Parked mode: the cat sits and plays with a small ball. ---- */
+  body.parked .pet { animation: none; }              /* bob stops */
+  body.parked .pet img { transform: scale(1.07, 0.9) translateY(7px); }  /* sitting pose */
+  .ball { position: absolute; bottom: 14px; right: 10px; z-index: 2;
+    width: 20px; height: 20px; border-radius: 50%; display: none;
+    background: radial-gradient(circle at 35% 30%, #ffe066, #ff6b35 70%);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4); pointer-events: none; }
+  .ball::after { content: ""; position: absolute; width: 5px; height: 5px;
+    border-radius: 50%; background: rgba(0,0,0,0.35); top: 5px; left: 6px; }
+  body.parked .ball { display: block; animation: ball-roll 1.8s ease-in-out infinite alternate; }
+  @keyframes ball-roll {
+    from { transform: translateX(0) rotate(0deg); }
+    to   { transform: translateX(-36px) rotate(-360deg); }
+  }
+  /* Periodic paw toward the ball (JS toggles .pawing every few seconds). */
+  body.parked .pet img.pawing { animation: paw 0.7s ease-in-out; transform-origin: 85% 90%; }
+  @keyframes paw {
+    0%, 100% { transform: scale(1.07, 0.9) translateY(7px) rotate(0deg); }
+    50%      { transform: scale(1.07, 0.9) translateY(7px) rotate(-9deg) translateX(5px); }
+  }
+</style>
+</head>
+<body>
+  <div class="pet" id="pet"><img id="cat-img" src="assets/avatar-cat.png" alt="Memo pet"></div>
+  <div class="ball" id="ball"></div>
+  <div class="bubble" id="bubble">مياو! 🐾</div>
+<script>
+  // Memo AI pet v1.2: roams by itself, reacts to clicks, plays with a ball
+  // when parked. The window itself stays fully transparent - only the cat
+  // (and the ball/bubble) ever paint.
+  document.documentElement.style.backgroundColor = "transparent";
+  document.body.style.backgroundColor = "transparent";
+
+  const PET = 150, EDGE = 80;   // window size / park-detection distance (px)
+  const pet = document.getElementById("pet");
+  const img = document.getElementById("cat-img");
+  const ball = document.getElementById("ball");
+  const bubble = document.getElementById("bubble");
+
+  let dragging = false, moved = false, downX = 0, downY = 0, downT = 0;
+  let parked = false, hopRAF = null, clickTimer = null;
+  let roamTimer = null, pawTimer = null, lastMoveSent = 0;
+
+  function api() { return (window.pywebview && window.pywebview.api) || null; }
+
+  // ---------- parked state ----------
+  function setParked(on, fromPython) {
+    parked = on;
+    document.body.classList.toggle("parked", on);
+    if (on) {
+      cancelHop();
+      // Every ~3s the cat paws at the ball for a moment.
+      clearInterval(pawTimer);
+      pawTimer = setInterval(() => {
+        img.classList.add("pawing");
+        setTimeout(() => img.classList.remove("pawing"), 750);
+      }, 3000);
+    } else {
+      clearInterval(pawTimer);
+      img.classList.remove("pawing");
+    }
+    return on;
+  }
+  // Called from Python (main.py park_pet) and from the Settings state on load.
+  window.setParked = setParked;
+
+  function enterParked(source) {
+    if (parked) return;
+    setParked(true, false);
+    const a = api();
+    if (!a) return;
+    if (source === "corner") a.park_pet();       // dblclick: move to corner + save
+    else a.mark_parked();                        // dragged to an edge: just save
+  }
+  function exitParked() {
+    if (!parked) return;
+    setParked(false, false);
+    const a = api();
+    if (a) a.unpark_pet();
+    scheduleRoam();   // back to roaming right away
+  }
+
+  // ---------- roaming: hop around the screen by itself ----------
+  function scheduleRoam() {
+    clearTimeout(roamTimer);
+    roamTimer = setTimeout(roamStep, 2000 + Math.random() * 2000);
+  }
+  function roamStep() {
+    if (!dragging && !parked) {
+      const maxX = Math.max(0, (window.screen.availWidth || 1920) - PET);
+      const maxY = Math.max(0, (window.screen.availHeight || 1080) - PET);
+      hopTo(Math.round(Math.random() * maxX), Math.round(Math.random() * maxY));
+    }
+    scheduleRoam();
+  }
+  function cancelHop() {
+    if (hopRAF) cancelAnimationFrame(hopRAF);
+    hopRAF = null;
+    img.classList.remove("hopping");
+  }
+  function hopTo(tx, ty) {
+    const sx = window.screenX, sy = window.screenY;
+    const dx = tx - sx, dy = ty - sy;
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    const dur = 650 + Math.min(500, Math.hypot(dx, dy) * 0.35);
+    const t0 = performance.now();
+    img.classList.add("hopping");
+    setTimeout(() => img.classList.remove("hopping"), dur + 80);
+    cancelAnimationFrame(hopRAF);
+    function frame(now) {
+      const p = Math.min(1, (now - t0) / dur);
+      const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      const a = api();
+      if (a && now - lastMoveSent > 33) {   // ~30 fps is plenty for a window move
+        lastMoveSent = now;
+        a.move_pet(Math.round(sx + dx * e), Math.round(sy + dy * e));
+      }
+      if (p < 1 && !dragging && !parked) hopRAF = requestAnimationFrame(frame);
+      else { hopRAF = null; img.classList.remove("hopping"); }
+    }
+    hopRAF = requestAnimationFrame(frame);
+  }
+
+  // ---------- happy click reaction ----------
+  function happy() {
+    img.classList.remove("happy");
+    void img.offsetWidth;              // restart the animation
+    img.classList.add("happy");
+    setTimeout(() => img.classList.remove("happy"), 750);
+    bubble.classList.add("show");
+    setTimeout(() => bubble.classList.remove("show"), 1500);
+    const a = api();
+    if (a) a.pet_interaction("click");
+  }
+
+  // ---------- pointer: drag vs click vs double-click ----------
+  pet.addEventListener("pointerdown", (e) => {
+    clearTimeout(clickTimer);          // a 2nd tap cancels the pending click
+    dragging = true; moved = false;
+    downX = e.clientX; downY = e.clientY; downT = Date.now();
+    cancelHop();
+    try { pet.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  pet.addEventListener("pointermove", (e) => {
+    if (!dragging || !api()) return;
+    if (Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5) {
+      if (!moved && parked) exitParked();   // drag away -> leave parked mode
+      moved = true;
+      api().move_pet(window.screenX + e.clientX - downX,
+                     window.screenY + e.clientY - downY);
+    }
+  });
+  pet.addEventListener("pointerup", () => {
+    if (!dragging) return;
+    dragging = false;
+    if (moved) {
+      // Drag ended: near an edge/corner? -> park there and play with the ball.
+      const x = window.screenX, y = window.screenY;
+      const maxX = (window.screen.availWidth || 1920) - PET;
+      const maxY = (window.screen.availHeight || 1080) - PET;
+      if (x <= EDGE || y <= EDGE || x >= maxX - EDGE || y >= maxY - EDGE) {
+        enterParked("edge");
+      }
+    } else if (Date.now() - downT < 600) {
+      // Tap, not a drag: wait a beat - a 2nd tap means double-click (park).
+      clickTimer = setTimeout(happy, 260);
+    }
+  });
+  pet.addEventListener("dblclick", () => {
+    clearTimeout(clickTimer);
+    if (parked) exitParked();          // dblclick while parked -> resume roaming
+    else enterParked("corner");
+  });
+
+  // ---------- startup ----------
+  // Restore the parked state saved in Settings (pet starts in the corner).
+  const a0 = api();
+  if (a0 && a0.get_settings) {
+    a0.get_settings().then(s => { if (s && s.pet_parked) setParked(true, true); })
+      .catch(() => {});
+  }
+  setTimeout(scheduleRoam, 1500);      // let the window settle, then start hopping
+</script>
+</body>
+</html>

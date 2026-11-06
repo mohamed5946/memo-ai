@@ -1,0 +1,10 @@
+# Memo AI v1 - requirements
+# Install:  pip install -r app/requirements.txt
+# Python 3.12 on Windows 11. All free, no paid services.
+
+pywebview>=6.2  # v1.1: 6.x introspects the JS bridge by id(), 5.x crashed on .NET objects (see main.py header)
+groq>=0.20
+requests>=2.31
+sounddevice>=0.4.6
+faster-whisper>=1.0
+numpy>=1.26

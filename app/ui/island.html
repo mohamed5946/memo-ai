@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Memo AI Island</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; background-color: transparent; overflow: hidden; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
+  /* Small pill, like a phone Dynamic Island - NOT a wide rectangle.
+     v1.2: backdrop-filter REMOVED - on some WebView2 builds it forces the
+     whole window layer to composite opaquely (white rectangle). A solid
+     near-opaque navy reads the same and cannot break transparency. */
+  .island {
+    width: 380px; height: 56px; margin: 0 auto;
+    background: rgba(13, 18, 28, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; cursor: pointer;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+    transition: height 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .island.expanded { height: 120px; border-radius: 22px; align-items: flex-start; padding-top: 10px; }
+  .cat { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.15); animation: breathe 4.5s ease-in-out infinite; }
+  .cat img { width: 100%; height: 100%; object-fit: cover; }
+  @keyframes breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  .texts { flex: 1; min-width: 0; color: #f2f4f8; }
+  .greet { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font-size: 11px; color: #9aa3b2; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reply { display: none; font-size: 12.5px; line-height: 1.6; color: #dbe2ec; margin-top: 6px;
+    max-height: 56px; overflow: hidden; }
+  .island.expanded .reply { display: block; animation: fade-in 0.35s ease; }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .mic {
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(103,232,249,0.4);
+    background: radial-gradient(circle at 35% 30%, #1e293b, #0b0f16 70%);
+    color: #67e8f9; font-size: 18px; cursor: pointer; flex-shrink: 0;
+    box-shadow: 0 0 18px rgba(103,232,249,0.25);
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .mic:active { transform: scale(0.9); }
+  .mic.recording { color: #f87171; border-color: rgba(248,113,113,0.6);
+    animation: rec 1.1s ease-in-out infinite; }
+  @keyframes rec { 0%, 100% { box-shadow: 0 0 12px rgba(248,113,113,0.25); }
+    50% { box-shadow: 0 0 28px rgba(248,113,113,0.5); } }
+</style>
+</head>
+<body>
+  <div class="island" id="island">
+    <div class="cat"><img src="assets/avatar-cat.png" alt="Memo"></div>
+    <div class="texts">
+      <div class="greet" id="greet">Memo AI</div>
+      <div class="sub" id="sub">اضغط للفتح • 🎙️ للتحدث</div>
+      <div class="reply" id="reply"></div>
+    </div>
+    <button class="mic" id="mic" title="تحدث">🎙️</button>
+  </div>
+<script>
+  // Transparency belt & braces: the window itself must stay see-through;
+  // only the pill may paint. (WebView2 paints the page background itself,
+  // so html/body must be transparent or the whole window reads as a rectangle.)
+  document.documentElement.style.backgroundColor = "transparent";
+  document.body.style.backgroundColor = "transparent";
+
+  const $ = id => document.getElementById(id);
+  let shrinkTimer = null;
+
+  // Called from Python (morning briefing / status updates).
+  function showIslandText(text) {
+    $("greet").textContent = text;
+    expandWithReply("");
+  }
+  function expandWithReply(text) {
+    const island = $("island");
+    if (text) $("reply").textContent = text;
+    island.classList.add("expanded");
+    if (window.pywebview) window.pywebview.api.island_expand();
+    clearTimeout(shrinkTimer);
+    shrinkTimer = setTimeout(shrinkIsland, 7000);
+  }
+  function shrinkIsland() {
+    $("island").classList.remove("expanded");
+    $("reply").textContent = "";
+    if (window.pywebview) window.pywebview.api.island_shrink();
+  }
+
+  $("island").addEventListener("click", () => {
+    if (window.pywebview) window.pywebview.api.open_main();
+  });
+  $("mic").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!window.pywebview) return;
+    const mic = $("mic");
+    mic.classList.add("recording");
+    $("sub").textContent = "🎙️ بسمعك... اتكلم دلوقتي";
+    try {
+      const res = await window.pywebview.api.voice_chat();
+      $("greet").textContent = res.heard ? "سمعتك: " + res.heard : "Memo AI";
+      expandWithReply(res.reply || "");
+    } catch (err) {
+      $("sub").textContent = "مقدرتش أسمعك — جرّب تاني";
+    }
+    mic.classList.remove("recording");
+  });
+</script>
+</body>
+</html>
