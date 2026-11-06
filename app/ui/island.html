@@ -10,23 +10,30 @@
   /* Small pill, like a phone Dynamic Island - NOT a wide rectangle.
      v1.2: backdrop-filter REMOVED - on some WebView2 builds it forces the
      whole window layer to composite opaquely (white rectangle). A solid
-     near-opaque navy reads the same and cannot break transparency. */
+     near-opaque navy reads the same and cannot break transparency.
+     v1.2.3: the pill is 100% of the window - the WINDOW animates its
+     size (idle compact <-> full <-> expanded reply) and the pill
+     follows smoothly. The pill's dark navy color is unchanged. */
   .island {
-    width: 380px; height: 56px; margin: 0 auto;
+    width: 100%; height: 100%;
     background: rgba(13, 18, 28, 0.97);
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 999px;
     display: flex; align-items: center; gap: 8px;
     padding: 6px 10px; cursor: pointer;
     box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
-    transition: height 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: border-radius 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   }
-  .island.expanded { height: 120px; border-radius: 22px; align-items: flex-start; padding-top: 10px; }
+  .island.expanded { border-radius: 22px; align-items: flex-start; padding-top: 10px; }
   .cat { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
     border: 1px solid rgba(255,255,255,0.15); animation: breathe 4.5s ease-in-out infinite; }
   .cat img { width: 100%; height: 100%; object-fit: cover; }
   @keyframes breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-  .texts { flex: 1; min-width: 0; color: #f2f4f8; }
+  /* v1.2.3: texts are hidden in the IDLE compact pill (cat + mic only)
+     and fade in as the island grows to its ACTIVE size. */
+  .texts { flex: 1; min-width: 0; color: #f2f4f8;
+    opacity: 0; transition: opacity 0.35s ease; }
+  .island.active .texts { opacity: 1; }
   .greet { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sub { font-size: 11px; color: #9aa3b2; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .reply { display: none; font-size: 12.5px; line-height: 1.6; color: #dbe2ec; margin-top: 6px;
@@ -80,25 +87,72 @@
   window.addEventListener("pywebviewready", logEngine);
 
   const $ = id => document.getElementById(id);
-  let shrinkTimer = null;
 
-  // Called from Python (morning briefing / status updates).
-  function showIslandText(text) {
-    $("greet").textContent = text;
-    expandWithReply("");
+  // v1.2.3: idle/active island.
+  // IDLE = compact pill (~190x52, cat + mic only, texts faded out).
+  // ACTIVE = full pill (380x56, greeting + sub visible) or the expanded
+  // reply size (380x120). Growth/shrink is a gradual ~0.45s ease: the
+  // WINDOW animates in small steps (rAF -> api.island_resize, which also
+  // re-centers it) and the pill div is 100% of the window, so it follows
+  // smoothly; the texts fade in as it grows. After ~7s of inactivity
+  // it shrinks back to idle compact.
+  const IDLE_W = 190, IDLE_H = 52, FULL_W = 380, FULL_H = 56, EXPANDED_H = 120;
+  const ANIM_MS = 450;
+  let curW = IDLE_W, curH = IDLE_H, sizeRAF = null, lastResizeSent = 0;
+  let idleTimer = null;
+
+  function animateSize(toW, toH) {
+    const fromW = curW, fromH = curH;
+    if (fromW === toW && fromH === toH) return;
+    const t0 = performance.now();
+    if (sizeRAF) cancelAnimationFrame(sizeRAF);
+    function frame(now) {
+      const p = Math.min(1, (now - t0) / ANIM_MS);
+      const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      const w = Math.round(fromW + (toW - fromW) * e);
+      const h = Math.round(fromH + (toH - fromH) * e);
+      if (window.pywebview && window.pywebview.api
+          && window.pywebview.api.island_resize
+          && now - lastResizeSent > 33) {   // ~30 fps is plenty
+        lastResizeSent = now;
+        window.pywebview.api.island_resize(w, h);
+      }
+      curW = w; curH = h;
+      if (p < 1) sizeRAF = requestAnimationFrame(frame);
+      else { sizeRAF = null; curW = toW; curH = toH; }
+    }
+    sizeRAF = requestAnimationFrame(frame);
+  }
+  function armIdleTimer() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(goIdle, 7000);
+  }
+  function goActive() {
+    $("island").classList.add("active");
+    $("island").classList.remove("expanded");
+    animateSize(FULL_W, FULL_H);
+    armIdleTimer();
+  }
+  function goIdle() {
+    const island = $("island");
+    island.classList.remove("active");
+    island.classList.remove("expanded");
+    $("reply").textContent = "";
+    animateSize(IDLE_W, IDLE_H);
   }
   function expandWithReply(text) {
     const island = $("island");
     if (text) $("reply").textContent = text;
+    island.classList.add("active");
     island.classList.add("expanded");
-    if (window.pywebview) window.pywebview.api.island_expand();
-    clearTimeout(shrinkTimer);
-    shrinkTimer = setTimeout(shrinkIsland, 7000);
+    animateSize(FULL_W, EXPANDED_H);
+    armIdleTimer();
   }
-  function shrinkIsland() {
-    $("island").classList.remove("expanded");
-    $("reply").textContent = "";
-    if (window.pywebview) window.pywebview.api.island_shrink();
+
+  // Called from Python (morning briefing / status updates).
+  function showIslandText(text) {
+    $("greet").textContent = text;
+    goActive();
   }
 
   $("island").addEventListener("click", () => {
@@ -110,12 +164,15 @@
     const mic = $("mic");
     mic.classList.add("recording");
     $("sub").textContent = "🎙️ بسمعك... اتكلم دلوقتي";
+    goActive();   // listening is an ACTIVE state: grow to the full pill
     try {
       const res = await window.pywebview.api.voice_chat();
       $("greet").textContent = res.heard ? "سمعتك: " + res.heard : "Memo AI";
-      expandWithReply(res.reply || "");
+      if (res.reply) expandWithReply(res.reply);
+      else goActive();
     } catch (err) {
       $("sub").textContent = "مقدرتش أسمعك — جرّب تاني";
+      armIdleTimer();
     }
     mic.classList.remove("recording");
   });

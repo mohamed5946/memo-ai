@@ -1,7 +1,7 @@
 ; Memo AI — Inno Setup 6 script
 ; Build (from the repo root, on Windows, after PyInstaller):
 ;   ISCC installer\memo-ai.iss
-;   or with a version override:  ISCC /DAppVersion=1.2.2 installer\memo-ai.iss
+;   or with a version override:  ISCC /DAppVersion=1.2.3 installer\memo-ai.iss
 ; Output: release\MemoAI-Setup-<version>.exe
 ;
 ; Per-user install to %LOCALAPPDATA%\Programs\Memo AI — no admin needed.
@@ -18,7 +18,7 @@
 ; without transparency until WebView2 is installed later.
 
 #ifndef AppVersion
-  #define AppVersion "1.2.2"
+  #define AppVersion "1.2.3"
 #endif
 
 #define AppName "Memo AI"
@@ -76,7 +76,7 @@ Filename: "{app}\Memo AI.exe"; Description: "{cm:LaunchProgram,Memo AI}"; Flags:
 { ---- WebView2 Runtime check (v1.2.2) ---- }
 { pywebview only gets transparency on the EdgeChromium backend, which
   needs .NET 4.6.2+ AND a WebView2 Runtime >= 86.0.622.0 registered
-  under EdgeUpdate Clients (GUID {F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}).
+  under EdgeUpdate Clients (GUID is in GetWebView2Version below).
   Without it pywebview falls back to MSHTML, which cannot do transparency
   and paints the window background as an opaque dark rectangle. }
 

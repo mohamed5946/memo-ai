@@ -43,19 +43,16 @@
 # WebView2 runtime present/updated. The pet now also roams, reacts to
 # clicks, and plays with a ball when parked (see pet.html).
 
-# v1.2.2 SINGLE INSTANCE + WEBVIEW2 (2026-11-06): field evidence showed
-# TWO pet cats on screen = two app instances (old zip + new installed
-# version) running at once, and the pet STILL had a dark rectangle. The
-# rectangle is the MSHTML fallback: pywebview only gets transparency on
-# the EdgeChromium backend (needs .NET 4.6.2+ AND a WebView2 runtime
-# >= 86.0.622.0 registered under EdgeUpdate Clients); without it the
-# window paints the opaque background_color (dark navy #0B0F16 in v1.2).
-# Fixes in v1.2.2: (1) a Windows named mutex ("Local\\MemoAI-...") so a
-# second launch exits quietly instead of opening a second island + pet;
-# (2) the installer installs the WebView2 runtime when missing (see
-# installer/memo-ai.iss); (3) every UI page reports its user agent to
-# the diagnostics log (Api.log_js) so the log proves which engine draws
-# the windows (WebView2 UA has "Edg/"; MSHTML UA has "MSIE"/"Trident/").
+# v1.2.3 IDLE/ACTIVE ISLAND (2026-11-06): the user wants the island
+# SMALL when idle (cat + mic only, ~190x52) and growing GRADUALLY
+# (~0.45s ease) when active (greeting / listening / reply), then
+# shrinking back after ~7s idle. The pill's dark navy color is NOT
+# changed (the black background he sees is the same opaque-window
+# issue as the pet - fixed by the WebView2 work in v1.2.2, not by
+# recoloring the pill). Implementation: the .island div is 100% of the
+# window, and the WINDOW animates in small steps via rAF -> the new
+# Api.island_resize(w, h) (which also re-centers it on top); the texts
+# fade in as it grows. Old island_expand/island_shrink removed.
 
 import ctypes
 import json
@@ -87,10 +84,11 @@ import speak
 import updater
 import weather
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
+ISLAND_IDLE_W, ISLAND_IDLE_H = 190, 52
 PET_SIZE = 150
 
 # Single-instance mutex (Windows named mutex, no admin needed).
@@ -225,20 +223,16 @@ class Api:
         _APP.show_main()
         return {"ok": True}
 
-    def island_expand(self):
+    def island_resize(self, w, h):
+        # v1.2.3: the island animates its window size (idle compact <->
+        # full pill <-> expanded reply). Keep it centered at the top.
         try:
             if _APP.island_window:
-                _APP.island_window.resize(ISLAND_W, ISLAND_EXPANDED_H)
+                sw, _sh = screen_size()
+                _APP.island_window.resize(int(w), int(h))
+                _APP.island_window.move(max(0, (sw - int(w)) // 2), 12)
         except Exception as exc:
-            error("ui", f"Could not expand island: {exc}")
-        return {"ok": True}
-
-    def island_shrink(self):
-        try:
-            if _APP.island_window:
-                _APP.island_window.resize(ISLAND_W, ISLAND_H)
-        except Exception as exc:
-            error("ui", f"Could not shrink island: {exc}")
+            error("ui", f"Could not resize island: {exc}")
         return {"ok": True}
 
     def minimize_to_island(self):
@@ -504,12 +498,13 @@ class MemoApp:
             info("app", "Another Memo AI instance is already running - exiting")
             return
         sw, sh = screen_size()
-        island_x = max(0, (sw - ISLAND_W) // 2)
+        # The island starts in its IDLE compact state (v1.2.3).
+        island_x = max(0, (sw - ISLAND_IDLE_W) // 2)
 
         ui_dir = APP_DIR / "ui"
         self.island_window = webview.create_window(
             "Memo AI", str(ui_dir / "island.html"),
-            width=ISLAND_W, height=ISLAND_H, x=island_x, y=12,
+            width=ISLAND_IDLE_W, height=ISLAND_IDLE_H, x=island_x, y=12,
             frameless=True, transparent=True, on_top=True,
             resizable=False, background_color="#0B0F16", js_api=self.api)
         self.main_window = webview.create_window(
