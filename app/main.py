@@ -45,31 +45,37 @@
 #   - Qt/Cocoa/GTK backends DO real translucency (WA_TranslucentBackground
 #     etc.) - WinForms alone does not. 6.2.1 changes nothing here.
 # So no CSS/HTML change could ever fix the black rectangle, and the
-# v1.2.0 backdrop-filter removal was treating a symptom. The real fix:
-# CHROMA-KEY. The island/pet pages paint pure magenta #FF00FF as their
-# background (a color used NOWHERE in the UI), and main.py applies a
-# Win32 layered window to each HWND (WS_EX_LAYERED +
-# SetLayeredWindowAttributes LWA_COLORKEY), so Windows itself removes
-# the magenta pixels - the pill/cat alone remain, with no rectangle.
-# Known trade-offs (tell the user): (1) ~1px pinkish fringe on
-# anti-aliased edges (rounded pill corners, semi-transparent fur edges
-# blend with magenta) - clearest on light wallpapers; (2) keyed pixels
-# become click-through - DESIRED here (clicks pass through the empty
-# space around the cat/island; the pill itself stays clickable).
-# The HWND comes from window.native.Handle (pywebview sets .native to
-# the WinForms Form, winforms.py:194), with an EnumWindows title+size
-# fallback. Applied from a thread started by webview.start(func) -
-# which runs BEFORE any window exists, so it polls up to 60s for the
-# HWNDs. The style lives on the HWND, so it survives hide/show.
-# FIELD TEST STILL REQUIRED (cannot be proven from Linux): screenshots
-# over a light AND a dark desktop wallpaper, pill/mic clicks still
-# working, clicks passing through the empty space around the cat.
+# v1.2.0 backdrop-filter removal was treating a symptom.
+#
+# v1.3.0's chroma-key ATTEMPT (magenta page + WS_EX_LAYERED +
+# SetLayeredWindowAttributes on the Form HWND) FAILED IN THE FIELD
+# (2026-11-07, user log + screenshots) and is DELETED in v1.3.1 - see
+# app/winshape.py for the full post-mortem. Short version: the color
+# key was applied to the top-level Form, but the visible pixels are
+# painted by the WebView2 CHILD HWND, which the key never touches - so
+# the magenta stayed - AND the Form's whole surface is magenta, so
+# hit-testing returned HTTRANSPARENT for every point and BOTH windows
+# went fully click-through (pill click + cat click dead). One mechanism,
+# both symptoms. The log even claimed "applied" while the screen proved
+# otherwise - v1.3.1 never logs success without verification.
+#
+# v1.3.1 TRANSPARENCY (2026-11-07): SetWindowRgn (app/winshape.py).
+# A window region clips the window AND all its children to an exact
+# shape, and hit-testing follows the region: the island is a rounded
+# rect matching the pill, the pet is the cat's PNG alpha silhouette
+# (unioned with the bubble/ball zones only while visible). No box of
+# any color on any wallpaper, and clicks land on the pill/cat while
+# passing through everywhere else. FIELD TEST STILL REQUIRED (cannot be
+# proven from Linux): screenshots over a light AND a dark desktop
+# wallpaper, pill click opens the main window, cat click says "مياو!",
+# clicks pass through the empty space around the cat.
 
-# v1.2 TRANSPARENCY (2026-11-06) - SUPERSEDED by the v1.3.0 chroma-key
-# fix above. Kept as history: the island/pet showed a white rectangle.
-# The v1.2 theory (MSHTML fallback paints background_color white) was
-# wrong on the user's machine - the v1.2.5 log proved WebView2 WAS the
-# engine, yet the black rectangle stayed. Real cause: see v1.3.0 note.
+# v1.2 TRANSPARENCY (2026-11-06) - SUPERSEDED twice. Kept as history:
+# the island/pet showed a white rectangle. The v1.2 theory (MSHTML
+# fallback paints background_color white) was wrong on the user's
+# machine - the v1.2.5 log proved WebView2 WAS the engine, yet the black
+# rectangle stayed. Real cause: see the v1.3.0 note above (and the
+# v1.3.1 region fix in app/winshape.py).
 # (1) backdrop-filter removed from the island; (2) background_color
 # "#0B0F16" so failure degraded to a dark rectangle; (3) html/body
 # background transparent in JS. None of it could work - see above.
@@ -87,12 +93,39 @@
 # (~0.45s ease) when active (greeting / listening / reply), then
 # shrinking back after ~7s idle. The pill's dark navy color is NOT
 # changed. (The black background he saw was the opaque WinForms window
-# itself - the v1.3.0 investigation proved it was never WebView2; fixed
-# by chroma-key, see the v1.3.0 note at the top.) Implementation: the
-# .island div is 100% of the window, and the WINDOW animates in small
-# steps via rAF -> the new Api.island_resize(w, h) (which also
-# re-centers it on top); the texts
+# itself - the v1.3.0 investigation proved it was never WebView2;
+# fixed in v1.3.1 by window regions, see app/winshape.py.)
+# Implementation: the .island div is 100% of the window, and the WINDOW
+# animates in small steps via rAF -> the new Api.island_resize(w, h)
+# (which also re-centers it on top); the texts
 # fade in as it grows. Old island_expand/island_shrink removed.
+#
+# v1.3.1 (2026-11-07) - ONE BATCHED VERSION ("version واحدة"):
+#   (1) ISLAND CLICK FIX (critical regression): in v1.3.0 the island
+#       click stopped opening the main window - and the pet click died
+#       too. Cause: the chroma-key (see above) made both windows fully
+#       click-through. Fix: window regions (winshape) + the chroma-key
+#       code deleted outright. Clicks are instrumented (JS logs the
+#       pill/pet pointerdown, Python logs the HWND/class/styles).
+#   (2) REAL TRANSPARENCY: SetWindowRgn - pill roundrect + cat alpha
+#       silhouette. No box of any color on any wallpaper.
+#   (3) UPDATER PROGRESS BAR: updater.py tracks downloaded/total/% and
+#       the Settings UI polls it; manifest fetch has a cache-buster
+#       (checks at 01:02/01:06 returned a stale "already latest").
+#   (4) AUTOSTART on Windows boot (HKCU Run key, toggleable, default
+#       ON - see app/autostart.py). Starts as the island only.
+#   (5) MORPH ANIMATION main window <-> island (~0.45s eased): closing
+#       shrinks the main window into the pill; opening grows it out.
+#   (6) SECOND LAUNCH FOCUSES the running instance (named event) instead
+#       of exiting silently - that silence made the user think the app
+#       would not open at all (8 launches 01:13-01:14).
+#   (7) PET RUNNING ANIMATION: while roaming the cat runs with visible
+#       legs (6-frame sprite, step rate synced to the roam speed) instead
+#       of sliding like a robot; parked/sitting pose unchanged.
+#   (8) PET HIDDEN BY DEFAULT: the cat never appears on its own - only
+#       when the user shows it (Settings toggle / paw button); the state
+#       persists. One-time migration applies the new default to existing
+#       installs (see _apply_pet_default_migration).
 
 import ctypes
 import hashlib
@@ -128,8 +161,10 @@ import speak
 import tools
 import updater
 import weather
+import winshape
+import autostart
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -172,12 +207,12 @@ _chats_lock = threading.Lock()
 # Result of the startup bridge-files self-check (None = not run yet).
 _BRIDGE_FILES_OK = None
 
-# v1.3.0 chroma-key color: the island/pet pages paint their background
-# this exact magenta; Windows removes it from the window (see the
-# v1.3.0 transparency note at the top of this file). COLORREF is
-# 0x00BBGGRR, so RGB(255,0,255) -> 0x00FF00FF.
-CHROMA_KEY_HEX = "#FF00FF"
-CHROMA_KEY_COLORREF = 0x00FF00FF
+# v1.3.1: the window backgrounds behind the WebView2 controls. With
+# window regions (winshape) these colors are invisible - the region
+# clips everything outside the pill/cat silhouette - but if a region
+# ever failed to apply, the fallback is a dark color, never magenta.
+ISLAND_BG = "#0D121C"
+PET_BG = "#0A0A0A"
 
 
 def _window_hwnd(window):
@@ -221,33 +256,6 @@ def _find_hwnd_by_title(title: str, max_width: int | None = None):
         return found[0] if found else None
     except Exception:
         return None
-
-
-def _apply_chroma_key(hwnd: int, label: str) -> bool:
-    """Make pure #FF00FF pixels transparent AND click-through on a Win32
-    HWND (WS_EX_LAYERED + SetLayeredWindowAttributes LWA_COLORKEY).
-    Returns True on success; every outcome is logged (diagnostics)."""
-    if os.name != "nt":
-        return False
-    try:
-        user32 = ctypes.windll.user32
-        GWL_EXSTYLE = -20
-        WS_EX_LAYERED = 0x00080000
-        LWA_COLORKEY = 0x00000001
-        ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED)
-        ok = user32.SetLayeredWindowAttributes(
-            hwnd, CHROMA_KEY_COLORREF, 0, LWA_COLORKEY)
-        if ok:
-            info("app", f"Chroma-key transparency applied to {label} "
-                        f"(HWND {hwnd}) - magenta pixels now see-through")
-            return True
-        error("app", f"SetLayeredWindowAttributes FAILED for {label} "
-                     f"(HWND {hwnd}) - black rectangle may remain")
-        return False
-    except Exception as exc:
-        error("app", f"Chroma-key failed for {label}: {exc}")
-        return False
 
 
 def _check_bridge_files() -> bool:
@@ -357,11 +365,14 @@ class Api:
             return {"ok": False}
         for key in ("ai_name", "user_name", "language", "voice",
                     "greeting_enabled", "voice_output", "avatar",
-                    "pet_visible", "pet_parked"):
+                    "pet_visible", "pet_parked", "autostart"):
             if key in data:
                 _APP.settings[key] = data[key]
         ok = save_settings(_APP.settings)
         info("app", "Settings saved from UI")
+        # v1.3.1: autostart applies immediately (HKCU Run key follows
+        # the setting; the pet toggle takes effect at once too).
+        autostart.set_enabled(bool(_APP.settings.get("autostart", True)))
         _APP.apply_settings()
         return {"ok": ok}
 
@@ -475,11 +486,14 @@ class Api:
     def island_resize(self, w, h):
         # v1.2.3: the island animates its window size (idle compact <->
         # full pill <-> expanded reply). Keep it centered at the top.
+        # v1.3.1: the window REGION follows the size - a resized window
+        # keeps its old region, so re-apply it on every resize step.
         try:
             if _APP.island_window:
                 sw, _sh = screen_size()
                 _APP.island_window.resize(int(w), int(h))
                 _APP.island_window.move(max(0, (sw - int(w)) // 2), 12)
+                _APP.refresh_island_region(int(w), int(h))
         except Exception as exc:
             error("ui", f"Could not resize island: {exc}")
         return {"ok": True}
@@ -490,11 +504,17 @@ class Api:
 
     def toggle_pet(self, visible=None):
         if visible is None:
-            visible = not _APP.settings.get("pet_visible", True)
+            visible = not _APP.settings.get("pet_visible", False)
         _APP.settings["pet_visible"] = bool(visible)
         save_settings(_APP.settings)
         _APP.apply_pet_visibility()
         return {"visible": bool(visible)}
+
+    def set_pet_bubble(self, on):
+        """The pet page shows/hides the "مياو!" bubble: the window region
+        must include the bubble zone only while it is visible (v1.3.1)."""
+        _APP.set_pet_bubble(bool(on))
+        return {"ok": True}
 
     def park_pet(self):
         _APP.settings["pet_parked"] = True
@@ -506,6 +526,7 @@ class Api:
         """Pet was dragged to a screen edge: save parked state (no move)."""
         _APP.settings["pet_parked"] = True
         save_settings(_APP.settings)
+        _APP.refresh_pet_region()  # ball zone joins the region
         info("pet", "Pet parked at a screen edge - playing with the ball")
         return {"ok": True}
 
@@ -513,6 +534,7 @@ class Api:
         """Pet dragged away (or double-clicked) while parked: resume roaming."""
         _APP.settings["pet_parked"] = False
         save_settings(_APP.settings)
+        _APP.refresh_pet_region()  # ball zone leaves the region
         info("pet", "Pet unparked - roaming resumed")
         return {"ok": True}
 
@@ -524,6 +546,11 @@ class Api:
     # -- in-app updates (v1.2) ---------------------------------------------
     def check_updates(self):
         return updater.check_update()
+
+    def get_update_progress(self):
+        """v1.3.1: the Settings UI polls this while an update downloads
+        (downloaded/total/percent/state) to render the progress bar."""
+        return updater.get_progress()
 
     def install_update(self):
         info("update", "Install requested from Settings")
@@ -597,21 +624,183 @@ class MemoApp:
         # v1.3.0: when a tool waits for Allow/Deny, bring the main window
         # forward so the user sees the dialog.
         tools.on_permission_needed = self._show_main_for_permission
+        # v1.3.1 morph state: is the main window currently shown, and
+        # what rect should it restore to (the user's last size/position)?
+        self._main_visible = False
+        self._main_rect = None            # (x, y, w, h) or None = default
+        self._morph_lock = threading.Lock()
+        # v1.3.1 window shaping: HWNDs once known + cached pet rects.
+        self._island_hwnd = None
+        self._pet_hwnd = None
+        self._pet_region_rects = None     # built once from the cat PNG
+        self._pet_bubble = False          # is the "مياو!" bubble showing?
+        # v1.3.1 second-launch focus: named event handle + watcher.
+        self._show_main_event = None
 
     # -- window management ---------------------------------------------------
+    def _island_rect(self):
+        """Current island rect (x, y, w, h). Prefers the real HWND rect;
+        falls back to the idle pill centered at the top."""
+        rect = winshape.get_window_rect(self._island_hwnd)
+        if rect:
+            return rect
+        sw, _sh = screen_size()
+        return (max(0, (sw - ISLAND_IDLE_W) // 2), 12,
+                ISLAND_IDLE_W, ISLAND_IDLE_H)
+
+    def _main_full_rect(self):
+        """Rect the main window restores to (last size/position, or the
+        centered default)."""
+        if self._main_rect:
+            return self._main_rect
+        sw, sh = screen_size()
+        return (max(0, (sw - MAIN_W) // 2), max(0, (sh - MAIN_H) // 2),
+                MAIN_W, MAIN_H)
+
+    def _animate_window_rect(self, window, from_rect, to_rect,
+                             duration_ms: int = 450):
+        """Morph a window's rect (x, y, w, h) with an eased ~0.45s
+        animation. Runs on the calling thread (callers use a daemon
+        thread). Any failure aborts the animation quietly - the caller
+        always finishes with an explicit show/hide, so the window can
+        never be left in a broken state. The main window's MinimumSize
+        is cleared for the duration (it would otherwise clamp the shrink
+        into the 190x52 pill) and restored afterwards."""
+        if not window or self._quitting:
+            return
+        old_min = None
+        try:
+            native = getattr(window, "native", None)
+            old_min = winshape.clear_min_size(native)
+        except Exception:
+            old_min = None
+        try:
+            steps = max(1, int(duration_ms / 16))
+            for i in range(1, steps + 1):
+                if self._quitting:
+                    return
+                t = winshape.ease_in_out_cubic(i / steps)
+                x, y, w, h = winshape.lerp_rect(from_rect, to_rect, t)
+                try:
+                    window.move(int(x), int(y))
+                    window.resize(int(w), int(h))
+                except Exception:
+                    return
+                time.sleep(0.016)
+        finally:
+            try:
+                native = getattr(window, "native", None)
+                winshape.restore_min_size(native, old_min)
+            except Exception:
+                pass
+
     def show_main(self):
-        if self.main_window:
-            self.main_window.show()
-            if self.island_window:
-                self.island_window.hide()
+        """Open the main window out of the island pill (v1.3.1 morph:
+        it grows from the pill to full size in ~0.45s). If it is already
+        open, just bring it forward."""
+        if not self.main_window:
+            return
+        if self._main_visible:
+            try:
+                self.main_window.show()
+            except Exception:
+                pass
+            return
+        self._main_visible = True
+        island_rect = self._island_rect()
+        full_rect = self._main_full_rect()
+
+        def _open():
+            # Wait for a close-morph in flight (max ~0.45s) instead of
+            # racing it: the loser used to leave the window at pill size.
+            if not self._morph_lock.acquire(timeout=2):
+                try:
+                    self.main_window.show()
+                except Exception:
+                    pass
+                if self.island_window:
+                    try:
+                        self.island_window.hide()
+                    except Exception:
+                        pass
+                return
+            try:
+                try:
+                    self.main_window.move(island_rect[0], island_rect[1])
+                    self.main_window.resize(island_rect[2], island_rect[3])
+                except Exception:
+                    pass
+                try:
+                    self.main_window.show()
+                except Exception:
+                    pass
+                if self.island_window:
+                    try:
+                        self.island_window.hide()
+                    except Exception:
+                        pass
+                self._animate_window_rect(
+                    self.main_window, island_rect, full_rect)
+                self._main_rect = full_rect
+                if not self._main_visible:
+                    # Closed again mid-animation: leave it hidden.
+                    try:
+                        self.main_window.hide()
+                    except Exception:
+                        pass
+            finally:
+                self._morph_lock.release()
+
+        threading.Thread(target=_open, daemon=True).start()
         info("ui", "Main window opened from island")
 
     def hide_main(self):
-        if self.main_window:
-            self.main_window.hide()
-        if self.island_window:
-            self.island_window.show()
-            self.island_window.restore()
+        """Close the main window back into the island pill (v1.3.1 morph:
+        it shrinks into the pill in ~0.45s, then the island appears)."""
+        if not self.main_window or not self._main_visible:
+            return
+        self._main_visible = False
+        # Remember the rect to restore to (exact, from the OS).
+        rect = winshape.get_window_rect(
+            _window_hwnd(self.main_window))
+        if rect:
+            self._main_rect = rect
+        island_rect = self._island_rect()
+        start_rect = self._main_rect
+
+        def _close():
+            # Wait for an open-morph in flight (max ~0.45s) instead of
+            # racing it, so the shrink always starts from the full rect.
+            if not self._morph_lock.acquire(timeout=2):
+                try:
+                    self.main_window.hide()
+                except Exception:
+                    pass
+                if self.island_window:
+                    try:
+                        self.island_window.show()
+                    except Exception:
+                        pass
+                return
+            try:
+                self._animate_window_rect(
+                    self.main_window, start_rect, island_rect)
+            finally:
+                self._morph_lock.release()
+            if self._main_visible:
+                return  # re-opened mid-animation - leave it open
+            try:
+                self.main_window.hide()
+            except Exception:
+                pass
+            if self.island_window:
+                try:
+                    self.island_window.show()
+                    self.island_window.restore()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_close, daemon=True).start()
         info("ui", "Main window minimized back to island")
 
     def apply_settings(self):
@@ -626,12 +815,54 @@ class MemoApp:
         if not self.pet_window:
             return
         try:
-            if self.settings.get("pet_visible", True):
+            if self.settings.get("pet_visible", False):
                 self.pet_window.show()
+                self.refresh_pet_region()
+                # The pet page skips roaming while hidden; wake it up.
+                try:
+                    self.pet_window.evaluate_js("resumeRoaming()")
+                except Exception:
+                    pass
             else:
                 self.pet_window.hide()
         except Exception as exc:
             error("ui", f"Could not toggle pet window: {exc}")
+
+    def set_pet_bubble(self, on: bool):
+        """The "مياو!" bubble is showing/hiding: the window region must
+        include its zone only while visible (v1.3.1)."""
+        self._pet_bubble = bool(on)
+        self.refresh_pet_region()
+
+    def refresh_island_region(self, w: int, h: int):
+        """Re-apply the pill roundrect region for the island's current
+        size (called on every island_resize step). No-op off Windows or
+        before the HWND is known."""
+        if not self._island_hwnd:
+            return
+        try:
+            winshape.apply_round_rect_region(
+                self._island_hwnd, int(w), int(h),
+                winshape.island_radius(int(w), int(h)), "island")
+        except Exception as exc:
+            error("app", f"Island region refresh failed: {exc}")
+
+    def refresh_pet_region(self):
+        """Re-apply the pet silhouette region for the current state
+        (parked -> ball zone joins; bubble showing -> bubble zone joins).
+        No-op off Windows or before the HWND/rects are known."""
+        if not self._pet_hwnd or not self._pet_region_rects:
+            return
+        try:
+            roundrects = []
+            if self._pet_bubble:
+                roundrects.append(winshape.PET_BUBBLE_ZONE)
+            if self.settings.get("pet_parked", False):
+                roundrects.append(winshape.PET_BALL_ZONE)
+            winshape.apply_rect_list_region(
+                self._pet_hwnd, self._pet_region_rects, roundrects, "pet")
+        except Exception as exc:
+            error("app", f"Pet region refresh failed: {exc}")
 
     def park_pet(self):
         if not self.pet_window:
@@ -644,6 +875,7 @@ class MemoApp:
                 self.pet_window.evaluate_js("setParked(true, true)")
             except Exception:
                 pass
+            self.refresh_pet_region()  # ball zone joins the region
             info("ui", "Pet parked in bottom-right corner")
         except Exception as exc:
             error("ui", f"Could not park pet: {exc}")
@@ -757,6 +989,14 @@ class MemoApp:
                 self.main_window.destroy()
         except Exception:
             pass
+        # Close the second-launch event (the watcher thread exits on
+        # its next poll once _quitting is True).
+        try:
+            if self._show_main_event:
+                ctypes.windll.kernel32.CloseHandle(self._show_main_event)
+                self._show_main_event = None
+        except Exception:
+            pass
         # Release the single-instance lock (the OS would do it on exit
         # anyway; closing explicitly keeps the intent clear).
         global _mutex_handle
@@ -775,6 +1015,19 @@ class MemoApp:
         self.hide_main()
         return False
 
+    def _apply_pet_default_migration(self):
+        """v1.3.1 one-time migration: existing installs saved
+        pet_visible=True, but the new rule is hidden-by-default (the cat
+        only ever appears when the user shows it). Applied once, then
+        the user's own choice rules from then on."""
+        if self.settings.get("pet_default_v131", False):
+            return
+        self.settings["pet_visible"] = False
+        self.settings["pet_default_v131"] = True
+        save_settings(self.settings)
+        info("app", "Pet default applied (v1.3.1 migration): pet hidden "
+                    "until the user shows it")
+
     def run(self):
         info("app", f"Memo AI v{VERSION} starting")
         try:
@@ -784,11 +1037,30 @@ class MemoApp:
         info("app", f"pywebview version: {pv}")
         # Bridge-files self-check (v1.2.5): loud log if api.js is missing.
         _check_bridge_files()
-        # One instance only: a second launch (zip or installed) exits
-        # quietly BEFORE any window is created.
+        # v1.3.1: pet hidden-by-default migration (one-time) + autostart
+        # registry follows the setting (default ON).
+        self._apply_pet_default_migration()
+        autostart.apply_on_startup(self.settings.get("autostart", True))
+        # v1.3.1 second-launch focus: create the named event FIRST, so a
+        # second instance can signal the running one to show its window
+        # instead of exiting silently (which made the user think the app
+        # would not open at all).
+        self._show_main_event = winshape.create_show_main_event()
+        # One instance only: a second launch (zip or installed) signals
+        # the running instance and exits BEFORE any window is created.
         if not _acquire_single_instance_lock():
-            info("app", "Another Memo AI instance is already running - exiting")
+            if winshape.signal_show_main():
+                info("app", "Another Memo AI instance is already running - "
+                            "signaled it to show the main window")
+            else:
+                info("app", "Another Memo AI instance is already running - "
+                            "exiting (could not signal it)")
             return
+        threading.Thread(
+            target=winshape.watch_show_main_event,
+            args=(self._show_main_event, self.show_main,
+                  lambda: self._quitting),
+            daemon=True).start()
         sw, sh = screen_size()
         # The island starts in its IDLE compact state (v1.2.3).
         island_x = max(0, (sw - ISLAND_IDLE_W) // 2)
@@ -798,36 +1070,51 @@ class MemoApp:
             "Memo AI", str(ui_dir / "island.html"),
             width=ISLAND_IDLE_W, height=ISLAND_IDLE_H, x=island_x, y=12,
             frameless=True, transparent=False, on_top=True,
-            resizable=False, background_color=CHROMA_KEY_HEX, js_api=self.api)
+            resizable=False, background_color=ISLAND_BG, js_api=self.api)
         self.main_window = webview.create_window(
             "Memo AI", str(ui_dir / "index.html"),
             width=MAIN_W, height=MAIN_H, hidden=True,
             min_size=(640, 520), js_api=self.api)
         self.main_window.events.closing += self._on_main_closing
+        # v1.3.1: the pet starts HIDDEN unless the user left it visible
+        # (hidden= at creation avoids a flash of the cat at startup).
         self.pet_window = webview.create_window(
             "Memo AI Pet", str(ui_dir / "pet.html"),
             width=PET_SIZE, height=PET_SIZE,
             x=sw - PET_SIZE - 20, y=sh - PET_SIZE - 90,
             frameless=True, transparent=False, on_top=True,
-            resizable=False, background_color=CHROMA_KEY_HEX, js_api=self.api)
-        if not self.settings.get("pet_visible", True):
-            self.pet_window.hide()
+            resizable=False, background_color=PET_BG, js_api=self.api,
+            hidden=not self.settings.get("pet_visible", False))
 
         threading.Thread(target=self.morning_briefing, daemon=True).start()
         info("app", "Island started - full window opens only on tap")
-        # v1.3.0: webview.start(func) runs func in a thread BEFORE any
-        # window exists, so _apply_chroma_keys polls until the HWNDs
-        # appear (up to 60s) and then keys out the magenta background.
-        webview.start(self._apply_chroma_keys)
+        # v1.3.1: webview.start(func) runs func in a thread BEFORE any
+        # window exists, so _apply_window_regions polls until the HWNDs
+        # appear (up to 60s) and then shapes the windows with regions.
+        webview.start(self._apply_window_regions)
         info("app", "Memo AI exited")
 
-    def _apply_chroma_keys(self):
-        """Apply the Win32 chroma-key (magenta -> transparent) to the
-        island + pet windows. Runs in the thread webview.start(func)
+    def _apply_window_regions(self):
+        """Apply the Win32 window regions (v1.3.1, app/winshape.py) to
+        the island + pet windows. Runs in the thread webview.start(func)
         spawns, which starts BEFORE the windows are created - hence the
-        polling. Each window is attempted once its HWND is found; the
-        style lives on the HWND so it survives hide/show. Every outcome
-        is logged (diagnostics, visible in-app)."""
+        polling. Each window is shaped once its HWND is found; the
+        region lives on the HWND so it survives hide/show. The island
+        region is re-applied on every resize (Api.island_resize). Every
+        outcome is logged, and success is only claimed after a read-back
+        verification (see winshape)."""
+        # The pet silhouette rects are built once from the bundled PNG.
+        try:
+            png = APP_DIR / "ui" / "assets" / "avatar-cat.png"
+            self._pet_region_rects = winshape.build_pet_region_rects(png)
+            if self._pet_region_rects:
+                info("app", f"Pet region rects built from avatar-cat.png "
+                            f"({len(self._pet_region_rects)} rects)")
+            else:
+                error("app", "Pet region rects NOT built - pet window "
+                             "will stay rectangular until this is fixed")
+        except Exception as exc:
+            error("app", f"Pet region build failed: {exc}")
         pending = {"island": True, "pet": True}
         deadline = time.time() + 60
         while time.time() < deadline and any(pending.values()):
@@ -835,20 +1122,30 @@ class MemoApp:
                 hwnd = _window_hwnd(self.island_window) or \
                     _find_hwnd_by_title("Memo AI", max_width=400)
                 if hwnd:
-                    _apply_chroma_key(hwnd, "island")
+                    self._island_hwnd = hwnd
+                    winshape.log_window("island", hwnd, "before region")
+                    rect = winshape.get_window_rect(hwnd)
+                    w, h = (rect[2], rect[3]) if rect else \
+                        (ISLAND_IDLE_W, ISLAND_IDLE_H)
+                    winshape.apply_round_rect_region(
+                        hwnd, w, h, winshape.island_radius(w, h), "island")
+                    winshape.log_window("island", hwnd, "after region")
                     pending["island"] = False
             if pending["pet"]:
                 hwnd = _window_hwnd(self.pet_window) or \
                     _find_hwnd_by_title("Memo AI Pet")
                 if hwnd:
-                    _apply_chroma_key(hwnd, "pet")
+                    self._pet_hwnd = hwnd
+                    winshape.log_window("pet", hwnd, "before region")
+                    self.refresh_pet_region()
+                    winshape.log_window("pet", hwnd, "after region")
                     pending["pet"] = False
             if any(pending.values()):
                 time.sleep(0.5)
         for label, still_pending in pending.items():
             if still_pending:
-                warn("app", f"Chroma-key NOT applied to {label} (no HWND "
-                            f"found in 60s) - black rectangle may remain")
+                warn("app", f"Window region NOT applied to {label} (no HWND "
+                            f"found in 60s) - the window will stay a box")
 
 
 def main():

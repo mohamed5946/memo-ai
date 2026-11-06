@@ -44,8 +44,17 @@ DEFAULTS = {
     "voice_output": True,        # v1.3.0: speaker toggle - speak replies?
     "greeting_enabled": True,
     "avatar": "cat",
-    "pet_visible": True,
+    # v1.3.1: the pet is HIDDEN by default - it only ever appears when
+    # the user shows it (Settings toggle / 🐾 button), never on its own
+    # at startup or at Windows boot. The state persists once he chooses.
+    "pet_visible": False,
     "pet_parked": False,
+    # v1.3.1: autostart with Windows (HKCU Run key), toggleable, ON.
+    "autostart": True,
+    # v1.3.1 internal: one-time migration - existing installs saved
+    # pet_visible=True, so the new hidden-by-default rule is applied
+    # once on the first v1.3.1 run, then the user's own choice rules.
+    "pet_default_v131": False,
     # v1.3.0: NO owner_code setting anymore. The owner code is stored
     # ONLY as a SHA-256 hash in main.py (OWNER_CODE_HASH) - never as
     # plaintext in settings.json, logs, or anywhere else.

@@ -68,8 +68,10 @@
     </div>
     <label class="toggle"><input type="checkbox" id="set-greeting" checked>
       <span data-i18n="greeting_toggle">التحية الصباحية عند التشغيل (مع الطقس)</span></label>
-    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-pet" checked>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-pet">
       <span data-i18n="pet_toggle">إظهار الحيوان الأليف على الشاشة</span></label>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-autostart" checked>
+      <span data-i18n="autostart_toggle">تشغيل Memo AI تلقائياً مع بدء ويندوز (يبدأ كجزيرة بس)</span></label>
 
     <h3 data-i18n="sec_voice">الصوت — 4 أصوات</h3>
     <div class="voice-grid" id="voice-grid">
@@ -125,10 +127,14 @@
       <button class="ghost-btn btn-3d" id="check-updates-btn">↻ <span data-i18n="check_updates">التحقق من التحديثات</span></button>
       <button class="gold-btn btn-3d" id="install-update-btn" style="display:none">⬇️ <span data-i18n="install_update">تثبيت التحديث</span></button>
     </div>
+    <div class="update-progress" id="update-progress" style="display:none">
+      <div class="update-progress-track"><div class="update-progress-fill" id="update-progress-fill"></div></div>
+      <div class="update-progress-label" id="update-progress-label"></div>
+    </div>
 
     <h3 data-i18n="sec_about">عن المطور</h3>
     <div class="about-box">
-      <div><b>Memo AI</b> v1.3.0</div>
+      <div><b>Memo AI</b> v1.3.1</div>
       <div data-i18n="about_by">صمم بواسطة <b>ENG/Mohamed El Sayed</b></div>
       <div>📧 ma4670156@gmail.com</div>
       <div>📱 01557887719</div>

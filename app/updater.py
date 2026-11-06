@@ -27,14 +27,57 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import zipfile
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 from logger import error, info, warn
 from settings_store import APP_DIR, BASE_DIR
 
 CONFIG_PATH = APP_DIR / "data" / "update.json"
+
+# v1.3.1 DOWNLOAD PROGRESS (the v1.3.0 update took ~90s with zero
+# feedback, so the user thought nothing was happening). The installer
+# threads update this dict per chunk; the Settings UI polls it through
+# Api.get_update_progress() and renders a bar + "x MB / y MB (z%)".
+_PROGRESS = {"state": "idle",           # idle|downloading|verifying|done|error
+             "downloaded": 0,           # bytes written so far
+             "total": None,             # bytes (Content-Length) or None
+             "percent": None,           # 0-100 or None when total unknown
+             "version": ""}
+_PROGRESS_LOCK = threading.Lock()
+_PROGRESS_LOG_STEP = 25                 # log every 25% (not every chunk)
+
+
+def get_progress() -> dict:
+    """A copy of the current download progress (safe to call any time)."""
+    with _PROGRESS_LOCK:
+        return dict(_PROGRESS)
+
+
+def _set_progress(**fields):
+    with _PROGRESS_LOCK:
+        _PROGRESS.update(fields)
+
+
+def _note_downloaded(total, downloaded, version):
+    """Update the progress dict per chunk; log every 25% only."""
+    percent = None
+    if total:
+        percent = min(100, int(downloaded * 100 / total))
+    with _PROGRESS_LOCK:
+        prev = _PROGRESS.get("percent")
+    # Single update path: _set_progress owns the dict write.
+    _set_progress(state="downloading", downloaded=downloaded,
+                  total=total, percent=percent, version=version)
+    if percent is not None and prev is not None and \
+            percent // _PROGRESS_LOG_STEP > prev // _PROGRESS_LOG_STEP:
+        info("update", f"Downloading v{version}: {percent}% "
+                       f"({downloaded / 1048576:.1f} MB"
+                       f"{' / ' + format(total / 1048576, '.1f') + ' MB' if total else ''})")
 
 # Top-level entries (and app/data as a whole) that an update must never touch.
 PRESERVE_TOP = {"keys"}
@@ -72,6 +115,17 @@ def _fetch_manifest():
     if not url:
         info("update", "Updates not configured yet (update.json has no manifest_url)")
         return None
+    # v1.3.1 CACHE-BUSTER: raw.githubusercontent serves the manifest
+    # with cache headers, so checks at 01:02/01:06 still said "already
+    # latest" after v1.3.0 was published at 01:04 (found only at
+    # 01:08:58). A timestamp query param forces a fresh read every time.
+    try:
+        parts = urlsplit(url)
+        query = dict(parse_qsl(parts.query))
+        query["t"] = str(int(time.time()))
+        url = urlunsplit(parts._replace(query=urlencode(query)))
+    except Exception:
+        pass
     try:
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
@@ -109,6 +163,31 @@ def check_update() -> dict:
             "setup_url": setup_url, "kind": kind}
 
 
+def _download_file(url: str, dest: Path, version: str,
+                   timeout: int) -> str | None:
+    """Stream a file to dest, tracking progress (v1.3.1) and returning
+    its SHA-256 hex, or None on failure (already logged)."""
+    _set_progress(state="downloading", downloaded=0, total=None,
+                  percent=None, version=version)
+    resp = requests.get(url, timeout=timeout, stream=True)
+    resp.raise_for_status()
+    try:
+        total = int(resp.headers.get("Content-Length") or 0) or None
+    except ValueError:
+        total = None
+    sha = hashlib.sha256()
+    downloaded = 0
+    with open(dest, "wb") as f:
+        for chunk in resp.iter_content(1024 * 64):
+            if chunk:
+                sha.update(chunk)
+                f.write(chunk)
+                downloaded += len(chunk)
+                _note_downloaded(total, downloaded, version)
+    _set_progress(state="verifying")
+    return sha.hexdigest()
+
+
 def _safe_extract(zip_path: Path, dest: Path):
     """Extract a zip without zip-slip (no absolute paths, no '..')."""
     with zipfile.ZipFile(zip_path) as zf:
@@ -141,18 +220,16 @@ def install_update() -> bool:
 
     try:
         info("update", f"Downloading v{remote} ...")
-        resp = requests.get(url, timeout=120, stream=True)
-        resp.raise_for_status()
         tmp = Path(tempfile.mkdtemp(prefix="memo-ai-update-"))
         zip_path = tmp / "update.zip"
-        sha = hashlib.sha256()
-        with open(zip_path, "wb") as f:
-            for chunk in resp.iter_content(1024 * 64):
-                if chunk:
-                    sha.update(chunk)
-                    f.write(chunk)
-        if sha.hexdigest() != expected_sha:
+        got_sha = _download_file(url, zip_path, remote, timeout=120)
+        if got_sha is None:
+            _set_progress(state="error")
+            shutil.rmtree(tmp, ignore_errors=True)
+            return False
+        if got_sha != expected_sha:
             error("update", "SHA-256 mismatch - update ABORTED, nothing was changed")
+            _set_progress(state="error")
             shutil.rmtree(tmp, ignore_errors=True)
             return False
         info("update", "SHA-256 verified, extracting...")
@@ -193,10 +270,12 @@ def install_update() -> bool:
                 copied += 1
         info("update", f"Update v{remote} installed ({copied} entries copied over, "
                        f"keys/ and app/data/ preserved)")
+        _set_progress(state="done")
         shutil.rmtree(tmp, ignore_errors=True)
         return True
     except Exception as exc:
         error("update", f"Install failed (nothing may have changed): {exc}")
+        _set_progress(state="error")
         return False
 
 
@@ -231,19 +310,17 @@ def install_setup() -> bool:
 
     try:
         info("update", f"Downloading setup v{remote} ...")
-        resp = requests.get(setup_url, timeout=300, stream=True)
-        resp.raise_for_status()
         tmp = Path(tempfile.mkdtemp(prefix="memo-ai-update-"))
         setup_path = tmp / "MemoAI-Setup.exe"
-        sha = hashlib.sha256()
-        with open(setup_path, "wb") as f:
-            for chunk in resp.iter_content(1024 * 64):
-                if chunk:
-                    sha.update(chunk)
-                    f.write(chunk)
+        got_sha = _download_file(setup_url, setup_path, remote, timeout=300)
+        if got_sha is None:
+            _set_progress(state="error")
+            shutil.rmtree(tmp, ignore_errors=True)
+            return False
         if expected_sha:
-            if sha.hexdigest() != expected_sha:
+            if got_sha != expected_sha:
                 error("update", "Setup SHA-256 mismatch - update ABORTED")
+                _set_progress(state="error")
                 shutil.rmtree(tmp, ignore_errors=True)
                 return False
             info("update", "Setup SHA-256 verified")
@@ -251,6 +328,7 @@ def install_setup() -> bool:
             warn("update", "Manifest has no 'setup_sha256' - installing "
                            "the setup downloaded over HTTPS from the "
                            "official releases page without a hash check")
+        _set_progress(state="done")
         app_exe = BASE_DIR / "Memo AI.exe"
         bat = tmp / "run-setup.bat"
         bat.write_text(
@@ -268,4 +346,5 @@ def install_setup() -> bool:
         return True
     except Exception as exc:
         error("update", f"Setup install failed (nothing may have changed): {exc}")
+        _set_progress(state="error")
         return False

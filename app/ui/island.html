@@ -5,12 +5,11 @@
 <title>Memo AI Island</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  /* v1.3.0 CHROMA-KEY (replaces the v1.2 "transparent" attempt - see
-     main.py): the page background is pure magenta #FF00FF. Windows
-     itself removes that exact color from the window (Win32 layered
-     window, LWA_COLORKEY), so only the pill is visible - no rectangle.
-     Magenta appears NOWHERE in the UI, so nothing else gets keyed out. */
-  html, body { background: #FF00FF; background-color: #FF00FF; overflow: hidden; }
+  /* v1.3.1 WINDOW REGION (replaces the v1.3.0 chroma-key - see main.py):
+     the window is clipped to the pill's rounded-rect shape by Win32
+     (SetWindowRgn), so there is no box of any color around it. The page
+     background is transparent; the pill div is 100% of the window. */
+  html, body { background: transparent; background-color: transparent; overflow: hidden; }
   body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
   /* Small pill, like a phone Dynamic Island - NOT a wide rectangle.
      v1.2: backdrop-filter REMOVED - on some WebView2 builds it forces the
@@ -70,14 +69,13 @@
     <button class="mic" id="mic" title="تحدث">🎙️</button>
   </div>
 <script>
-  // v1.3.0 CHROMA-KEY: the page background is pure magenta #FF00FF and
-  // Windows removes that exact color from the window (Win32 layered
-  // window, LWA_COLORKEY - applied by main.py). The old "transparent"
-  // approach is DEAD: pywebview on Windows only makes the WebView2
-  // control transparent INSIDE itself - the WinForms window stays
-  // opaque and transparent pixels render as a black rectangle.
-  document.documentElement.style.backgroundColor = "#FF00FF";
-  document.body.style.backgroundColor = "#FF00FF";
+  // v1.3.1 WINDOW REGION: the window is clipped to the pill shape by
+  // Win32 (SetWindowRgn, see main.py + winshape.py). The old chroma-key
+  // (magenta page + layered window) is DELETED: it left the magenta box
+  // visible AND made the whole window click-through, so the pill click
+  // died. The page background is transparent now.
+  document.documentElement.style.backgroundColor = "transparent";
+  document.body.style.backgroundColor = "transparent";
 
   // v1.2.2: report the browser engine to the diagnostics log, so we know
   // for sure whether the windows are drawn by WebView2 (UA has "Edg/")
@@ -163,7 +161,19 @@
     goActive();
   }
 
+  // v1.3.1 CLICK INSTRUMENTATION: the v1.3.0 regression was a click
+  // that never reached the page at all (no log line, no error). Log the
+  // pointerdown + the click itself, so the diagnostics log proves the
+  // pill receives input - or proves it does not.
+  function logClick(msg) {
+    try {
+      const a = (window.pywebview && window.pywebview.api) || null;
+      if (a && a.log_js) a.log_js(msg);
+    } catch (e) {}
+  }
+  $("island").addEventListener("pointerdown", () => logClick("Island pill pointerdown"));
   $("island").addEventListener("click", () => {
+    logClick("Island pill clicked - opening main window");
     if (window.pywebview) window.pywebview.api.open_main();
   });
   $("mic").addEventListener("click", async (e) => {

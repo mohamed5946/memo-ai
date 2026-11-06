@@ -22,6 +22,7 @@ const I18N = {
     language: "لغة الواجهة",
     greeting_toggle: "التحية الصباحية عند التشغيل (مع الطقس)",
     pet_toggle: "إظهار الحيوان الأليف على الشاشة",
+    autostart_toggle: "تشغيل Memo AI تلقائياً مع بدء ويندوز (يبدأ كجزيرة بس)",
     sec_voice: "الصوت — 4 أصوات",
     voice_output_on: "صوت المساعد شغال 🔊",
     voice_output_off: "صوت المساعد مقفول 🔇",
@@ -46,6 +47,12 @@ const I18N = {
     update_up_to_date: "إنت على أحدث نسخة ✅",
     update_available: "فيه تحديث جديد!",
     update_installing: "بيثبّت التحديث وبيعاد التشغيل...",
+    update_downloading: "بينزّل التحديث...",
+    update_downloaded: "نزل",
+    update_of: "من",
+    update_verifying: "بيتحقق من التحديث...",
+    update_done: "التحديث نزل وبيتثبّت — البرنامج هيعيد التشغيل...",
+    update_failed: "التحديث فشل — شوف السجل",
     update_error: "مقدرتش أتحقق من التحديثات — شوف السجل",
     confirm_install: "هينزّل التحديث ويثبّته ويعيد تشغيل البرنامج. كمّل؟",
     sec_about: "عن المطور",
@@ -78,6 +85,7 @@ const I18N = {
     language: "Interface language",
     greeting_toggle: "Morning greeting on startup (with weather)",
     pet_toggle: "Show the desktop pet",
+    autostart_toggle: "Start Memo AI automatically with Windows (island only)",
     sec_voice: "Voice — 4 voices",
     voice_output_on: "Assistant voice on 🔊",
     voice_output_off: "Assistant voice off 🔇",
@@ -102,6 +110,12 @@ const I18N = {
     update_up_to_date: "You're on the latest version ✅",
     update_available: "A new update is available!",
     update_installing: "Installing the update and restarting...",
+    update_downloading: "Downloading the update...",
+    update_downloaded: "downloaded",
+    update_of: "of",
+    update_verifying: "Verifying the update...",
+    update_done: "Update downloaded, installing — the app will restart...",
+    update_failed: "Update failed — see the log",
     update_error: "Couldn't check for updates — see the log",
     confirm_install: "This will download, install the update and restart the app. Continue?",
     sec_about: "About the developer",
@@ -318,6 +332,14 @@ function updateVoiceBtn() {
   btn.title = voiceOutput ? t("voice_output_on") : t("voice_output_off");
 }
 
+// v1.3.1: the 🐾 header button shows the pet state (dimmed when the
+// pet is hidden - it is hidden by default now, shown only on demand).
+function updatePetBtn(visible) {
+  const btn = $("pet-btn");
+  if (!btn) return;
+  btn.classList.toggle("muted", !visible);
+}
+
 async function toggleVoiceOutput() {
   const bridge = getApi();
   if (!bridge) return;
@@ -344,7 +366,10 @@ async function refreshStatus() {
       $("set-user-name").value = st.settings.user_name || "Mohamed";
       $("set-language").value = st.settings.language || "ar";
       $("set-greeting").checked = !!st.settings.greeting_enabled;
-      $("set-pet").checked = st.settings.pet_visible !== false;
+      $("set-pet").checked = st.settings.pet_visible === true;
+      // v1.3.1: autostart toggle (default ON) + pet button state.
+      $("set-autostart").checked = st.settings.autostart !== false;
+      updatePetBtn(st.settings.pet_visible === true);
       selectedVoice = st.settings.voice || "girl_warm";
       // v1.3.0 voice-output toggle (persisted; default ON).
       voiceOutput = st.settings.voice_output !== false;
@@ -399,6 +424,7 @@ function init() {
     if (!b) return;
     const res = await b.toggle_pet();
     $("set-pet").checked = !!res.visible;
+    updatePetBtn(!!res.visible);
   });
   $("settings-btn").addEventListener("click", () => {
     $("settings-modal").classList.add("open");
@@ -434,6 +460,7 @@ function init() {
       voice: selectedVoice,
       greeting_enabled: $("set-greeting").checked,
       pet_visible: $("set-pet").checked,
+      autostart: $("set-autostart").checked,
     };
     await b.save_settings(JSON.stringify(payload));
     LANG = payload.language;
@@ -480,6 +507,37 @@ function init() {
     if (!confirm(t("confirm_install"))) return;
     $("update-status").textContent = t("update_installing");
     try { await b.install_update(); } catch (e) { /* see the log */ }
+    // v1.3.1: the download used to run ~90s with zero feedback, so it
+    // looked dead. Poll the download progress and render the bar +
+    // "x MB / y MB (z%)" until the app restarts (or fails).
+    const bar = $("update-progress");
+    const fill = $("update-progress-fill");
+    const label = $("update-progress-label");
+    bar.style.display = "";
+    const fmtMB = (n) => (n / 1048576).toFixed(1);
+    const timer = setInterval(async () => {
+      try {
+        const p = await getApi().get_update_progress();
+        if (!p) return;
+        if (p.state === "downloading") {
+          const total = p.total ? " / " + fmtMB(p.total) + " MB" : "";
+          const pct = p.percent != null ? " (" + p.percent + "%)" : "";
+          label.textContent = t("update_downloading") + " " + fmtMB(p.downloaded) +
+            " MB" + total + pct;
+          fill.style.width = (p.percent != null ? p.percent : 0) + "%";
+        } else if (p.state === "verifying") {
+          label.textContent = t("update_verifying");
+          fill.style.width = "100%";
+        } else if (p.state === "done") {
+          label.textContent = t("update_done");
+          fill.style.width = "100%";
+          clearInterval(timer);
+        } else if (p.state === "error") {
+          label.textContent = t("update_failed");
+          clearInterval(timer);
+        }
+      } catch (e) { /* the app may restart mid-poll - that means success */ }
+    }, 500);
   });
   $("quit-btn").addEventListener("click", async () => {
     const b = getApi();

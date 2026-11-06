@@ -5,20 +5,20 @@
 <title>Memo AI Pet</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  /* v1.3.0 CHROMA-KEY (replaces the v1.2 "transparent" attempt - see
-     main.py): the page background is pure magenta #FF00FF. Windows
-     itself removes that exact color from the window (Win32 layered
-     window, LWA_COLORKEY), so only the cat is visible - no rectangle.
-     Magenta appears NOWHERE in the UI, so nothing else gets keyed out. */
-  html, body { background: #FF00FF; background-color: #FF00FF;
+  /* v1.3.1 WINDOW REGION (replaces the v1.3.0 chroma-key - see main.py):
+     the window is clipped to the cat's silhouette by Win32
+     (SetWindowRgn), so there is no box of any color around it. The page
+     background is near-black (matches the black cat) so that, if a
+     region ever failed, the fallback is dark - never magenta. */
+  html, body { background: #0A0A0A; background-color: #0A0A0A;
     overflow: hidden; width: 150px; height: 150px; }
   body { cursor: grab; touch-action: none; }
   body:active { cursor: grabbing; }
 
   /* The cat image itself is transparent (background cut out) - so the
      window shows ONLY the cat, no card, no white box, no circle frame. */
-  .pet { width: 150px; height: 150px; animation: bob 3.8s ease-in-out infinite; }
-  /* v1.3.0: the cat is black, so on a dark desktop it would be nearly
+  .pet { width: 150px; height: 150px; position: relative; animation: bob 3.8s ease-in-out infinite; }
+  /* v1.3.1: the cat is black, so on a dark desktop it would be nearly
      invisible once the window is truly transparent - a soft WHITE halo
      keeps it readable on any wallpaper (the dark drop shadow stays
      for depth). This is a visibility tweak, not a transparency fix. */
@@ -28,22 +28,29 @@
     -webkit-user-drag: none; user-select: none; pointer-events: none; }
   @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 
-  /* Hop arc while roaming: rise, then land with a squash. (Applied to the
-     img so it composes with the bob on the wrapper.) */
-  .pet img.hopping { animation: hop 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
-  @keyframes hop {
-    0%   { transform: translateY(0) scale(1, 1); }
-    35%  { transform: translateY(-20px) scale(0.96, 1.05); }
-    70%  { transform: translateY(2px) scale(1.06, 0.92); }
-    100% { transform: translateY(0) scale(1, 1); }
+  /* v1.3.1 RUN CYCLE: while roaming, the cat RUNS with visible legs
+     (6-frame sprite, assets/cat-run.png) instead of sliding like a
+     robot. The sprite is a 900x150 strip (6 frames of 150x150); the
+     cycle duration is set from JS to match the roam speed so the paws
+     never slide. Facing right by default; .flip faces left. */
+  .run { position: absolute; inset: 0; display: none; pointer-events: none;
+    background: url(assets/cat-run.png) 0 0 / 900px 150px no-repeat; }
+  .run.on { display: block;
+    animation: run-cycle var(--run-cycle, 0.45s) steps(6) infinite; }
+  .run.flip { transform: scaleX(-1); }
+  @keyframes run-cycle {
+    from { background-position-x: 0; }
+    to   { background-position-x: -900px; }
   }
 
-  /* Happy click reaction: joyful squash-and-stretch. */
+  /* Happy click reaction: joyful squash-and-stretch. (v1.3.1: the jump
+     is -6px, not -14px - the window region only dilates 7px, so a
+     bigger jump would clip the head mid-jump.) */
   .pet img.happy { animation: happy 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
   @keyframes happy {
     0%   { transform: scale(1, 1); }
     25%  { transform: scale(1.12, 0.85) translateY(3px); }
-    55%  { transform: scale(0.94, 1.1) translateY(-14px); }
+    55%  { transform: scale(0.94, 1.1) translateY(-6px); }
     75%  { transform: scale(1.05, 0.94) translateY(1px); }
     100% { transform: scale(1, 1); }
   }
@@ -81,20 +88,18 @@
 </style>
 </head>
 <body>
-  <div class="pet" id="pet"><img id="cat-img" src="assets/avatar-cat.png" alt="Memo pet"></div>
+  <div class="pet" id="pet"><img id="cat-img" src="assets/avatar-cat.png" alt="Memo pet"><div class="run" id="run-sprite"></div></div>
   <div class="ball" id="ball"></div>
   <div class="bubble" id="bubble">مياو! 🐾</div>
 <script>
   // Memo AI pet v1.2: roams by itself, reacts to clicks, plays with a ball
-  // when parked. v1.3.0 CHROMA-KEY: page background is pure magenta
-  // #FF00FF; Windows removes that exact color from the window (Win32
-  // layered window, LWA_COLORKEY - applied by main.py). The old
-  // "transparent" approach is DEAD: pywebview on Windows only makes
-  // the WebView2 control transparent INSIDE itself - the WinForms
-  // window stays opaque and transparent pixels render as a black
-  // rectangle.
-  document.documentElement.style.backgroundColor = "#FF00FF";
-  document.body.style.backgroundColor = "#FF00FF";
+  // when parked. v1.3.1 WINDOW REGION: the window is clipped to the
+  // cat's silhouette by Win32 (SetWindowRgn, see main.py + winshape.py).
+  // The old chroma-key (magenta page + layered window) is DELETED: it
+  // left the magenta box visible AND made the whole window click-through,
+  // so the cat click died. The page background is near-black now.
+  document.documentElement.style.backgroundColor = "#0A0A0A";
+  document.body.style.backgroundColor = "#0A0A0A";
 
   // v1.2.2: report the browser engine to the diagnostics log, so we know
   // for sure whether the windows are drawn by WebView2 (UA has "Edg/")
@@ -114,14 +119,36 @@
   const PET = 150, EDGE = 80;   // window size / park-detection distance (px)
   const pet = document.getElementById("pet");
   const img = document.getElementById("cat-img");
+  const runEl = document.getElementById("run-sprite");
   const ball = document.getElementById("ball");
   const bubble = document.getElementById("bubble");
 
   let dragging = false, moved = false, downX = 0, downY = 0, downT = 0;
   let parked = false, hopRAF = null, clickTimer = null;
   let roamTimer = null, pawTimer = null, lastMoveSent = 0;
+  let roaming = false;   // a roam move is in progress right now
 
   function api() { return (window.pywebview && window.pywebview.api) || null; }
+  function logJs(msg) {
+    try { const a = api(); if (a && a.log_js) a.log_js(msg); } catch (e) {}
+  }
+
+  // ---------- run cycle (v1.3.1) ----------
+  // While the window moves, the cat RUNS: the 6-frame sprite plays and
+  // the static image hides. When it stops, the static image returns.
+  // The cycle duration is synced to the roam speed (one full cycle per
+  // ~240px of ground) so the paws never slide.
+  function showRun(cycleSeconds, facingLeft) {
+    runEl.style.setProperty("--run-cycle",
+      Math.min(0.8, Math.max(0.25, cycleSeconds || 0.45)) + "s");
+    runEl.classList.toggle("flip", !!facingLeft);
+    runEl.classList.add("on");
+    img.style.visibility = "hidden";
+  }
+  function showStatic() {
+    runEl.classList.remove("on");
+    img.style.visibility = "";
+  }
 
   // ---------- parked state ----------
   function setParked(on, fromPython) {
@@ -160,11 +187,16 @@
     scheduleRoam();   // back to roaming right away
   }
 
-  // ---------- roaming: hop around the screen by itself ----------
+  // ---------- roaming: run around the screen by itself ----------
   function scheduleRoam() {
     clearTimeout(roamTimer);
     roamTimer = setTimeout(roamStep, 2000 + Math.random() * 2000);
   }
+  // Called from Python when the pet is shown again (v1.3.1: the pet
+  // starts hidden and roaming is skipped until the user shows it).
+  window.resumeRoaming = function () {
+    if (!parked && !dragging) scheduleRoam();
+  };
   function roamStep() {
     if (!dragging && !parked) {
       const maxX = Math.max(0, (window.screen.availWidth || 1920) - PET);
@@ -176,16 +208,21 @@
   function cancelHop() {
     if (hopRAF) cancelAnimationFrame(hopRAF);
     hopRAF = null;
-    img.classList.remove("hopping");
+    roaming = false;
+    showStatic();
   }
   function hopTo(tx, ty) {
     const sx = window.screenX, sy = window.screenY;
     const dx = tx - sx, dy = ty - sy;
     if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
     const dur = 650 + Math.min(500, Math.hypot(dx, dy) * 0.35);
+    // v1.3.1: run, don't hop - the sprite plays with a cycle synced to
+    // the ground speed (one full gallop cycle per ~240px), facing the
+    // direction of travel.
+    const speed = Math.hypot(dx, dy) / (dur / 1000);  // px per second
+    roaming = true;
+    showRun(240 / Math.max(200, speed), dx < 0);
     const t0 = performance.now();
-    img.classList.add("hopping");
-    setTimeout(() => img.classList.remove("hopping"), dur + 80);
     cancelAnimationFrame(hopRAF);
     function frame(now) {
       const p = Math.min(1, (now - t0) / dur);
@@ -196,25 +233,40 @@
         a.move_pet(Math.round(sx + dx * e), Math.round(sy + dy * e));
       }
       if (p < 1 && !dragging && !parked) hopRAF = requestAnimationFrame(frame);
-      else { hopRAF = null; img.classList.remove("hopping"); }
+      else { hopRAF = null; roaming = false; showStatic(); }
     }
     hopRAF = requestAnimationFrame(frame);
   }
 
   // ---------- happy click reaction ----------
   function happy() {
+    showStatic();   // the reaction plays on the still image
     img.classList.remove("happy");
     void img.offsetWidth;              // restart the animation
     img.classList.add("happy");
     setTimeout(() => img.classList.remove("happy"), 750);
     bubble.classList.add("show");
-    setTimeout(() => bubble.classList.remove("show"), 1500);
+    // v1.3.1: the window region includes the bubble zone only while the
+    // bubble is visible, so it is never clipped - and never leaves a
+    // dark patch behind when hidden.
+    const a0 = api();
+    if (a0 && a0.set_pet_bubble) a0.set_pet_bubble(true);
+    setTimeout(() => {
+      bubble.classList.remove("show");
+      const a1 = api();
+      if (a1 && a1.set_pet_bubble) a1.set_pet_bubble(false);
+      if (roaming) showRun(0.45, runEl.classList.contains("flip"));
+    }, 1500);
     const a = api();
     if (a) a.pet_interaction("click");
   }
 
   // ---------- pointer: drag vs click vs double-click ----------
   pet.addEventListener("pointerdown", (e) => {
+    // v1.3.1 CLICK INSTRUMENTATION: the v1.3.0 regression was a click
+    // that never reached the page at all. Log the pointerdown so the
+    // diagnostics log proves the pet receives input - or proves not.
+    logJs("Pet pointerdown");
     clearTimeout(clickTimer);          // a 2nd tap cancels the pending click
     dragging = true; moved = false;
     downX = e.clientX; downY = e.clientY; downT = Date.now();
@@ -254,12 +306,17 @@
 
   // ---------- startup ----------
   // Restore the parked state saved in Settings (pet starts in the corner).
+  // v1.3.1: the pet starts HIDDEN by default - roaming only starts when
+  // it is actually visible (Python calls resumeRoaming() when shown).
   const a0 = api();
   if (a0 && a0.get_settings) {
-    a0.get_settings().then(s => { if (s && s.pet_parked) setParked(true, true); })
-      .catch(() => {});
+    a0.get_settings().then(s => {
+      if (s && s.pet_parked) setParked(true, true);
+      if (s && s.pet_visible !== false) setTimeout(scheduleRoam, 1500);
+    }).catch(() => { setTimeout(scheduleRoam, 1500); });
+  } else {
+    setTimeout(scheduleRoam, 1500);      // let the window settle, then start roaming
   }
-  setTimeout(scheduleRoam, 1500);      // let the window settle, then start hopping
 </script>
 </body>
 </html>

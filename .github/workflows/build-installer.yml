@@ -65,6 +65,16 @@ jobs:
           if (-not (Test-Path "dist\Memo AI\Memo AI.exe")) { throw "Memo AI.exe was not produced" }
           if (-not (Test-Path "dist\Memo AI\_internal\app\ui\index.html")) { throw "Bundled UI is missing from dist (expected under _internal)" }
           if (-not (Test-Path "dist\Memo AI\_internal\webview\js\api.js")) { throw "webview/js/api.js missing from bundle — window.pywebview would never exist" }
+          if (-not (Test-Path "dist\Memo AI\_internal\app\ui\assets\cat-run.png")) { throw "cat-run.png missing from bundle — the pet run animation would have no sprite" }
+          # v1.3.1: the chroma-key is DELETED for good - it left the magenta
+          # box visible AND made both windows fully click-through. Fail the
+          # build loudly if the color or the mechanism ever comes back.
+          # (The patterns match code only: the word appears in history
+          # comments, the hex/call must never appear anywhere in code.)
+          $badColor = Select-String -Path app\*.py, app\ui\*.html, app\ui\*.js, app\ui\*.css -Pattern "#FF00FF" -SimpleMatch
+          if ($badColor) { throw "Chroma-key color #FF00FF found in: $($badColor.Path -join ', ') - it is deleted in v1.3.1" }
+          $badApi = Select-String -Path app\*.py -Pattern "SetLayeredWindowAttributes\("
+          if ($badApi) { throw "SetLayeredWindowAttributes call found in: $($badApi.Path -join ', ') - it is deleted in v1.3.1" }
 
       - name: Build source zip
         shell: pwsh

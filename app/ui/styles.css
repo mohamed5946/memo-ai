@@ -250,6 +250,19 @@ header .spacer { flex: 1; }
 }
 .log-box .lv-error { color: #f87171; }
 .log-box .lv-warn { color: #fbbf24; }
+
+/* v1.3.1 update progress bar (download size + %). */
+.update-progress { margin-top: 12px; }
+.update-progress-track {
+  height: 10px; border-radius: 999px; overflow: hidden;
+  background: rgba(255,255,255,0.08); border: 1px solid var(--border);
+}
+.update-progress-fill {
+  height: 100%; width: 0%; border-radius: 999px;
+  background: linear-gradient(90deg, #d4af6a, #f0d48a);
+  transition: width 0.3s ease;
+}
+.update-progress-label { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
 .about-box { background: var(--glass); border: 1px solid var(--border); border-radius: 16px; padding: 14px; font-size: 14.5px; line-height: 2; }
 .about-box b { color: var(--gold); }
 .todo-note { font-size: 12.5px; color: var(--muted); background: var(--gold-soft);

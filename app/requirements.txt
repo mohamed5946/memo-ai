@@ -8,3 +8,4 @@ requests>=2.31
 sounddevice>=0.4.6
 faster-whisper>=1.0
 numpy>=1.26
+Pillow>=10  # v1.3.1: pet window region from the cat PNG's alpha channel
