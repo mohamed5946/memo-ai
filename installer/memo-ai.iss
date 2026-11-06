@@ -44,7 +44,10 @@ Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checked
+; Tasks are checked by default in Inno Setup (there is no "checked" flag —
+; only "unchecked" exists to opt out), so the desktop shortcut is on
+; unless the user clears it.
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
 ; The whole PyInstaller one-folder output (exe + _internal + app\).
