@@ -83,6 +83,21 @@
   document.documentElement.style.backgroundColor = "transparent";
   document.body.style.backgroundColor = "transparent";
 
+  // v1.2.2: report the browser engine to the diagnostics log, so we know
+  // for sure whether the windows are drawn by WebView2 (UA has "Edg/")
+  // or by the old MSHTML engine (UA has "MSIE"/"Trident/") — the latter
+  // cannot do transparency and paints the dark rectangle.
+  let _uaLogged = false;
+  function logEngine() {
+    if (_uaLogged) return;
+    const a = (window.pywebview && window.pywebview.api) || null;
+    if (!a || !a.log_js) return;
+    _uaLogged = true;
+    try { a.log_js("UA: " + navigator.userAgent); } catch (e) {}
+  }
+  logEngine();
+  window.addEventListener("pywebviewready", logEngine);
+
   const PET = 150, EDGE = 80;   // window size / park-detection distance (px)
   const pet = document.getElementById("pet");
   const img = document.getElementById("cat-img");

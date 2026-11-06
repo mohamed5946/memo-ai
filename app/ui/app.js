@@ -117,6 +117,17 @@ function t(key) { return (I18N[LANG] && I18N[LANG][key]) || I18N.ar[key] || key;
 function hasApi() { return !!(window.pywebview && window.pywebview.api); }
 function $(id) { return document.getElementById(id); }
 
+// v1.2.2: report the browser engine to the diagnostics log, so we know
+// for sure whether the windows are drawn by WebView2 (UA has "Edg/")
+// or by the old MSHTML engine (UA has "MSIE"/"Trident/") — the latter
+// cannot do transparency and paints the dark rectangle.
+let _uaLogged = false;
+function logEngine() {
+  if (_uaLogged || !hasApi() || !api || !api.log_js) return;
+  _uaLogged = true;
+  try { api.log_js("UA: " + navigator.userAgent); } catch (e) {}
+}
+
 function applyLang() {
   document.documentElement.lang = LANG;
   document.documentElement.dir = LANG === "ar" ? "rtl" : "ltr";
@@ -252,6 +263,8 @@ async function refreshLogs() {
 
 function init() {
   api = hasApi() ? window.pywebview.api : null;
+  logEngine();
+  window.addEventListener("pywebviewready", logEngine);
   if (!api) {
     addMsg(t("no_bridge"), "ai", "Memo AI");
   } else {

@@ -43,6 +43,20 @@
 # WebView2 runtime present/updated. The pet now also roams, reacts to
 # clicks, and plays with a ball when parked (see pet.html).
 
+# v1.2.2 SINGLE INSTANCE + WEBVIEW2 (2026-11-06): field evidence showed
+# TWO pet cats on screen = two app instances (old zip + new installed
+# version) running at once, and the pet STILL had a dark rectangle. The
+# rectangle is the MSHTML fallback: pywebview only gets transparency on
+# the EdgeChromium backend (needs .NET 4.6.2+ AND a WebView2 runtime
+# >= 86.0.622.0 registered under EdgeUpdate Clients); without it the
+# window paints the opaque background_color (dark navy #0B0F16 in v1.2).
+# Fixes in v1.2.2: (1) a Windows named mutex ("Local\\MemoAI-...") so a
+# second launch exits quietly instead of opening a second island + pet;
+# (2) the installer installs the WebView2 runtime when missing (see
+# installer/memo-ai.iss); (3) every UI page reports its user agent to
+# the diagnostics log (Api.log_js) so the log proves which engine draws
+# the windows (WebView2 UA has "Edg/"; MSHTML UA has "MSIE"/"Trident/").
+
 import ctypes
 import json
 import subprocess
@@ -73,11 +87,44 @@ import speak
 import updater
 import weather
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
 PET_SIZE = 150
+
+# Single-instance mutex (Windows named mutex, no admin needed).
+_MUTEX_NAME = "Local\\MemoAI-SingleInstance"
+_mutex_handle = None
+
+
+def _acquire_single_instance_lock() -> bool:
+    """Only one Memo AI may run at a time.
+
+    The zip install and the setup.exe install are the same app, so a
+    second launch (from either location) must exit quietly instead of
+    opening a second island + second pet. Returns True if this process
+    owns the lock. Any failure to create the mutex is logged and treated
+    as "lock acquired" so a broken check can never block startup.
+    """
+    global _mutex_handle
+    if sys.platform != "win32":
+        return True
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.CreateMutexW(None, False, _MUTEX_NAME)
+        if not handle:
+            error("app", "Could not create single-instance mutex "
+                         "(continuing without the lock)")
+            return True
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+            kernel32.CloseHandle(handle)
+            return False
+        _mutex_handle = handle
+        return True
+    except Exception as exc:
+        error("app", f"Single-instance check failed ({exc}) - continuing")
+        return True
 
 # Module-level app reference. Deliberately NOT an attribute of Api:
 # pywebview introspects the js_api instance, so anything stored on Api
@@ -275,6 +322,17 @@ class Api:
         return {"ok": True}
 
     # -- logs --------------------------------------------------------------
+    def log_js(self, message):
+        # Browser-engine probe: the UI pages send navigator.userAgent on
+        # load so the log shows which engine draws the windows (WebView2
+        # UA has "Edg/" + "Chrome/"; MSHTML UA has "MSIE"/"Trident/").
+        # A user-agent string carries no secrets.
+        try:
+            info("ui", f"JS: {str(message)[:500]}")
+        except Exception:
+            pass
+        return {"ok": True}
+
     def get_logs(self):
         return {"logs": read_recent(200)}
 
@@ -415,6 +473,15 @@ class MemoApp:
                 self.main_window.destroy()
         except Exception:
             pass
+        # Release the single-instance lock (the OS would do it on exit
+        # anyway; closing explicitly keeps the intent clear).
+        global _mutex_handle
+        try:
+            if _mutex_handle:
+                ctypes.windll.kernel32.CloseHandle(_mutex_handle)
+                _mutex_handle = None
+        except Exception:
+            pass
 
     # -- startup -------------------------------------------------------------
     def _on_main_closing(self):
@@ -426,6 +493,16 @@ class MemoApp:
 
     def run(self):
         info("app", f"Memo AI v{VERSION} starting")
+        try:
+            pv = getattr(webview, "__version__", "unknown")
+        except Exception:
+            pv = "unknown"
+        info("app", f"pywebview version: {pv}")
+        # One instance only: a second launch (zip or installed) exits
+        # quietly BEFORE any window is created.
+        if not _acquire_single_instance_lock():
+            info("app", "Another Memo AI instance is already running - exiting")
+            return
         sw, sh = screen_size()
         island_x = max(0, (sw - ISLAND_W) // 2)
 
