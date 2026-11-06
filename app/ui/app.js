@@ -57,8 +57,9 @@ const I18N = {
     speaking: "بيتكلم...",
     hello: "أهلاً يا محمد! أنا Memo — اكتب أو اضغط المايك وتكلم.",
     heard_prefix: "سمعتك: ",
-    no_bridge: "الواجهة شغالة في وضع المعاينة (من غير بايثون) — شغّل python app/main.py للاستخدام الكامل.",
+    no_bridge: "مش قادر أوصل لمحرك البرنامج — اقفل البرنامج وافتحه تاني، ولو المشكلة فضلت ثبّت WebView2",
     bridge_not_ready: "البرنامج لسه بيجهز — استنى ثانية ودوس تاني",
+    bridge_files_missing: "ملفات محرك البرنامج ناقصة — حدّث البرنامج أو أعد تثبيته",
     log_unavailable: "السجل مش متاح دلوقتي",
     copied: "اتنسخ السجل ✅",
     saved: "اتحفظت الإعدادات ✅",
@@ -110,8 +111,9 @@ const I18N = {
     speaking: "Speaking...",
     hello: "Hi Mohamed! I'm Memo — type or tap the mic and talk.",
     heard_prefix: "Heard: ",
-    no_bridge: "Preview mode (no Python backend) — run python app/main.py for the full app.",
+    no_bridge: "Can't reach the app engine — restart the app, and if it persists, install WebView2.",
     bridge_not_ready: "The app is still starting — wait a second and tap again",
+    bridge_files_missing: "App engine files are missing — update or reinstall the app",
     log_unavailable: "Log isn't available right now",
     copied: "Log copied ✅",
     saved: "Settings saved ✅",
@@ -255,6 +257,7 @@ async function refreshStatus() {
     const pill = $("net-pill");
     pill.classList.toggle("offline", !st.online);
     $("net-text").textContent = st.online ? t("online") : t("offline");
+    if (st.bridge_files_missing) $("status").textContent = t("bridge_files_missing");
     if (st.settings) {
       $("set-ai-name").value = st.settings.ai_name || "Memo";
       $("set-user-name").value = st.settings.user_name || "Mohamed";
@@ -289,6 +292,9 @@ function init() {
   // The bridge may arrive late (MSHTML injects it after DOMContentLoaded):
   // re-probe then, and populate the UI as soon as it is available.
   window.addEventListener("pywebviewready", () => { logEngine(); refreshStatus(); });
+  // If the bridge still hasn't arrived a few seconds in, say so visibly
+  // in the status line instead of leaving dead buttons with no explanation.
+  setTimeout(() => { if (!getApi()) $("status").textContent = t("no_bridge"); }, 3000);
   if (getApi()) {
     addMsg(t("hello"), "ai", "Memo AI");
     refreshStatus();

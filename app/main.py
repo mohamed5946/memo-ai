@@ -43,6 +43,14 @@
 # WebView2 runtime present/updated. The pet now also roams, reacts to
 # clicks, and plays with a ball when parked (see pet.html).
 
+# v1.2.5 BRIDGE FILES (2026-11-06): a second, deeper cause of the dead
+# buttons — pywebview builds window.pywebview from its js/ files, and if
+# they are missing from the frozen bundle the bridge never exists at all
+# (silently, inside the .NET event handler). The spec now pins webview/js
+# explicitly, main.py self-checks for api.js at startup and logs a LOUD
+# bridge error if missing, and the no_bridge message tells the user to
+# restart / install WebView2 instead of calling it "preview mode".
+#
 # v1.2.3 IDLE/ACTIVE ISLAND (2026-11-06): the user wants the island
 # SMALL when idle (cat + mic only, ~190x52) and growing GRADUALLY
 # (~0.45s ease) when active (greeting / listening / reply), then
@@ -56,6 +64,7 @@
 
 import ctypes
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -84,7 +93,7 @@ import speak
 import updater
 import weather
 
-VERSION = "1.2.4"
+VERSION = "1.2.5"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -94,6 +103,42 @@ PET_SIZE = 150
 # Single-instance mutex (Windows named mutex, no admin needed).
 _MUTEX_NAME = "Local\\MemoAI-SingleInstance"
 _mutex_handle = None
+
+# Result of the startup bridge-files self-check (None = not run yet).
+_BRIDGE_FILES_OK = None
+
+
+def _check_bridge_files() -> bool:
+    """Loud startup self-check: pywebview builds window.pywebview from its
+    js/ files (util.load_js_files -> get_js_dir -> <webview>/js/api.js).
+    If they are missing from the bundle, the bridge never exists and every
+    button silently does nothing — the exact failure the user reported as
+    preview mode + dead buttons. Never fail silently: log a LOUD error.
+    Returns True when api.js is present. A failure here never blocks
+    startup (the app still runs; the log + the UI message say why the
+    buttons are dead)."""
+    global _BRIDGE_FILES_OK
+    js_dir = ""
+    try:
+        from webview import util as _wv_util
+        js_dir = _wv_util.get_js_dir()
+    except Exception:
+        try:
+            import webview as _wv
+            js_dir = os.path.join(os.path.dirname(_wv.__file__), "js")
+        except Exception:
+            js_dir = ""
+    api_js = os.path.join(js_dir, "api.js") if js_dir else ""
+    if not js_dir or not os.path.isfile(api_js):
+        error("bridge", "pywebview JS bridge files MISSING from bundle "
+              f"(js dir: {js_dir or 'unknown'}) — window.pywebview will "
+              "never exist, every button will be dead. Rebuild with the "
+              "webview/js datas entry in installer/memo-ai.spec.")
+        _BRIDGE_FILES_OK = False
+        return False
+    info("bridge", f"pywebview JS bridge files present ({js_dir})")
+    _BRIDGE_FILES_OK = True
+    return True
 
 
 def _acquire_single_instance_lock() -> bool:
@@ -151,6 +196,7 @@ class Api:
         return {
             "online": online,
             "version": VERSION,
+            "bridge_files_missing": _BRIDGE_FILES_OK is False,
             "keys": keys_status(),
             "settings": {k: v for k, v in _APP.settings.items()
                          if k != "owner_code"},
@@ -492,6 +538,8 @@ class MemoApp:
         except Exception:
             pv = "unknown"
         info("app", f"pywebview version: {pv}")
+        # Bridge-files self-check (v1.2.5): loud log if api.js is missing.
+        _check_bridge_files()
         # One instance only: a second launch (zip or installed) exits
         # quietly BEFORE any window is created.
         if not _acquire_single_instance_lock():

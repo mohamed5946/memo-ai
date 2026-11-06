@@ -26,6 +26,26 @@ datas = [
     (os.path.join(APP, "ui"), "app/ui"),
     (os.path.join(APP, "data"), "app/data"),
 ]
+
+# v1.2.5: EXPLICIT webview/js bridge files. collect_all("webview") SHOULD
+# include them, but the whole window.pywebview bridge (and therefore every
+# button in the app) silently never exists if they are missing from the
+# frozen bundle — pywebview builds the bridge from <webview package>/js
+# (util.load_js_files -> get_js_dir), and a missing dir fails silently
+# inside the .NET event handler. Pin the files down explicitly and fail
+# the build loudly if they are not where the installed pywebview keeps
+# them. (find_spec does not execute the package, so this is safe at
+# spec-parse time.)
+import importlib.util
+_webview_spec = importlib.util.find_spec("webview")
+if _webview_spec is None or not _webview_spec.origin:
+    raise RuntimeError("pywebview package not found — cannot locate webview/js")
+_webview_js_dir = os.path.join(os.path.dirname(_webview_spec.origin), "js")
+if not os.path.isfile(os.path.join(_webview_js_dir, "api.js")):
+    raise RuntimeError(
+        "webview/js/api.js not found under " + _webview_js_dir +
+        " — the frozen app would have no window.pywebview bridge")
+datas.append((_webview_js_dir, "webview/js"))
 binaries = []
 hiddenimports = [
     "clr",  # pythonnet — pywebview's WinForms/EdgeChromium backend on Windows

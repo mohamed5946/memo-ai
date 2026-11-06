@@ -64,6 +64,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
           if (-not (Test-Path "dist\Memo AI\Memo AI.exe")) { throw "Memo AI.exe was not produced" }
           if (-not (Test-Path "dist\Memo AI\_internal\app\ui\index.html")) { throw "Bundled UI is missing from dist (expected under _internal)" }
+          if (-not (Test-Path "dist\Memo AI\_internal\webview\js\api.js")) { throw "webview/js/api.js missing from bundle — window.pywebview would never exist" }
 
       - name: Build source zip
         shell: pwsh
