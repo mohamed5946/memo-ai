@@ -1,8 +1,8 @@
 {
   "notes": "جسر بايثون مضمون في المثبّت + فحص ملفات المحرك عند التشغيل + رسالة واضحة لو الاتصال مش موجود — الشات والمايك والتحديثات والحفظ بيشتغلوا حتى قبل ما WebView2 يتثبّت.",
-  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.3/MemoAI-Setup-1.2.3.exe",
-  "sha256": "43645f8e83158f3d27393d20d80b0a82c6e36612905dc62a4c3aa4a6554c9706",
-  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.3/memo-ai-v1.2.3.zip",
+  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.5/MemoAI-Setup-1.2.5.exe",
+  "sha256": "ba106f9bd24bcd3566f84a1c2d6de88f8cafb34134968874aa4180186d11e84a",
+  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.5/memo-ai-v1.2.5.zip",
   "version": "1.2.5",
-  "setup_sha256": "6876b4ce18790a79a68e8fe3589d4ab28739a10aee17c85ff641d3ff77ac664c"
+  "setup_sha256": "72cb4968747759a09256d9cb99b67b093487dbc41bd104aa3276e9ea807f9315"
 }
