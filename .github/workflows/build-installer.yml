@@ -1,0 +1,145 @@
+# Memo AI — build the Windows installer + source zip, attach both to a release.
+#
+# Triggers: a version tag push (v*) or a manual dispatch.
+# Runs on windows-latest: PyInstaller (one-folder exe) -> Inno Setup
+# (setup.exe) -> source zip -> GitHub release. Every step fails loudly;
+# a silent skip is a bug, not a pass.
+#
+# After the release is created, version.json on main is updated with the
+# release URLs + SHA-256 hashes (zip + setup) and pushed back, so the
+# in-app updater's manifest always matches the real release files.
+
+name: Build Memo AI installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $tag = "${{ github.ref_name }}"
+          } else {
+            $v = (Get-Content version.json | ConvertFrom-Json).version
+            $tag = "v$v"
+          }
+          "MEMO_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "MEMO_VERSION=$($tag.TrimStart('v'))" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Building $tag"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw "pip install -r app/requirements.txt failed" }
+          pip install pyinstaller pyinstaller-hooks-contrib
+          if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed" }
+
+      - name: Build exe with PyInstaller
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          pyinstaller installer/memo-ai.spec
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+          if (-not (Test-Path "dist\Memo AI\Memo AI.exe")) { throw "Memo AI.exe was not produced" }
+          if (-not (Test-Path "dist\Memo AI\app\ui\index.html")) { throw "Bundled UI is missing from dist" }
+          if (-not (Test-Path "dist\Memo AI\keys\README.txt")) { throw "Bundled keys folder is missing from dist" }
+
+      - name: Build source zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python installer/build_source_zip.py $env:MEMO_VERSION release
+          if ($LASTEXITCODE -ne 0) { throw "Source zip build failed" }
+          if (-not (Test-Path "release\memo-ai-v$env:MEMO_VERSION.zip")) { throw "Source zip was not produced" }
+
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "ISCC.exe" }
+          & $iscc /DAppVersion=$env:MEMO_VERSION installer\memo-ai.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed" }
+          if (-not (Test-Path "release\MemoAI-Setup-$env:MEMO_VERSION.exe")) { throw "setup.exe was not produced" }
+
+      - name: Upload setup.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MemoAI-Setup-${{ github.ref_name }}
+          path: release/MemoAI-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Create or update GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:MEMO_TAG
+          $setup = (Get-ChildItem release\MemoAI-Setup-*.exe | Select-Object -First 1).FullName
+          $zip = (Get-ChildItem release\memo-ai-*.zip | Select-Object -First 1).FullName
+          if (-not $setup -or -not $zip) { throw "Release files missing" }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $setup $zip --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+          } else {
+            gh release create $tag $setup $zip --title "Memo AI $tag" --notes "Memo AI $tag — ثبّت من setup.exe زي أي برنامج ويندوز، أو استخدم ملف الـ zip زي قبل كده."
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          }
+
+      # The manifest (raw version.json on main) must match the real release
+      # files, so update it with the built files' URLs + hashes and push it
+      # back to main. Runs only for tag builds.
+      - name: Update version.json manifest on main
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:MEMO_TAG
+          $ver = $env:MEMO_VERSION
+          $setup = (Get-ChildItem release\MemoAI-Setup-*.exe | Select-Object -First 1).FullName
+          $zip = (Get-ChildItem release\memo-ai-*.zip | Select-Object -First 1).FullName
+          $setupSha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          $zipSha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          git fetch origin main
+          git checkout main
+          python -c "import json; p='version.json'; m=json.load(open(p, encoding='utf-8')); m.update({'version':'$ver','url':'https://github.com/mohamed5946/memo-ai/releases/download/$tag/memo-ai-v$ver.zip','sha256':'$zipSha','setup_url':'https://github.com/mohamed5946/memo-ai/releases/download/$tag/MemoAI-Setup-$ver.exe','setup_sha256':'$setupSha'}); json.dump(m, open(p,'w',encoding='utf-8'), ensure_ascii=False, indent=2)"
+          if ($LASTEXITCODE -ne 0) { throw "version.json update failed" }
+          git config user.name "Memo AI builder"
+          git config user.email "memo-ai-builder@users.noreply.github.com"
+          git add version.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "version.json: point manifest at $tag (zip + setup hashes)"
+            git push origin main
+            if ($LASTEXITCODE -ne 0) { throw "git push of version.json failed" }
+          } else {
+            Write-Host "version.json already up to date"
+          }

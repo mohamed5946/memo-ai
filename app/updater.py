@@ -1,4 +1,4 @@
-# Memo AI - In-app updater (v1.2)
+# Memo AI - In-app updater (v1.2, setup flow added in v1.2.1)
 # Updates arrive INSIDE the app: Settings -> "التحقق من التحديثات".
 # Never forced, only on the user's tap, never mid-task.
 #
@@ -7,27 +7,33 @@
 #      If the URL is empty, updates are simply not configured yet.
 #   2. The manifest is a small JSON file hosted somewhere stable:
 #        {"version": "1.3.0", "url": "https://.../memo-ai-v1.3.zip",
-#         "sha256": "<hex>", "notes": "short changelog in Arabic"}
-#   3. install_update() re-fetches the manifest, downloads the zip,
-#      verifies its SHA-256, extracts it over the app folder, then the
-#      app restarts itself (see Api.install_update in main.py).
-#   4. NEVER touched: keys/ (your API keys) and app/data/ (settings,
+#         "sha256": "<hex>", "notes": "short changelog in Arabic",
+#         "setup_url": "https://.../MemoAI-Setup-1.3.0.exe",   (optional)
+#         "setup_sha256": "<hex>"}                            (optional)
+#   3. Zip install (not frozen): install_update() re-fetches the manifest,
+#      downloads the zip, verifies its SHA-256, extracts it over the app
+#      folder, then the app restarts itself (see Api.install_update).
+#   4. Installed exe (frozen): a source zip cannot replace the frozen exe,
+#      so install_setup() downloads the new setup.exe instead, verifies its
+#      SHA-256 when the manifest carries one, then runs it silently
+#      (/VERYSILENT) after a 3-second delay and relaunches the app.
+#      The installer itself never deletes keys/ (see memo-ai.iss).
+#   5. NEVER touched: keys/ (your API keys) and app/data/ (settings,
 #      rules, Q&A, logs, and this config file itself).
-# No real manifest URL is shipped - it stays configurable in update.json
-# until a stable release host is chosen.
 
 import hashlib
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
 import requests
 from logger import error, info, warn
+from settings_store import APP_DIR, BASE_DIR
 
-APP_DIR = Path(__file__).resolve().parent
-BASE_DIR = APP_DIR.parent          # the memo-ai folder
 CONFIG_PATH = APP_DIR / "data" / "update.json"
 
 # Top-level entries (and app/data as a whole) that an update must never touch.
@@ -94,10 +100,13 @@ def check_update() -> dict:
         info("update", f"Already on latest version (v{VERSION})")
         return {"status": "up_to_date", "current": VERSION}
     info("update", f"Update available: v{VERSION} -> v{remote}")
+    setup_url = str(manifest.get("setup_url", "") or "").strip()
+    kind = "setup" if (getattr(sys, "frozen", False) and setup_url) else "zip"
     return {"status": "update_available", "current": VERSION,
             "version": remote, "notes": str(manifest.get("notes", "")),
             "url": str(manifest.get("url", "")),
-            "sha256": str(manifest.get("sha256", ""))}
+            "sha256": str(manifest.get("sha256", "")),
+            "setup_url": setup_url, "kind": kind}
 
 
 def _safe_extract(zip_path: Path, dest: Path):
@@ -188,4 +197,75 @@ def install_update() -> bool:
         return True
     except Exception as exc:
         error("update", f"Install failed (nothing may have changed): {exc}")
+        return False
+
+
+def install_setup() -> bool:
+    """Frozen installs only: download the new setup.exe and run it silently.
+
+    A source zip cannot replace the frozen exe, so the update comes as the
+    installer itself. The installer overwrites the program files but never
+    deletes keys/ (see installer/memo-ai.iss). Returns True when the
+    installer was launched; the caller (Api.install_update) then quits the
+    app so the installer can replace the running files. A small .bat waits
+    3 seconds (app exit), runs the setup silently, then relaunches the app.
+    """
+    if not getattr(sys, "frozen", False):
+        error("update", "install_setup called on a non-frozen install")
+        return False
+    manifest = _fetch_manifest()
+    if manifest is None:
+        return False
+    from main import VERSION
+    remote = str(manifest.get("version", ""))
+    if _version_tuple(remote) <= _version_tuple(VERSION):
+        info("update", "Install aborted: already on latest version")
+        return False
+    setup_url = str(manifest.get("setup_url", "") or "").strip()
+    if not setup_url:
+        error("update", "Manifest has no 'setup_url' - frozen installs "
+                        "cannot update from a source zip; download the "
+                        "setup.exe from the releases page instead")
+        return False
+    expected_sha = str(manifest.get("setup_sha256", "") or "").strip().lower()
+
+    try:
+        info("update", f"Downloading setup v{remote} ...")
+        resp = requests.get(setup_url, timeout=300, stream=True)
+        resp.raise_for_status()
+        tmp = Path(tempfile.mkdtemp(prefix="memo-ai-update-"))
+        setup_path = tmp / "MemoAI-Setup.exe"
+        sha = hashlib.sha256()
+        with open(setup_path, "wb") as f:
+            for chunk in resp.iter_content(1024 * 64):
+                if chunk:
+                    sha.update(chunk)
+                    f.write(chunk)
+        if expected_sha:
+            if sha.hexdigest() != expected_sha:
+                error("update", "Setup SHA-256 mismatch - update ABORTED")
+                shutil.rmtree(tmp, ignore_errors=True)
+                return False
+            info("update", "Setup SHA-256 verified")
+        else:
+            warn("update", "Manifest has no 'setup_sha256' - installing "
+                           "the setup downloaded over HTTPS from the "
+                           "official releases page without a hash check")
+        app_exe = BASE_DIR / "Memo AI.exe"
+        bat = tmp / "run-setup.bat"
+        bat.write_text(
+            "@echo off\r\n"
+            "timeout /t 3 /nobreak >nul\r\n"
+            f'"{setup_path}" /VERYSILENT /NORESTART\r\n'
+            f'start "" "{app_exe}"\r\n',
+            encoding="utf-8",
+        )
+        info("update", f"Launching silent setup ({setup_path}) - app will quit now")
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = 0x00000008 | 0x08000000  # DETACHED + NO_WINDOW
+        subprocess.Popen(["cmd", "/c", str(bat)], close_fds=True, **kwargs)
+        return True
+    except Exception as exc:
+        error("update", f"Setup install failed (nothing may have changed): {exc}")
         return False

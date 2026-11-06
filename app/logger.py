@@ -7,12 +7,16 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-LOG_DIR = Path(__file__).resolve().parent / "data" / "logs"
+# LOG_DIR is resolved lazily (see _log_dir): logger is imported by
+# settings_store, and settings_store owns the frozen-aware path helper,
+# so importing it here at module level would be a circular import.
 
 
 def _log_dir() -> Path:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    return LOG_DIR
+    from settings_store import APP_DIR  # local import: no circular import
+    log_dir = APP_DIR / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
 
 
 def log(level: str, category: str, message: str) -> dict:

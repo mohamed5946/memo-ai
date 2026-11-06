@@ -20,9 +20,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 import requests
 from logger import error, info, warn
-from settings_store import read_azure, read_key
-
-APP_DIR = Path(__file__).resolve().parent
+from settings_store import APP_DIR, read_azure, read_key
 
 # Gemini prebuilt voices for the 4 Settings voices (2 boys + 2 girls).
 GEMINI_VOICES = {

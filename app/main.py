@@ -15,6 +15,14 @@
 # global, which dir(api) never sees. pywebview>=6.2 is also pinned in
 # requirements.txt (its introspection is id-based and cannot hit this).
 #
+# v1.2.1 INSTALLER (2026-11-06): real Windows setup.exe (PyInstaller
+# one-folder + Inno Setup, per-user install, no admin, no Python/pip).
+# Frozen-aware paths: settings_store.resolve_app_paths() — in the frozen
+# install the exe sits next to app/ and keys/, so keys/ and app/data/
+# work exactly like the zip install. The in-app updater in frozen mode
+# installs the new setup.exe silently (see updater.install_setup) because
+# a source zip cannot replace the frozen exe itself.
+#
 # v1.2 TRANSPARENCY (2026-11-06): the island/pet still showed a white
 # rectangle on the laptop. Root cause, verified against the pywebview 6.2
 # source (platforms/winforms.py + edgechromium.py): with transparent=True
@@ -43,13 +51,18 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-APP_DIR = Path(__file__).resolve().parent
-BASE_DIR = APP_DIR.parent
-sys.path.insert(0, str(APP_DIR))
+# Frozen-aware paths live in settings_store (one helper for all modules).
+# The sys.path insert below is only needed for the zip/source run; in the
+# frozen (PyInstaller) run all modules are already bundled.
+if not getattr(sys, "frozen", False):
+    _SCRIPT_DIR = Path(__file__).resolve().parent
+    if str(_SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(_SCRIPT_DIR))
 
 import webview
 from logger import error, info, log_text, read_recent
-from settings_store import keys_status, load_settings, save_settings
+from settings_store import (APP_DIR, BASE_DIR, keys_status, load_settings,
+                            save_settings)
 
 import brain
 import hear
@@ -58,7 +71,7 @@ import speak
 import updater
 import weather
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -223,6 +236,13 @@ class Api:
     def install_update(self):
         info("update", "Install requested from Settings")
         def _run():
+            if getattr(sys, "frozen", False):
+                # Installed exe: a source zip cannot replace the frozen exe,
+                # so the update comes as the new setup.exe (silent install).
+                if updater.install_setup():
+                    info("update", "Setup update installed - restarting Memo AI")
+                    _APP.quit()
+                return
             if updater.install_update():
                 info("update", "Update installed - restarting Memo AI")
                 time.sleep(0.5)

@@ -3,12 +3,30 @@
 # No key is ever written into source code, settings, or logs.
 
 import json
+import sys
 from pathlib import Path
 
 from logger import error, warn
 
-APP_DIR = Path(__file__).resolve().parent
-BASE_DIR = APP_DIR.parent
+
+def resolve_app_paths() -> tuple:
+    """ONE frozen-aware path helper, used by every module.
+
+    - Normal run (zip / source): APP_DIR = app/ next to this file,
+      BASE_DIR = the memo-ai project folder.
+    - Frozen run (PyInstaller one-folder install): the exe sits next to
+      app/ and keys/, so APP_DIR = <exe dir>/app and BASE_DIR = <exe dir>.
+    In both cases the layout is identical, so keys/ and app/data/ work
+    exactly the same in the zip install and the setup.exe install.
+    """
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent
+        return base / "app", base
+    app_dir = Path(__file__).resolve().parent
+    return app_dir, app_dir.parent
+
+
+APP_DIR, BASE_DIR = resolve_app_paths()
 KEYS_DIR = BASE_DIR / "keys"
 DATA_DIR = APP_DIR / "data"
 SETTINGS_PATH = DATA_DIR / "settings.json"

@@ -1,6 +1,1 @@
-{
-  "version": "1.2.0",
-  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.0/memo-ai-v1.2.zip",
-  "sha256": "fecbe469ffd0fc4bde1b3390da5cd497260cb3d14f4aee6375ae4c824983dae1",
-  "notes": "القطة بتتنطط لوحدها وتتفاعل معاك وتلعب بالكورة، والجزيرة بقت حبة حقيقية من غير مستطيل، والتحديثات بقت من جوه البرنامج."
-}
+{"notes":"مثبّت ويندوز حقيقي (setup.exe) — ثبّت زي أي برنامج من غير Python أو pip. والقطة والجزيرة زي ما هما في v1.2.0.","setup_url":"https://github.com/mohamed5946/memo-ai/releases/download/v1.2.1/MemoAI-Setup-1.2.1.exe","sha256":"ea366a8024d34b490c269b34a555248b919647682181401ec2b25b99d975fe88","url":"https://github.com/mohamed5946/memo-ai/releases/download/v1.2.1/memo-ai-v1.2.1.zip","version":"1.2.1"}

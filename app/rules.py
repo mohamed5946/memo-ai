@@ -9,8 +9,8 @@ import unicodedata
 from pathlib import Path
 
 from logger import info
+from settings_store import APP_DIR
 
-APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = APP_DIR / "data"
 
 # Source-code requests are refused unless the user is in owner mode.
