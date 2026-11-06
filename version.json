@@ -1,8 +1,8 @@
 {
-  "notes": "مثبّت ويندوز حقيقي (setup.exe) — ثبّت زي أي برنامج من غير Python أو pip. والقطة والجزيرة زي ما هما في v1.2.0.",
+  "notes": "إصلاح جذري: كل الأزرار كانت ميتة على المحرك القديم — دلوقتي الواجهة بتجيب اتصال بايثون في لحظة الضغطة نفسها، فالشات والمايك والتحديثات والحفظ بيشتغلوا حتى قبل ما WebView2 يتثبّت.",
   "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.3/MemoAI-Setup-1.2.3.exe",
   "sha256": "43645f8e83158f3d27393d20d80b0a82c6e36612905dc62a4c3aa4a6554c9706",
   "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.3/memo-ai-v1.2.3.zip",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "setup_sha256": "6876b4ce18790a79a68e8fe3589d4ab28739a10aee17c85ff641d3ff77ac664c"
 }

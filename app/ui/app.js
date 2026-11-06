@@ -2,6 +2,13 @@
 // Talks to Python through window.pywebview.api (pywebview bridge).
 // If opened in a normal browser (no bridge), the UI still renders and
 // shows a notice - this is only for testing the layout.
+//
+// v1.2.4 FIX: the bridge is NEVER captured once. On the MSHTML fallback
+// engine (used while WebView2 is missing) window.pywebview is injected
+// AFTER DOMContentLoaded, so a single capture at init stayed null forever
+// and every button silently did nothing. getApi() resolves the bridge AT
+// CALL TIME, so late injection just works. Any handler that finds no
+// bridge shows a visible message instead of failing silently.
 
 const I18N = {
   ar: {
@@ -51,6 +58,8 @@ const I18N = {
     hello: "أهلاً يا محمد! أنا Memo — اكتب أو اضغط المايك وتكلم.",
     heard_prefix: "سمعتك: ",
     no_bridge: "الواجهة شغالة في وضع المعاينة (من غير بايثون) — شغّل python app/main.py للاستخدام الكامل.",
+    bridge_not_ready: "البرنامج لسه بيجهز — استنى ثانية ودوس تاني",
+    log_unavailable: "السجل مش متاح دلوقتي",
     copied: "اتنسخ السجل ✅",
     saved: "اتحفظت الإعدادات ✅",
     confirm_quit: "متأكد إنك عايز تقفل Memo AI خالص؟",
@@ -102,6 +111,8 @@ const I18N = {
     hello: "Hi Mohamed! I'm Memo — type or tap the mic and talk.",
     heard_prefix: "Heard: ",
     no_bridge: "Preview mode (no Python backend) — run python app/main.py for the full app.",
+    bridge_not_ready: "The app is still starting — wait a second and tap again",
+    log_unavailable: "Log isn't available right now",
     copied: "Log copied ✅",
     saved: "Settings saved ✅",
     confirm_quit: "Are you sure you want to quit Memo AI completely?",
@@ -109,12 +120,14 @@ const I18N = {
 };
 
 let LANG = "ar";
-let api = null;
 let busy = false;
 let selectedVoice = "girl_warm";
 
 function t(key) { return (I18N[LANG] && I18N[LANG][key]) || I18N.ar[key] || key; }
-function hasApi() { return !!(window.pywebview && window.pywebview.api); }
+// v1.2.4: lazy bridge accessor — resolved AT CALL TIME, never captured.
+// (On the MSHTML fallback engine the bridge is injected after
+// DOMContentLoaded, so a single capture at init stayed null forever.)
+function getApi() { return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null; }
 function $(id) { return document.getElementById(id); }
 
 // v1.2.2: report the browser engine to the diagnostics log, so we know
@@ -123,9 +136,11 @@ function $(id) { return document.getElementById(id); }
 // cannot do transparency and paints the dark rectangle.
 let _uaLogged = false;
 function logEngine() {
-  if (_uaLogged || !hasApi() || !api || !api.log_js) return;
+  if (_uaLogged) return;
+  const bridge = getApi();
+  if (!bridge || !bridge.log_js) return;
   _uaLogged = true;
-  try { api.log_js("UA: " + navigator.userAgent); } catch (e) {}
+  try { bridge.log_js("UA: " + navigator.userAgent); } catch (e) {}
 }
 
 function applyLang() {
@@ -185,7 +200,8 @@ async function sendText(text) {
   busy = true;
   addMsg(text, "user");
   $("text-input").value = "";
-  if (!hasApi()) {
+  const bridge = getApi();
+  if (!bridge) {
     addMsg(t("no_bridge"), "ai", "Memo AI");
     busy = false;
     return;
@@ -193,7 +209,7 @@ async function sendText(text) {
   showTyping();
   $("status").textContent = t("thinking");
   try {
-    const res = await api.chat(text);
+    const res = await bridge.chat(text);
     hideTyping();
     addMsg(res.reply || "…", "ai", "Memo AI" + (res.engine ? " • " + res.engine : ""));
   } catch (e) {
@@ -205,14 +221,19 @@ async function sendText(text) {
 }
 
 async function voiceChat() {
-  if (busy || !hasApi()) return;
+  if (busy) return;
+  const bridge = getApi();
+  if (!bridge) {
+    addMsg(t("no_bridge"), "ai", "Memo AI");
+    return;
+  }
   busy = true;
   const mic = $("mic-btn");
   mic.classList.add("recording");
   $("status").textContent = t("listening");
   $("status").classList.add("listening");
   try {
-    const res = await api.voice_chat();
+    const res = await bridge.voice_chat();
     if (res.heard) addMsg(res.heard, "user", t("heard_prefix").trim());
     addMsg(res.reply || "…", "ai", "Memo AI" + (res.engine ? " • " + res.engine : ""));
   } catch (e) {
@@ -225,9 +246,10 @@ async function voiceChat() {
 }
 
 async function refreshStatus() {
-  if (!hasApi()) return;
+  const bridge = getApi();
+  if (!bridge) return;
   try {
-    const st = await api.get_status();
+    const st = await bridge.get_status();
     LANG = (st.settings && st.settings.language) || "ar";
     applyLang();
     const pill = $("net-pill");
@@ -249,9 +271,10 @@ async function refreshStatus() {
 
 async function refreshLogs() {
   const box = $("log-box");
-  if (!hasApi()) { box.textContent = t("no_bridge"); return; }
+  const bridge = getApi();
+  if (!bridge) { box.textContent = t("no_bridge"); return; }
   try {
-    const res = await api.get_logs();
+    const res = await bridge.get_logs();
     const rows = (res.logs || []).map(e =>
       `[${e.time}] [${e.level}] [${e.category}] ${e.message}`);
     box.textContent = rows.join("\n") || "—";
@@ -262,26 +285,28 @@ async function refreshLogs() {
 }
 
 function init() {
-  api = hasApi() ? window.pywebview.api : null;
   logEngine();
-  window.addEventListener("pywebviewready", logEngine);
-  if (!api) {
-    addMsg(t("no_bridge"), "ai", "Memo AI");
-  } else {
+  // The bridge may arrive late (MSHTML injects it after DOMContentLoaded):
+  // re-probe then, and populate the UI as soon as it is available.
+  window.addEventListener("pywebviewready", () => { logEngine(); refreshStatus(); });
+  if (getApi()) {
     addMsg(t("hello"), "ai", "Memo AI");
     refreshStatus();
-    setInterval(refreshStatus, 15000);
+  } else {
+    addMsg(t("no_bridge"), "ai", "Memo AI");
   }
+  setInterval(refreshStatus, 15000);
 
   $("send-btn").addEventListener("click", () => sendText($("text-input").value));
   $("text-input").addEventListener("keydown", e => {
     if (e.key === "Enter") sendText($("text-input").value);
   });
   $("mic-btn").addEventListener("click", voiceChat);
-  $("island-btn").addEventListener("click", () => api && api.minimize_to_island());
+  $("island-btn").addEventListener("click", () => { const b = getApi(); if (b) b.minimize_to_island(); });
   $("pet-btn").addEventListener("click", async () => {
-    if (!api) return;
-    const res = await api.toggle_pet();
+    const b = getApi();
+    if (!b) return;
+    const res = await b.toggle_pet();
     $("set-pet").checked = !!res.visible;
   });
   $("settings-btn").addEventListener("click", () => {
@@ -309,7 +334,8 @@ function init() {
   });
 
   $("settings-save").addEventListener("click", async () => {
-    if (!api) return;
+    const b = getApi();
+    if (!b) { $("status").textContent = t("bridge_not_ready"); return; }
     const payload = {
       ai_name: $("set-ai-name").value.trim() || "Memo",
       user_name: $("set-user-name").value.trim() || "Mohamed",
@@ -319,7 +345,7 @@ function init() {
       pet_visible: $("set-pet").checked,
       owner_code: $("set-owner-code").value || "",
     };
-    await api.save_settings(JSON.stringify(payload));
+    await b.save_settings(JSON.stringify(payload));
     $("set-owner-code").value = "";
     LANG = payload.language;
     applyLang();
@@ -330,22 +356,25 @@ function init() {
 
   $("logs-refresh").addEventListener("click", refreshLogs);
   $("logs-copy").addEventListener("click", async () => {
+    const b = getApi();
+    if (!b) { $("status").textContent = t("log_unavailable"); return; }
     try {
-      const res = await api.get_log_text();
+      const res = await b.get_log_text();
       await navigator.clipboard.writeText(res.text || "");
       $("status").textContent = t("copied");
       setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2500);
-    } catch (e) { /* clipboard unavailable */ }
+    } catch (e) { $("status").textContent = t("log_unavailable"); }
   });
-  $("portfolio-btn").addEventListener("click", () => api && api.open_portfolio());
+  $("portfolio-btn").addEventListener("click", () => { const b = getApi(); if (b) b.open_portfolio(); });
   $("check-updates-btn").addEventListener("click", async () => {
-    if (!api) return;
     const st = $("update-status");
     const installBtn = $("install-update-btn");
+    const b = getApi();
+    if (!b) { st.textContent = t("bridge_not_ready"); installBtn.style.display = "none"; return; }
     st.textContent = t("update_checking");
     installBtn.style.display = "none";
     try {
-      const res = await api.check_updates();
+      const res = await b.check_updates();
       if (res.status === "not_configured") st.textContent = t("update_not_configured");
       else if (res.status === "up_to_date") st.textContent = t("update_up_to_date") + " (v" + res.current + ")";
       else if (res.status === "update_available") {
@@ -357,14 +386,16 @@ function init() {
     }
   });
   $("install-update-btn").addEventListener("click", async () => {
-    if (!api) return;
+    const b = getApi();
+    if (!b) { $("update-status").textContent = t("bridge_not_ready"); return; }
     if (!confirm(t("confirm_install"))) return;
     $("update-status").textContent = t("update_installing");
-    try { await api.install_update(); } catch (e) { /* see the log */ }
+    try { await b.install_update(); } catch (e) { /* see the log */ }
   });
   $("quit-btn").addEventListener("click", async () => {
-    if (!api) return;
-    if (confirm(t("confirm_quit"))) await api.quit_app();
+    const b = getApi();
+    if (!b) { $("status").textContent = t("bridge_not_ready"); return; }
+    if (confirm(t("confirm_quit"))) await b.quit_app();
   });
 }
 

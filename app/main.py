@@ -84,7 +84,7 @@ import speak
 import updater
 import weather
 
-VERSION = "1.2.3"
+VERSION = "1.2.4"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
