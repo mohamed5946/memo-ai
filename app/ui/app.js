@@ -23,6 +23,8 @@ const I18N = {
     greeting_toggle: "التحية الصباحية عند التشغيل (مع الطقس)",
     pet_toggle: "إظهار الحيوان الأليف على الشاشة",
     sec_voice: "الصوت — 4 أصوات",
+    voice_output_on: "صوت المساعد شغال 🔊",
+    voice_output_off: "صوت المساعد مقفول 🔇",
     v_boy1: "ولد 1", v_boy1_style: "هادي ورزين",
     v_boy2: "ولد 2", v_boy2_style: "مرح وخفيف",
     v_girl1: "بنت 1", v_girl1_style: "دافية وودودة",
@@ -31,10 +33,10 @@ const I18N = {
     sec_avatar: "الأفاتار",
     av_cat: "قطة", av_dog: "كلب", av_boy: "ولد", av_girl: "بنت",
     soon: "قريباً", soon2: "قريباً", soon3: "قريباً",
-    sec_owner: "وضع المالك",
-    owner_code: "الكود السري (بتكتبه في الشات عشان تفتح وضع المالك)",
-    owner_hint: "الكود بيتخزن على جهازك بس، ومش بيظهر في أي سجل. سيبه فاضي لو مش عايز تغيّره.",
     sec_logs: "سجل التشخيص",
+    perm_title: "طلب تنفيذ إجراء ⚠️",
+    perm_allow: "سماح",
+    perm_deny: "رفض",
     logs_refresh: "تحديث", logs_copy: "نسخ السجل",
     sec_updates: "التحديثات",
     update_idle: "اضغط «التحقق من التحديثات» عشان تشوف لو فيه نسخة جديدة.",
@@ -77,6 +79,8 @@ const I18N = {
     greeting_toggle: "Morning greeting on startup (with weather)",
     pet_toggle: "Show the desktop pet",
     sec_voice: "Voice — 4 voices",
+    voice_output_on: "Assistant voice on 🔊",
+    voice_output_off: "Assistant voice off 🔇",
     v_boy1: "Boy 1", v_boy1_style: "Calm and steady",
     v_boy2: "Boy 2", v_boy2_style: "Playful and light",
     v_girl1: "Girl 1", v_girl1_style: "Warm and friendly",
@@ -85,10 +89,10 @@ const I18N = {
     sec_avatar: "Avatar",
     av_cat: "Cat", av_dog: "Dog", av_boy: "Boy", av_girl: "Girl",
     soon: "Soon", soon2: "Soon", soon3: "Soon",
-    sec_owner: "Owner mode",
-    owner_code: "Secret code (type it in chat to unlock owner mode)",
-    owner_hint: "The code is stored on your device only and never appears in any log. Leave empty to keep it unchanged.",
     sec_logs: "Diagnostics log",
+    perm_title: "Action request ⚠️",
+    perm_allow: "Allow",
+    perm_deny: "Deny",
     logs_refresh: "Refresh", logs_copy: "Copy log",
     sec_updates: "Updates",
     update_idle: "Tap “Check for updates” to see if a new version is available.",
@@ -124,6 +128,9 @@ const I18N = {
 let LANG = "ar";
 let busy = false;
 let selectedVoice = "girl_warm";
+let voiceOutput = true;      // v1.3.0 speaker toggle (OUTPUT only - mic is separate)
+let currentPermId = null;    // id of the permission request shown in the modal
+let permPollTimer = null;    // polls for Allow/Deny requests while a tool chat runs
 
 function t(key) { return (I18N[LANG] && I18N[LANG][key]) || I18N.ar[key] || key; }
 // v1.2.4: lazy bridge accessor — resolved AT CALL TIME, never captured.
@@ -213,13 +220,59 @@ async function sendText(text) {
   try {
     const res = await bridge.chat(text);
     hideTyping();
-    addMsg(res.reply || "…", "ai", "Memo AI" + (res.engine ? " • " + res.engine : ""));
+    if (res && res.pending) {
+      // v1.3.0 owner-mode tool chat: runs in a background thread (the
+      // bridge must never block on a permission). Poll for the result;
+      // the permission poller shows any Allow/Deny dialog meanwhile.
+      startPermPolling();
+      const done = await waitForChatResult(res.chat_id);
+      stopPermPolling();
+      addMsg(done.reply || "…", "ai", "Memo AI" + (done.engine ? " • " + done.engine : ""));
+    } else {
+      addMsg(res.reply || "…", "ai", "Memo AI" + (res.engine ? " • " + res.engine : ""));
+    }
   } catch (e) {
     hideTyping();
     addMsg("حصلت مشكلة، جرّب تاني.", "ai", "Memo AI");
   }
   $("status").textContent = "";
   busy = false;
+}
+
+// v1.3.0: poll chat_result() until the background tool chat finishes.
+function waitForChatResult(chatId) {
+  return new Promise((resolve) => {
+    const timer = setInterval(async () => {
+      try {
+        const res = await getApi().chat_result(chatId);
+        if (res && res.done) { clearInterval(timer); resolve(res); }
+      } catch (e) { /* keep polling */ }
+    }, 1200);
+    setTimeout(() => { clearInterval(timer); resolve({ reply: "…", engine: "" }); }, 150000); // 2.5 min cap
+  });
+}
+
+// v1.3.0: while a tool chat runs, poll for Allow/Deny requests and show
+// the permission modal for the oldest unresolved one.
+function startPermPolling() {
+  stopPermPolling();
+  permPollTimer = setInterval(async () => {
+    try {
+      const p = await getApi().get_pending_permission();
+      if (p && p.id && p.id !== currentPermId) {
+        currentPermId = p.id;
+        $("perm-kind").textContent = p.kind || "";
+        $("perm-summary").textContent = p.summary || "";
+        $("perm-detail").textContent = p.detail || "";
+        $("perm-modal").classList.add("open");
+      }
+    } catch (e) { /* keep polling */ }
+  }, 1000);
+}
+function stopPermPolling() {
+  if (permPollTimer) { clearInterval(permPollTimer); permPollTimer = null; }
+  currentPermId = null;
+  $("perm-modal").classList.remove("open");
 }
 
 async function voiceChat() {
@@ -237,7 +290,15 @@ async function voiceChat() {
   try {
     const res = await bridge.voice_chat();
     if (res.heard) addMsg(res.heard, "user", t("heard_prefix").trim());
-    addMsg(res.reply || "…", "ai", "Memo AI" + (res.engine ? " • " + res.engine : ""));
+    if (res && res.pending) {
+      // v1.3.0: owner-mode tool chat - poll for the reply.
+      startPermPolling();
+      const done = await waitForChatResult(res.chat_id);
+      stopPermPolling();
+      addMsg(done.reply || "…", "ai", "Memo AI" + (done.engine ? " • " + done.engine : ""));
+    } else {
+      addMsg(res.reply || "…", "ai", "Memo AI" + (res.engine ? " • " + res.engine : ""));
+    }
   } catch (e) {
     addMsg("مقدرتش أسمعك — جرّب تاني.", "ai", "Memo AI");
   }
@@ -245,6 +306,26 @@ async function voiceChat() {
   $("status").textContent = "";
   $("status").classList.remove("listening");
   busy = false;
+}
+
+// v1.3.0 voice-output toggle (OUTPUT only - the mic button is separate).
+// Icon + style show the state: 🔊 normal when ON, 🔇 dimmed amber when OFF.
+function updateVoiceBtn() {
+  const btn = $("voice-btn");
+  if (!btn) return;
+  btn.textContent = voiceOutput ? "🔊" : "🔇";
+  btn.classList.toggle("muted", !voiceOutput);
+  btn.title = voiceOutput ? t("voice_output_on") : t("voice_output_off");
+}
+
+async function toggleVoiceOutput() {
+  const bridge = getApi();
+  if (!bridge) return;
+  try {
+    const res = await bridge.toggle_voice_output();
+    voiceOutput = !!res.voice_output;
+    updateVoiceBtn();
+  } catch (e) { /* keep the old state */ }
 }
 
 async function refreshStatus() {
@@ -265,6 +346,9 @@ async function refreshStatus() {
       $("set-greeting").checked = !!st.settings.greeting_enabled;
       $("set-pet").checked = st.settings.pet_visible !== false;
       selectedVoice = st.settings.voice || "girl_warm";
+      // v1.3.0 voice-output toggle (persisted; default ON).
+      voiceOutput = st.settings.voice_output !== false;
+      updateVoiceBtn();
       document.querySelectorAll(".voice-card").forEach(c =>
         c.classList.toggle("selected", c.dataset.voice === selectedVoice));
       $("avatar-name").textContent = (st.settings.ai_name || "Memo") + " 🐱";
@@ -308,6 +392,7 @@ function init() {
     if (e.key === "Enter") sendText($("text-input").value);
   });
   $("mic-btn").addEventListener("click", voiceChat);
+  $("voice-btn").addEventListener("click", toggleVoiceOutput);
   $("island-btn").addEventListener("click", () => { const b = getApi(); if (b) b.minimize_to_island(); });
   $("pet-btn").addEventListener("click", async () => {
     const b = getApi();
@@ -349,10 +434,8 @@ function init() {
       voice: selectedVoice,
       greeting_enabled: $("set-greeting").checked,
       pet_visible: $("set-pet").checked,
-      owner_code: $("set-owner-code").value || "",
     };
     await b.save_settings(JSON.stringify(payload));
-    $("set-owner-code").value = "";
     LANG = payload.language;
     applyLang();
     refreshStatus();
@@ -403,6 +486,18 @@ function init() {
     if (!b) { $("status").textContent = t("bridge_not_ready"); return; }
     if (confirm(t("confirm_quit"))) await b.quit_app();
   });
+
+  // v1.3.0 permission dialog: Allow/Deny resolve the pending tool request.
+  const answerPerm = async (allowed) => {
+    const b = getApi();
+    if (b && currentPermId) {
+      try { await b.resolve_permission(currentPermId, allowed); } catch (e) { /* timeout = deny */ }
+    }
+    currentPermId = null;
+    $("perm-modal").classList.remove("open");
+  };
+  $("perm-allow").addEventListener("click", () => answerPerm(true));
+  $("perm-deny").addEventListener("click", () => answerPerm(false));
 }
 
 document.addEventListener("DOMContentLoaded", init);

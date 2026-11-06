@@ -25,23 +25,54 @@
 # updater.install_setup) because a source zip cannot replace the frozen
 # exe itself.
 #
-# v1.2 TRANSPARENCY (2026-11-06): the island/pet still showed a white
-# rectangle on the laptop. Root cause, verified against the pywebview 6.2
-# source (platforms/winforms.py + edgechromium.py): with transparent=True
-# pywebview sets the WebView2 control's DefaultBackgroundColor to Transparent
-# - but ONLY on the EdgeChromium backend. If the WebView2 runtime is missing
-# or broken, pywebview silently falls back to the old MSHTML (IE) backend,
-# which cannot do transparency at all and paints background_color (default
-# #FFFFFF) - a white rectangle. A second culprit: `backdrop-filter: blur()`
-# in the island CSS forces the window layer to composite opaquely on some
-# WebView2 builds. Fixes in v1.2: (1) backdrop-filter removed from the
-# island, replaced by a solid near-opaque navy; (2) island/pet windows pass
-# background_color="#0B0F16" (dark navy) so a transparency failure degrades
-# to a dark rectangle instead of a glaring white one; (3) both pages set
-# html/body background transparent in JS on load, belt and braces;
-# (4) README lists the checks: pywebview>=6.2 actually installed, and
-# WebView2 runtime present/updated. The pet now also roams, reacts to
-# clicks, and plays with a ball when parked (see pet.html).
+# v1.3.0 CHROMA-KEY TRANSPARENCY (2026-11-07) - CORRECTS the v1.2
+# mental model below (kept for history): `transparent=True` in pywebview
+# on Windows does NOT make the WINDOW transparent. Verified against the
+# pywebview 6.2 source (platforms/winforms.py + edgechromium.py):
+#   - edgechromium.py:106-114: transparent=True only sets the WebView2
+#     control's DefaultBackgroundColor to Transparent - i.e. transparent
+#     INSIDE the control, showing "hosting app content" behind it.
+#     Behind the control there is nothing: it docks Fill over the whole
+#     window, so transparent pixels render as BLACK (absence of paint,
+#     not a drawn color - grep for Color.Black in the backend = zero).
+#   - winforms.py:286-291: the WinForms Form itself is NEVER made
+#     transparent - no TransparencyKey, no WS_EX_LAYERED, no
+#     SetLayeredWindowAttributes anywhere in the backend. A plain HWND
+#     is opaque; DWM paints its transparent pixels black.
+#   - winforms.py:289 is dead code anyway: EdgeChrome has no
+#     DefaultBackgroundColor attribute, so that assignment creates a
+#     plain Python attribute that never reaches the control.
+#   - Qt/Cocoa/GTK backends DO real translucency (WA_TranslucentBackground
+#     etc.) - WinForms alone does not. 6.2.1 changes nothing here.
+# So no CSS/HTML change could ever fix the black rectangle, and the
+# v1.2.0 backdrop-filter removal was treating a symptom. The real fix:
+# CHROMA-KEY. The island/pet pages paint pure magenta #FF00FF as their
+# background (a color used NOWHERE in the UI), and main.py applies a
+# Win32 layered window to each HWND (WS_EX_LAYERED +
+# SetLayeredWindowAttributes LWA_COLORKEY), so Windows itself removes
+# the magenta pixels - the pill/cat alone remain, with no rectangle.
+# Known trade-offs (tell the user): (1) ~1px pinkish fringe on
+# anti-aliased edges (rounded pill corners, semi-transparent fur edges
+# blend with magenta) - clearest on light wallpapers; (2) keyed pixels
+# become click-through - DESIRED here (clicks pass through the empty
+# space around the cat/island; the pill itself stays clickable).
+# The HWND comes from window.native.Handle (pywebview sets .native to
+# the WinForms Form, winforms.py:194), with an EnumWindows title+size
+# fallback. Applied from a thread started by webview.start(func) -
+# which runs BEFORE any window exists, so it polls up to 60s for the
+# HWNDs. The style lives on the HWND, so it survives hide/show.
+# FIELD TEST STILL REQUIRED (cannot be proven from Linux): screenshots
+# over a light AND a dark desktop wallpaper, pill/mic clicks still
+# working, clicks passing through the empty space around the cat.
+
+# v1.2 TRANSPARENCY (2026-11-06) - SUPERSEDED by the v1.3.0 chroma-key
+# fix above. Kept as history: the island/pet showed a white rectangle.
+# The v1.2 theory (MSHTML fallback paints background_color white) was
+# wrong on the user's machine - the v1.2.5 log proved WebView2 WAS the
+# engine, yet the black rectangle stayed. Real cause: see v1.3.0 note.
+# (1) backdrop-filter removed from the island; (2) background_color
+# "#0B0F16" so failure degraded to a dark rectangle; (3) html/body
+# background transparent in JS. None of it could work - see above.
 
 # v1.2.5 BRIDGE FILES (2026-11-06): a second, deeper cause of the dead
 # buttons — pywebview builds window.pywebview from its js/ files, and if
@@ -55,20 +86,24 @@
 # SMALL when idle (cat + mic only, ~190x52) and growing GRADUALLY
 # (~0.45s ease) when active (greeting / listening / reply), then
 # shrinking back after ~7s idle. The pill's dark navy color is NOT
-# changed (the black background he sees is the same opaque-window
-# issue as the pet - fixed by the WebView2 work in v1.2.2, not by
-# recoloring the pill). Implementation: the .island div is 100% of the
-# window, and the WINDOW animates in small steps via rAF -> the new
-# Api.island_resize(w, h) (which also re-centers it on top); the texts
+# changed. (The black background he saw was the opaque WinForms window
+# itself - the v1.3.0 investigation proved it was never WebView2; fixed
+# by chroma-key, see the v1.3.0 note at the top.) Implementation: the
+# .island div is 100% of the window, and the WINDOW animates in small
+# steps via rAF -> the new Api.island_resize(w, h) (which also
+# re-centers it on top); the texts
 # fade in as it grows. Old island_expand/island_shrink removed.
 
 import ctypes
+import hashlib
+import hmac
 import json
 import os
 import subprocess
 import sys
 import threading
 import time
+import uuid
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -82,7 +117,7 @@ if not getattr(sys, "frozen", False):
         sys.path.insert(0, str(_SCRIPT_DIR))
 
 import webview
-from logger import error, info, log_text, read_recent
+from logger import error, info, log_text, read_recent, warn
 from settings_store import (APP_DIR, BASE_DIR, keys_status, load_settings,
                             save_settings)
 
@@ -90,10 +125,11 @@ import brain
 import hear
 import rules
 import speak
+import tools
 import updater
 import weather
 
-VERSION = "1.2.5"
+VERSION = "1.3.0"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -104,8 +140,114 @@ PET_SIZE = 150
 _MUTEX_NAME = "Local\\MemoAI-SingleInstance"
 _mutex_handle = None
 
+# v1.3.0 TOOLS ("hands") + VOICE-OUTPUT TOGGLE + OWNER CODE (2026-11-07):
+# The brain can now DO things: open apps, create/edit/read files, run
+# commands - through app/tools.py, with a real Groq function-calling loop
+# (brain.ask_with_tools). Every write/run/open action asks the user FIRST
+# in an in-app Allow/Deny dialog showing the exact action; reads are
+# logged, no dialog; destructive commands are blocklisted; there is NO
+# delete tool and NO "always allow". The local Qwen 3B stays chat-only.
+# Chat with tools runs in a BACKGROUND thread (see Api.chat): the JS
+# bridge must never block waiting for a permission, or the Allow/Deny
+# dialog could never answer (deadlock). The UI polls chat_result() and
+# get_pending_permission() while a tool chat is running.
+# Voice output toggle: settings.voice_output (default ON, persisted).
+# speak_async() is the single choke point - when OFF, no TTS engine is
+# called at all (no Gemini/Azure/Piper API use). The mic button is
+# untouched (voice INPUT is separate).
+# Owner code: stored ONLY as a SHA-256 hash below (OWNER_CODE_HASH).
+# The plaintext value is never in this file, in settings, in logs, or
+# in any comment. Typing it in chat unlocks owner mode (tools on);
+# without it the app stays reply-only (chat, no tools). Allow/Deny
+# dialogs still apply in owner mode.
+
+# Owner-mode code, SHA-256 hash ONLY (see note above). Compared with
+# hmac.compare_digest; the plaintext value exists nowhere in the repo.
+OWNER_CODE_HASH = "900e5e36492a56eed142c11368b25b677487dec61cea264a0e4a1f64edebaa47"
+
+# Async tool-chat results: chat_id -> {"done", "reply", "engine", ...}.
+_chats: dict = {}
+_chats_lock = threading.Lock()
+
 # Result of the startup bridge-files self-check (None = not run yet).
 _BRIDGE_FILES_OK = None
+
+# v1.3.0 chroma-key color: the island/pet pages paint their background
+# this exact magenta; Windows removes it from the window (see the
+# v1.3.0 transparency note at the top of this file). COLORREF is
+# 0x00BBGGRR, so RGB(255,0,255) -> 0x00FF00FF.
+CHROMA_KEY_HEX = "#FF00FF"
+CHROMA_KEY_COLORREF = 0x00FF00FF
+
+
+def _window_hwnd(window):
+    """HWND of a pywebview window, or None if it is not created yet.
+    WinForms backend sets window.native to the Form (pywebview 6.2
+    winforms.py:194); Form.Handle is the HWND."""
+    try:
+        native = getattr(window, "native", None)
+        if native is not None:
+            return int(native.Handle.ToInt32())
+    except Exception:
+        pass
+    return None
+
+
+def _find_hwnd_by_title(title: str, max_width: int | None = None):
+    """Fallback HWND lookup (EnumWindows): first top-level window whose
+    title matches exactly. max_width distinguishes the small island
+    ("Memo AI", <=400px) from the big main window (same title)."""
+    try:
+        user32 = ctypes.windll.user32
+        found = []
+
+        class RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                        ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def _enum(hwnd, _lparam):
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(hwnd, buf, 256)
+            if buf.value == title:
+                rect = RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                if max_width is None or \
+                        (rect.right - rect.left) <= max_width:
+                    found.append(hwnd)
+            return True
+
+        user32.EnumWindows(_enum, None)
+        return found[0] if found else None
+    except Exception:
+        return None
+
+
+def _apply_chroma_key(hwnd: int, label: str) -> bool:
+    """Make pure #FF00FF pixels transparent AND click-through on a Win32
+    HWND (WS_EX_LAYERED + SetLayeredWindowAttributes LWA_COLORKEY).
+    Returns True on success; every outcome is logged (diagnostics)."""
+    if os.name != "nt":
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        GWL_EXSTYLE = -20
+        WS_EX_LAYERED = 0x00080000
+        LWA_COLORKEY = 0x00000001
+        ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED)
+        ok = user32.SetLayeredWindowAttributes(
+            hwnd, CHROMA_KEY_COLORREF, 0, LWA_COLORKEY)
+        if ok:
+            info("app", f"Chroma-key transparency applied to {label} "
+                        f"(HWND {hwnd}) - magenta pixels now see-through")
+            return True
+        error("app", f"SetLayeredWindowAttributes FAILED for {label} "
+                     f"(HWND {hwnd}) - black rectangle may remain")
+        return False
+    except Exception as exc:
+        error("app", f"Chroma-key failed for {label}: {exc}")
+        return False
 
 
 def _check_bridge_files() -> bool:
@@ -199,13 +341,13 @@ class Api:
             "bridge_files_missing": _BRIDGE_FILES_OK is False,
             "keys": keys_status(),
             "settings": {k: v for k, v in _APP.settings.items()
-                         if k != "owner_code"},
+                         if k != "owner_unlocked"},
             "owner_unlocked": _APP.settings.get("owner_unlocked", False),
         }
 
     def get_settings(self):
         return {k: v for k, v in _APP.settings.items()
-                if k not in ("owner_code", "owner_unlocked")}
+                if k != "owner_unlocked"}
 
     def save_settings(self, new_values):
         try:
@@ -214,13 +356,10 @@ class Api:
             error("app", f"Bad settings payload: {exc}")
             return {"ok": False}
         for key in ("ai_name", "user_name", "language", "voice",
-                    "greeting_enabled", "avatar", "pet_visible", "pet_parked"):
+                    "greeting_enabled", "voice_output", "avatar",
+                    "pet_visible", "pet_parked"):
             if key in data:
                 _APP.settings[key] = data[key]
-        # Secret code: only overwritten when the field is non-empty.
-        if data.get("owner_code"):
-            _APP.settings["owner_code"] = str(data["owner_code"])
-            info("app", "Owner secret code updated (value never logged)")
         ok = save_settings(_APP.settings)
         info("app", "Settings saved from UI")
         _APP.apply_settings()
@@ -231,38 +370,102 @@ class Api:
         text = (text or "").strip()
         if not text:
             return {"reply": "", "engine": "none"}
-        # Secret code unlocks owner mode (never echoed back).
-        code = _APP.settings.get("owner_code", "")
-        if code and text == code:
+        # Owner code unlocks owner mode (v1.3.0: compared as a SHA-256 hash
+        # only - the plaintext code is nowhere in the repo, settings, or
+        # logs, and the typed text is never echoed back).
+        if hmac.compare_digest(
+                hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                OWNER_CODE_HASH):
             _APP.settings["owner_unlocked"] = True
             info("app", "Owner mode unlocked via secret code")
             return {"reply": "تمام، وضع المالك اتفتح — تقدر تسألني عن أي حاجة، "
-                             "بما فيها الكود والسورس.",
+                             "وأقدر كمان أفتح برامج وأعمل ملفات وأنفذ أوامر "
+                             "(كل إجراء هيطلب إذنك الأول).",
                     "engine": "owner"}
         lang = _APP.settings.get("language", "ar")
         hit = rules.check(text, _APP.settings.get("owner_unlocked", False), lang)
         if hit:
             _APP.speak_async(hit["reply"])
             return {"reply": hit["reply"], "engine": hit["source"]}
+        if _APP.settings.get("owner_unlocked", False):
+            # Owner mode: the brain gets tools, in a BACKGROUND thread.
+            # The JS bridge must never block waiting for a permission, or
+            # the Allow/Deny dialog could never answer (deadlock). The UI
+            # polls chat_result() + get_pending_permission() meanwhile.
+            chat_id = uuid.uuid4().hex[:8]
+            with _chats_lock:
+                _chats[chat_id] = {"done": False, "reply": "", "engine": "groq",
+                                   "tools_used": 0, "created": time.time()}
+                if len(_chats) > 50:  # prune oldest finished entries
+                    for old_id in sorted(
+                            _chats, key=lambda i: _chats[i]["created"])[:10]:
+                        if _chats[old_id]["done"]:
+                            _chats.pop(old_id, None)
+            threading.Thread(target=_APP.run_tool_chat,
+                             args=(chat_id, text), daemon=True).start()
+            return {"reply": "", "engine": "groq", "pending": True,
+                    "chat_id": chat_id}
         result = brain.ask(text, _APP.settings.get("ai_name", "Memo"),
                            _APP.settings.get("user_name", "Mohamed"), lang)
         _APP.speak_async(result["reply"])
         return {"reply": result["reply"], "engine": result["engine"]}
 
+    def chat_result(self, chat_id):
+        """Poll the result of an async (tool) chat. {"done": False} while
+        the brain thread is still working (possibly waiting on permission)."""
+        with _chats_lock:
+            entry = _chats.get(str(chat_id or ""))
+        if not entry:
+            return {"done": False}
+        return {"done": bool(entry["done"]), "reply": entry.get("reply", ""),
+                "engine": entry.get("engine", "groq"),
+                "tools_used": entry.get("tools_used", 0)}
+
     def voice_chat(self):
-        """Record 5s -> transcribe -> answer -> speak. Returns heard + reply."""
+        """Record 5s -> transcribe -> answer -> speak. Returns heard + reply.
+        In owner mode the answer runs the tool loop in the background, so
+        this returns {"pending": True, "chat_id": ...} and the UI polls
+        chat_result() (same as chat)."""
         lang = _APP.settings.get("language", "ar")
         heard = hear.listen(lang)
         if not heard["text"]:
             return {"heard": "", "reply": heard.get("error", "مقدرتش أسمعك."),
                     "engine": "none"}
         result = self.chat(heard["text"])
+        if result.get("pending"):
+            return {"heard": heard["text"], "reply": "", "engine": "groq",
+                    "pending": True, "chat_id": result["chat_id"],
+                    "hear_engine": heard["engine"]}
         return {"heard": heard["text"], "reply": result["reply"],
                 "engine": result["engine"], "hear_engine": heard["engine"]}
 
     def stop_speaking(self):
         speak.stop()
         return {"ok": True}
+
+    # -- voice output toggle (v1.3.0) --------------------------------------
+    def toggle_voice_output(self):
+        """One-tap speaker toggle (OUTPUT only - the mic button is separate).
+        When OFF, speak_async() never calls any TTS engine at all, so no
+        Gemini/Azure/Piper API use happens. State is persisted."""
+        new = not _APP.settings.get("voice_output", True)
+        _APP.settings["voice_output"] = new
+        save_settings(_APP.settings)
+        if not new:
+            speak.stop()  # stop anything currently playing
+        info("app", f"Voice output {'ON' if new else 'OFF'} (speaker button)")
+        return {"voice_output": new}
+
+    # -- tool permissions (v1.3.0) -----------------------------------------
+    def get_pending_permission(self):
+        """Oldest unresolved Allow/Deny request, or None. Polled by the UI
+        while a tool chat is running."""
+        pending = tools.get_pending()
+        return pending if pending else {"pending": None}
+
+    def resolve_permission(self, req_id, allowed):
+        ok = tools.resolve_permission(str(req_id or ""), bool(allowed))
+        return {"ok": ok}
 
     # -- windows -----------------------------------------------------------
     def open_main(self):
@@ -391,6 +594,9 @@ class MemoApp:
         self.pet_window = None
         self._quitting = False
         self._briefed = False
+        # v1.3.0: when a tool waits for Allow/Deny, bring the main window
+        # forward so the user sees the dialog.
+        tools.on_permission_needed = self._show_main_for_permission
 
     # -- window management ---------------------------------------------------
     def show_main(self):
@@ -442,7 +648,45 @@ class MemoApp:
         except Exception as exc:
             error("ui", f"Could not park pet: {exc}")
 
+    def run_tool_chat(self, chat_id: str, text: str):
+        """Background thread for an owner-mode (tool) chat. Never runs on
+        the JS bridge thread: tools may wait on an Allow/Deny dialog that
+        only the bridge can resolve."""
+        try:
+            result = brain.ask_with_tools(
+                text, self.settings.get("ai_name", "Memo"),
+                self.settings.get("user_name", "Mohamed"),
+                self.settings.get("language", "ar"))
+        except Exception as exc:
+            error("brain", f"Tool chat failed: {exc}")
+            result = {"reply": "حصلت مشكلة وأنا بنفذ، جرّب تاني.",
+                      "engine": "none", "tools_used": 0}
+        with _chats_lock:
+            entry = _chats.get(chat_id)
+            if entry is not None:
+                entry.update({"done": True, "reply": result["reply"],
+                              "engine": result["engine"],
+                              "tools_used": result.get("tools_used", 0)})
+        self.speak_async(result["reply"])
+
+    def _show_main_for_permission(self):
+        """Permission hook (tools.on_permission_needed): a tool is waiting
+        for Allow/Deny, so bring the main window forward - the dialog
+        lives there, even if the user was talking through the island."""
+        try:
+            self.show_main()
+        except Exception as exc:
+            warn("tools", f"Could not bring main window forward: {exc}")
+
     def speak_async(self, text: str):
+        # v1.3.0 voice-output toggle: the SINGLE choke point for all
+        # spoken replies (chat, rules, morning briefing). When OFF, no
+        # TTS engine is called at all - no Gemini/Azure/Piper API use,
+        # not just muting after synthesis.
+        if not self.settings.get("voice_output", True):
+            info("speak", "Voice output is OFF - reply stays text-only "
+                          "(no TTS call)")
+            return
         def _run():
             online = brain.is_online()
             result = speak.speak(text, self.settings.get("voice", "girl_warm"), online)
@@ -553,8 +797,8 @@ class MemoApp:
         self.island_window = webview.create_window(
             "Memo AI", str(ui_dir / "island.html"),
             width=ISLAND_IDLE_W, height=ISLAND_IDLE_H, x=island_x, y=12,
-            frameless=True, transparent=True, on_top=True,
-            resizable=False, background_color="#0B0F16", js_api=self.api)
+            frameless=True, transparent=False, on_top=True,
+            resizable=False, background_color=CHROMA_KEY_HEX, js_api=self.api)
         self.main_window = webview.create_window(
             "Memo AI", str(ui_dir / "index.html"),
             width=MAIN_W, height=MAIN_H, hidden=True,
@@ -564,15 +808,47 @@ class MemoApp:
             "Memo AI Pet", str(ui_dir / "pet.html"),
             width=PET_SIZE, height=PET_SIZE,
             x=sw - PET_SIZE - 20, y=sh - PET_SIZE - 90,
-            frameless=True, transparent=True, on_top=True,
-            resizable=False, background_color="#0B0F16", js_api=self.api)
+            frameless=True, transparent=False, on_top=True,
+            resizable=False, background_color=CHROMA_KEY_HEX, js_api=self.api)
         if not self.settings.get("pet_visible", True):
             self.pet_window.hide()
 
         threading.Thread(target=self.morning_briefing, daemon=True).start()
         info("app", "Island started - full window opens only on tap")
-        webview.start()
+        # v1.3.0: webview.start(func) runs func in a thread BEFORE any
+        # window exists, so _apply_chroma_keys polls until the HWNDs
+        # appear (up to 60s) and then keys out the magenta background.
+        webview.start(self._apply_chroma_keys)
         info("app", "Memo AI exited")
+
+    def _apply_chroma_keys(self):
+        """Apply the Win32 chroma-key (magenta -> transparent) to the
+        island + pet windows. Runs in the thread webview.start(func)
+        spawns, which starts BEFORE the windows are created - hence the
+        polling. Each window is attempted once its HWND is found; the
+        style lives on the HWND so it survives hide/show. Every outcome
+        is logged (diagnostics, visible in-app)."""
+        pending = {"island": True, "pet": True}
+        deadline = time.time() + 60
+        while time.time() < deadline and any(pending.values()):
+            if pending["island"]:
+                hwnd = _window_hwnd(self.island_window) or \
+                    _find_hwnd_by_title("Memo AI", max_width=400)
+                if hwnd:
+                    _apply_chroma_key(hwnd, "island")
+                    pending["island"] = False
+            if pending["pet"]:
+                hwnd = _window_hwnd(self.pet_window) or \
+                    _find_hwnd_by_title("Memo AI Pet")
+                if hwnd:
+                    _apply_chroma_key(hwnd, "pet")
+                    pending["pet"] = False
+            if any(pending.values()):
+                time.sleep(0.5)
+        for label, still_pending in pending.items():
+            if still_pending:
+                warn("app", f"Chroma-key NOT applied to {label} (no HWND "
+                            f"found in 60s) - black rectangle may remain")
 
 
 def main():

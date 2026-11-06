@@ -5,7 +5,12 @@
 <title>Memo AI Island</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: transparent; background-color: transparent; overflow: hidden; }
+  /* v1.3.0 CHROMA-KEY (replaces the v1.2 "transparent" attempt - see
+     main.py): the page background is pure magenta #FF00FF. Windows
+     itself removes that exact color from the window (Win32 layered
+     window, LWA_COLORKEY), so only the pill is visible - no rectangle.
+     Magenta appears NOWHERE in the UI, so nothing else gets keyed out. */
+  html, body { background: #FF00FF; background-color: #FF00FF; overflow: hidden; }
   body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
   /* Small pill, like a phone Dynamic Island - NOT a wide rectangle.
      v1.2: backdrop-filter REMOVED - on some WebView2 builds it forces the
@@ -65,11 +70,14 @@
     <button class="mic" id="mic" title="تحدث">🎙️</button>
   </div>
 <script>
-  // Transparency belt & braces: the window itself must stay see-through;
-  // only the pill may paint. (WebView2 paints the page background itself,
-  // so html/body must be transparent or the whole window reads as a rectangle.)
-  document.documentElement.style.backgroundColor = "transparent";
-  document.body.style.backgroundColor = "transparent";
+  // v1.3.0 CHROMA-KEY: the page background is pure magenta #FF00FF and
+  // Windows removes that exact color from the window (Win32 layered
+  // window, LWA_COLORKEY - applied by main.py). The old "transparent"
+  // approach is DEAD: pywebview on Windows only makes the WebView2
+  // control transparent INSIDE itself - the WinForms window stays
+  // opaque and transparent pixels render as a black rectangle.
+  document.documentElement.style.backgroundColor = "#FF00FF";
+  document.body.style.backgroundColor = "#FF00FF";
 
   // v1.2.2: report the browser engine to the diagnostics log, so we know
   // for sure whether the windows are drawn by WebView2 (UA has "Edg/")
@@ -168,7 +176,23 @@
     try {
       const res = await window.pywebview.api.voice_chat();
       $("greet").textContent = res.heard ? "سمعتك: " + res.heard : "Memo AI";
-      if (res.reply) expandWithReply(res.reply);
+      if (res && res.pending) {
+        // v1.3.0: owner-mode tool chat runs in the background - the
+        // Allow/Deny dialog appears in the main window (Python brings
+        // it forward). Poll chat_result() here until the reply arrives.
+        $("sub").textContent = "🤔 بفكّر وبنفّذ...";
+        const done = await new Promise((resolve) => {
+          const timer = setInterval(async () => {
+            try {
+              const r = await window.pywebview.api.chat_result(res.chat_id);
+              if (r && r.done) { clearInterval(timer); resolve(r); }
+            } catch (err) { /* keep polling */ }
+          }, 1200);
+          setTimeout(() => { clearInterval(timer); resolve({ reply: "" }); }, 150000);
+        });
+        if (done.reply) expandWithReply(done.reply);
+        else goActive();
+      } else if (res.reply) expandWithReply(res.reply);
       else goActive();
     } catch (err) {
       $("sub").textContent = "مقدرتش أسمعك — جرّب تاني";

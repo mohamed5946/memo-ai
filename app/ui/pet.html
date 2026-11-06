@@ -5,9 +5,12 @@
 <title>Memo AI Pet</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  /* The window itself must paint NOTHING: only the cat (and, when parked,
-     the ball + bubble) may draw. Any background here = a visible rectangle. */
-  html, body { background: transparent; background-color: transparent;
+  /* v1.3.0 CHROMA-KEY (replaces the v1.2 "transparent" attempt - see
+     main.py): the page background is pure magenta #FF00FF. Windows
+     itself removes that exact color from the window (Win32 layered
+     window, LWA_COLORKEY), so only the cat is visible - no rectangle.
+     Magenta appears NOWHERE in the UI, so nothing else gets keyed out. */
+  html, body { background: #FF00FF; background-color: #FF00FF;
     overflow: hidden; width: 150px; height: 150px; }
   body { cursor: grab; touch-action: none; }
   body:active { cursor: grabbing; }
@@ -15,8 +18,13 @@
   /* The cat image itself is transparent (background cut out) - so the
      window shows ONLY the cat, no card, no white box, no circle frame. */
   .pet { width: 150px; height: 150px; animation: bob 3.8s ease-in-out infinite; }
+  /* v1.3.0: the cat is black, so on a dark desktop it would be nearly
+     invisible once the window is truly transparent - a soft WHITE halo
+     keeps it readable on any wallpaper (the dark drop shadow stays
+     for depth). This is a visibility tweak, not a transparency fix. */
   .pet img { width: 100%; height: 100%; object-fit: contain;
-    filter: drop-shadow(0 8px 14px rgba(0,0,0,0.45));
+    filter: drop-shadow(0 0 14px rgba(255,255,255,0.28))
+            drop-shadow(0 8px 14px rgba(0,0,0,0.45));
     -webkit-user-drag: none; user-select: none; pointer-events: none; }
   @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 
@@ -78,10 +86,15 @@
   <div class="bubble" id="bubble">مياو! 🐾</div>
 <script>
   // Memo AI pet v1.2: roams by itself, reacts to clicks, plays with a ball
-  // when parked. The window itself stays fully transparent - only the cat
-  // (and the ball/bubble) ever paint.
-  document.documentElement.style.backgroundColor = "transparent";
-  document.body.style.backgroundColor = "transparent";
+  // when parked. v1.3.0 CHROMA-KEY: page background is pure magenta
+  // #FF00FF; Windows removes that exact color from the window (Win32
+  // layered window, LWA_COLORKEY - applied by main.py). The old
+  // "transparent" approach is DEAD: pywebview on Windows only makes
+  // the WebView2 control transparent INSIDE itself - the WinForms
+  // window stays opaque and transparent pixels render as a black
+  // rectangle.
+  document.documentElement.style.backgroundColor = "#FF00FF";
+  document.body.style.backgroundColor = "#FF00FF";
 
   // v1.2.2: report the browser engine to the diagnostics log, so we know
   // for sure whether the windows are drawn by WebView2 (UA has "Edg/")

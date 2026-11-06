@@ -41,11 +41,14 @@ DEFAULTS = {
     "user_name": "Mohamed",
     "language": "ar",            # "ar" or "en"
     "voice": "girl_warm",        # boy_calm | boy_fun | girl_warm | girl_fast
+    "voice_output": True,        # v1.3.0: speaker toggle - speak replies?
     "greeting_enabled": True,
     "avatar": "cat",
     "pet_visible": True,
     "pet_parked": False,
-    "owner_code": "",            # secret code, set by the user in Settings only
+    # v1.3.0: NO owner_code setting anymore. The owner code is stored
+    # ONLY as a SHA-256 hash in main.py (OWNER_CODE_HASH) - never as
+    # plaintext in settings.json, logs, or anywhere else.
     "owner_unlocked": False,     # session flag, never persisted as true
 }
 

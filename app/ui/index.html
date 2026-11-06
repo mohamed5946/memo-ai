@@ -19,6 +19,7 @@
     <span class="pill" id="net-pill"><span class="dot"></span><span id="net-text">Online</span></span>
     <button class="icon-btn btn-3d" id="pet-btn" title="إظهار / إخفاء الحيوان">🐾</button>
     <button class="icon-btn btn-3d" id="island-btn" title="تصغير للجزيرة">➖</button>
+    <button class="icon-btn btn-3d" id="voice-btn" title="تشغيل / إيقاف صوت المساعد">🔊</button>
     <button class="icon-btn btn-3d" id="settings-btn" title="الإعدادات">⚙️</button>
   </header>
 
@@ -111,13 +112,6 @@
       </button>
     </div>
 
-    <h3 data-i18n="sec_owner">وضع المالك</h3>
-    <div class="field">
-      <label data-i18n="owner_code">الكود السري (بتكتبه في الشات عشان تفتح وضع المالك)</label>
-      <input type="password" id="set-owner-code" placeholder="••••••••" autocomplete="off">
-      <div class="hint" data-i18n="owner_hint">الكود بيتخزن على جهازك بس، ومش بيظهر في أي سجل. سيبه فاضي لو مش عايز تغيّره.</div>
-    </div>
-
     <h3 data-i18n="sec_logs">سجل التشخيص</h3>
     <div class="log-box" id="log-box">...</div>
     <div class="row" style="margin-top:10px">
@@ -134,7 +128,7 @@
 
     <h3 data-i18n="sec_about">عن المطور</h3>
     <div class="about-box">
-      <div><b>Memo AI</b> v1.2.5</div>
+      <div><b>Memo AI</b> v1.3.0</div>
       <div data-i18n="about_by">صمم بواسطة <b>ENG/Mohamed El Sayed</b></div>
       <div>📧 ma4670156@gmail.com</div>
       <div>📱 01557887719</div>
@@ -148,6 +142,20 @@
     <div class="row" style="margin-top:20px; justify-content: space-between">
       <button class="danger-btn btn-3d" id="quit-btn">⏻ <span data-i18n="quit">إغلاق البرنامج</span></button>
       <button class="gold-btn btn-3d" id="settings-save">💾 <span data-i18n="save">حفظ</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= Permission dialog (v1.3.0 tools) ================= -->
+<div class="modal-backdrop" id="perm-modal">
+  <div class="modal" style="width:min(520px, 92vw)">
+    <h2 data-i18n="perm_title">طلب تنفيذ إجراء ⚠️</h2>
+    <div class="perm-kind" id="perm-kind"></div>
+    <div class="perm-summary" id="perm-summary"></div>
+    <pre class="perm-detail" id="perm-detail"></pre>
+    <div class="row" style="margin-top:18px; justify-content: space-between">
+      <button class="danger-btn btn-3d" id="perm-deny">✕ <span data-i18n="perm_deny">رفض</span></button>
+      <button class="gold-btn btn-3d" id="perm-allow">✓ <span data-i18n="perm_allow">سماح</span></button>
     </div>
   </div>
 </div>
