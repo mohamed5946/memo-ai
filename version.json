@@ -1,1 +1,8 @@
-{"notes":"مثبّت ويندوز حقيقي (setup.exe) — ثبّت زي أي برنامج من غير Python أو pip. والقطة والجزيرة زي ما هما في v1.2.0.","setup_url":"https://github.com/mohamed5946/memo-ai/releases/download/v1.2.1/MemoAI-Setup-1.2.1.exe","sha256":"23a692e317aac1201884af7aa388bed46e49ed0f9d2511ee054c173345888cd7","url":"https://github.com/mohamed5946/memo-ai/releases/download/v1.2.1/memo-ai-v1.2.1.zip","version":"1.2.1"}
+{
+  "notes": "مثبّت ويندوز حقيقي (setup.exe) — ثبّت زي أي برنامج من غير Python أو pip. والقطة والجزيرة زي ما هما في v1.2.0.",
+  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.1/MemoAI-Setup-1.2.1.exe",
+  "sha256": "dc066fc70957750e156ff52df8c5e01110070644ae1cf8836173c6f7c614b4df",
+  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.2.1/memo-ai-v1.2.1.zip",
+  "version": "1.2.1",
+  "setup_sha256": "2f487dee9f96c8060d1a0fd510457d27675f9da54a2175851614b4ea7f306089"
+}
