@@ -63,8 +63,7 @@ jobs:
           pyinstaller installer/memo-ai.spec
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
           if (-not (Test-Path "dist\Memo AI\Memo AI.exe")) { throw "Memo AI.exe was not produced" }
-          if (-not (Test-Path "dist\Memo AI\app\ui\index.html")) { throw "Bundled UI is missing from dist" }
-          if (-not (Test-Path "dist\Memo AI\keys\README.txt")) { throw "Bundled keys folder is missing from dist" }
+          if (-not (Test-Path "dist\Memo AI\_internal\app\ui\index.html")) { throw "Bundled UI is missing from dist (expected under _internal)" }
 
       - name: Build source zip
         shell: pwsh

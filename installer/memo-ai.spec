@@ -6,11 +6,15 @@
 #   pyinstaller installer/memo-ai.spec
 # Output: dist\Memo AI\Memo AI.exe  (with app\ + keys\ next to it)
 #
-# The frozen layout mirrors the zip layout exactly: the exe sits next to
-# app/ (ui + data) and keys/, so settings_store.resolve_app_paths()
-# resolves the same way in both installs. The Python modules themselves
-# are frozen into the exe/_internal — only ui/, data/ and keys/ are loose
-# files, and the app never writes code files at runtime.
+# The frozen layout mirrors the zip layout, with one PyInstaller 6 quirk:
+# the bootloader puts ALL collected files under _internal/ next to the exe,
+# so in the frozen install the app files live in _internal/app/ (resolved
+# via sys._MEIPASS in settings_store). keys/ is NOT bundled as data — it
+# lives next to the exe (BASE_DIR/keys) and is installed by Inno Setup
+# directly from the repo, so users can see and edit their key files.
+# The Python modules themselves are frozen into the exe/_internal — only
+# ui/, data/ and keys/ are loose files, and the app never writes code
+# files at runtime.
 
 import os
 from PyInstaller.utils.hooks import collect_all
@@ -21,7 +25,6 @@ APP = os.path.join(ROOT, "app")
 datas = [
     (os.path.join(APP, "ui"), "app/ui"),
     (os.path.join(APP, "data"), "app/data"),
-    (os.path.join(ROOT, "keys"), "keys"),
 ]
 binaries = []
 hiddenimports = [

@@ -14,14 +14,19 @@ def resolve_app_paths() -> tuple:
 
     - Normal run (zip / source): APP_DIR = app/ next to this file,
       BASE_DIR = the memo-ai project folder.
-    - Frozen run (PyInstaller one-folder install): the exe sits next to
-      app/ and keys/, so APP_DIR = <exe dir>/app and BASE_DIR = <exe dir>.
-    In both cases the layout is identical, so keys/ and app/data/ work
-    exactly the same in the zip install and the setup.exe install.
+    - Frozen run (PyInstaller one-folder install): the bootloader extracts
+      the bundle into _internal/ next to the exe, so APP_DIR =
+      <exe dir>/_internal/app (via sys._MEIPASS) and BASE_DIR = <exe dir>.
+      keys/ stays OUTSIDE _internal — it lives next to the exe
+      (BASE_DIR/keys), exactly like the zip install, so users can see
+      and edit their key files. (PyInstaller 6 puts ALL collected files
+      under _internal/; only the exe sits at the bundle root.)
+    In both cases the layout works the same for keys/ and app/data/.
     """
     if getattr(sys, "frozen", False):
-        base = Path(sys.executable).resolve().parent
-        return base / "app", base
+        exe_dir = Path(sys.executable).resolve().parent
+        meipass = Path(getattr(sys, "_MEIPASS", exe_dir / "_internal"))
+        return meipass / "app", exe_dir
     app_dir = Path(__file__).resolve().parent
     return app_dir, app_dir.parent
 

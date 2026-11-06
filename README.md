@@ -89,7 +89,8 @@ Qwen 2.5 3B، والمخ الأونلاين Groq ‏(gpt-oss-120b)‏. الصو�
    https://github.com/mohamed5946/memo-ai/releases
 2. دوس عليه مرتين وثبّت زي أي برنامج — من غير أدمن، ومن غير Python.
 3. لو كان عندك مفاتيح في نسخة الـ zip القديمة (`Downloads\memo-ai\keys`)،
-   المثبّت بينقلها لوحده.
+   المثبّت بينقلها لوحده. ولو عايز تضيف مفتاح يدوياً بعد التثبيت، حطه في
+   مجلد `keys` جوه مجلد التثبيت (`%LOCALAPPDATA%\Programs\Memo AI\keys`).
 
 بعد التثبيت شغّل «Memo AI» من قائمة Start — بيفتح كـ **Dynamic Island**
 بس (حبة صغيرة فوق الشاشة).

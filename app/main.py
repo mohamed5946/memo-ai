@@ -18,10 +18,12 @@
 # v1.2.1 INSTALLER (2026-11-06): real Windows setup.exe (PyInstaller
 # one-folder + Inno Setup, per-user install, no admin, no Python/pip).
 # Frozen-aware paths: settings_store.resolve_app_paths() — in the frozen
-# install the exe sits next to app/ and keys/, so keys/ and app/data/
-# work exactly like the zip install. The in-app updater in frozen mode
-# installs the new setup.exe silently (see updater.install_setup) because
-# a source zip cannot replace the frozen exe itself.
+# install the app files live in _internal/app/ (PyInstaller 6 puts all
+# collected files under _internal/), while keys/ stays next to the exe,
+# so keys/ and app/data/ work exactly like the zip install. The in-app
+# updater in frozen mode installs the new setup.exe silently (see
+# updater.install_setup) because a source zip cannot replace the frozen
+# exe itself.
 #
 # v1.2 TRANSPARENCY (2026-11-06): the island/pet still showed a white
 # rectangle on the laptop. Root cause, verified against the pywebview 6.2

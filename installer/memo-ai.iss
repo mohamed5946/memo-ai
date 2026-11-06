@@ -47,8 +47,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checked
 
 [Files]
-; The whole PyInstaller one-folder output (exe + _internal + app\ + keys\).
+; The whole PyInstaller one-folder output (exe + _internal + app\).
 Source: "..\dist\Memo AI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; keys/ lives next to the exe (not inside _internal) so users can see and
+; edit their key files; only the instructions file ships with the installer.
+Source: "..\keys\README.txt"; DestDir: "{app}\keys"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Memo AI"; Filename: "{app}\Memo AI.exe"
