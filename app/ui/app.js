@@ -115,7 +115,16 @@ const I18N = {
     update_done: "التحديث نزل وبيتثبّت — البرنامج هيعيد التشغيل...",
     update_failed: "التحديث فشل — شوف السجل",
     update_error: "مقدرتش أتحقق من التحديثات — شوف السجل",
-    confirm_install: "هينزّل التحديث ويثبّته ويعيد تشغيل البرنامج. كمّل؟",
+    update_whats_new: "إيه الجديد في",
+    update_download: "⬇️ تنزيل التحديث",
+    update_install_now: "تثبيت الآن",
+    update_install_later: "تثبيت لاحقاً",
+    update_ready: "التحديث نزل وجاهز ✅",
+    update_ready_hint: "اختار وقت ما تحب — التثبيت هيعيد تشغيل البرنامج.",
+    update_saved_later: "تمام — التحديث محفوظ، تقدر تثبّته من هنا وقت ما تحب.",
+    update_install_downloaded: "تثبيت التحديث المنزّل",
+    update_redownloading: "الملف المنزّل مش سليم — بينزّل من جديد...",
+    update_no_download: "مفيش تحديث منزّل لسه.",
     sec_about: "عن المطور",
     about_by: "صمم بواسطة ENG/Mohamed El Sayed",
     visit_site: "زور الموقع", github: "GitHub",
@@ -242,7 +251,16 @@ const I18N = {
     update_done: "Update downloaded, installing — the app will restart...",
     update_failed: "Update failed — see the log",
     update_error: "Couldn't check for updates — see the log",
-    confirm_install: "This will download, install the update and restart the app. Continue?",
+    update_whats_new: "What's new in",
+    update_download: "⬇️ Download update",
+    update_install_now: "Install now",
+    update_install_later: "Install later",
+    update_ready: "Update downloaded and ready ✅",
+    update_ready_hint: "Install whenever you like — installing restarts the app.",
+    update_saved_later: "Saved — you can install it from here whenever you like.",
+    update_install_downloaded: "Install the downloaded update",
+    update_redownloading: "The saved file is unusable — re-downloading...",
+    update_no_download: "No downloaded update yet.",
     sec_about: "About the developer",
     about_by: "Designed by ENG/Mohamed El Sayed",
     visit_site: "Visit website", github: "GitHub",
@@ -917,6 +935,255 @@ async function refreshWhatsApp() {
   } catch (e) { /* status stays as-is */ }
 }
 
+// v1.4.3: Apple-style "What's new" slide + Install now / Install later.
+//
+// Download and install are SEPARATE steps now: check -> download
+// (progress bar) -> state "downloaded" -> this slide offers the
+// choice. Nothing installs automatically, and there is no confirm()
+// dialog anywhere in the update flow.
+//
+// Feature cards come from the manifest's structured "features" list
+// when the release carries one; otherwise the plain "notes" text is
+// split the same way the backend does (see updater.parse_features).
+let updateReminderShownThisSession = false; // reminder: at most once a session
+let updatePollTimer = null;
+let updateSlideData = null; // {version, features} of the open slide
+
+function parseFeaturesFromNotes(notes) {
+  const chunks = String(notes || "").split(/[\n•—]+/);
+  const icons = ["✨", "🛠️", "🧠", "💬", "🔍", "⚡", "🎨", "🔒"];
+  const out = [];
+  chunks.forEach((raw, i) => {
+    let text = raw.trim().replace(/^-+\s*/, "").trim();
+    if (i === 0) text = text.replace(/^v?\d+(?:\.\d+){1,2}\s*:\s*/, "");
+    if (!text) return;
+    let title = text, desc = "";
+    const colon = text.indexOf(":");
+    if (colon > 0 && colon <= 40 && text.slice(colon + 1).trim()) {
+      title = text.slice(0, colon).trim();
+      desc = text.slice(colon + 1).trim();
+    }
+    if (title.length > 60 && !desc) {
+      const cut = title.lastIndexOf(" ", 60);
+      if (cut > 20) { desc = title.slice(cut).trim(); title = title.slice(0, cut).trim(); }
+    }
+    out.push({ icon: icons[out.length % icons.length], title, desc });
+  });
+  return out;
+}
+
+function normalizeFeatures(res) {
+  if (res && Array.isArray(res.features) && res.features.length) return res.features;
+  return parseFeaturesFromNotes(res ? res.notes : "");
+}
+
+function hideUpdateSlide() {
+  const slide = $("update-slide");
+  if (slide) { slide.hidden = true; slide.innerHTML = ""; }
+  updateSlideData = null;
+}
+
+function renderUpdateSlide(data, phase) {
+  // phase: "available" (Download button) | "downloading" (progress
+  // inside the slide) | "ready" (Install now / Install later).
+  const slide = $("update-slide");
+  if (!slide) return;
+  updateSlideData = data;
+  slide.hidden = false;
+  slide.innerHTML = "";
+  // Re-trigger the entrance animation on every render.
+  slide.classList.remove("update-slide-in");
+  void slide.offsetWidth;
+  slide.classList.add("update-slide-in");
+
+  const hero = document.createElement("div");
+  hero.className = "update-slide-hero";
+  const icon = document.createElement("div");
+  icon.className = "update-slide-icon";
+  icon.textContent = "✨";
+  const title = document.createElement("div");
+  title.className = "update-slide-title";
+  title.textContent = t("update_whats_new") + " v" + data.version;
+  const ver = document.createElement("div");
+  ver.className = "update-slide-version";
+  ver.textContent = "v" + data.version;
+  hero.appendChild(icon); hero.appendChild(title); hero.appendChild(ver);
+  slide.appendChild(hero);
+
+  const list = document.createElement("div");
+  list.className = "update-feature-list";
+  (data.features || []).forEach((f, i) => {
+    const card = document.createElement("div");
+    card.className = "update-feature-card";
+    card.style.animationDelay = (i * 60) + "ms";
+    const ic = document.createElement("div");
+    ic.className = "update-feature-icon";
+    ic.textContent = f.icon || "✨";
+    const body = document.createElement("div");
+    body.className = "update-feature-body";
+    const tt = document.createElement("div");
+    tt.className = "update-feature-title";
+    tt.textContent = f.title || "";
+    body.appendChild(tt);
+    if (f.desc) {
+      const dd = document.createElement("div");
+      dd.className = "update-feature-desc";
+      dd.textContent = f.desc;
+      body.appendChild(dd);
+    }
+    card.appendChild(ic); card.appendChild(body);
+    list.appendChild(card);
+  });
+  if (!list.children.length) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = t("update_available");
+    list.appendChild(empty);
+  }
+  slide.appendChild(list);
+
+  const footer = document.createElement("div");
+  footer.className = "update-slide-actions";
+  if (phase === "available") {
+    const dl = document.createElement("button");
+    dl.className = "gold-btn btn-3d";
+    dl.textContent = t("update_download");
+    dl.addEventListener("click", startUpdateDownload);
+    footer.appendChild(dl);
+  } else if (phase === "downloading") {
+    const track = document.createElement("div");
+    track.className = "update-progress-track";
+    const fill = document.createElement("div");
+    fill.className = "update-progress-fill";
+    fill.id = "update-slide-progress-fill";
+    track.appendChild(fill);
+    const label = document.createElement("div");
+    label.className = "update-progress-label";
+    label.id = "update-slide-progress-label";
+    label.textContent = t("update_downloading");
+    footer.appendChild(track); footer.appendChild(label);
+  } else if (phase === "ready") {
+    const hint = document.createElement("div");
+    hint.className = "update-slide-hint";
+    hint.textContent = t("update_ready_hint");
+    slide.appendChild(hint);
+    const now = document.createElement("button");
+    now.className = "gold-btn btn-3d";
+    now.textContent = t("update_install_now");
+    now.addEventListener("click", installDownloadedNow);
+    const later = document.createElement("button");
+    later.className = "ghost-btn btn-3d";
+    later.textContent = t("update_install_later");
+    later.addEventListener("click", installDownloadedLater);
+    footer.appendChild(now); footer.appendChild(later);
+  }
+  slide.appendChild(footer);
+}
+
+function pollUpdateProgress() {
+  // v1.3.1: the download used to run ~90s with zero feedback, so it
+  // looked dead. Poll the download progress and render the bar +
+  // "x MB / y MB (z%)" until the app restarts (or fails).
+  // v1.4.3: a "downloaded" state now ends the poll by showing the
+  // Install-now / Install-later slide instead of installing.
+  if (updatePollTimer) clearInterval(updatePollTimer);
+  const fmtMB = (n) => (n / 1048576).toFixed(1);
+  const setBar = (pct, label) => {
+    const fill = $("update-slide-progress-fill") || $("update-progress-fill");
+    const lab = $("update-slide-progress-label") || $("update-progress-label");
+    if (fill) fill.style.width = (pct != null ? pct : 0) + "%";
+    if (lab) lab.textContent = label;
+  };
+  updatePollTimer = setInterval(async () => {
+    try {
+      const b = getApi();
+      if (!b) return;
+      const p = await b.get_update_progress();
+      if (!p) return;
+      if (p.state === "downloading") {
+        if (updateSlideData && !$("update-slide-progress-fill")) {
+          renderUpdateSlide(updateSlideData, "downloading");
+        }
+        const total = p.total ? " / " + fmtMB(p.total) + " MB" : "";
+        const pct = p.percent != null ? " (" + p.percent + "%)" : "";
+        setBar(p.percent, t("update_downloading") + " " + fmtMB(p.downloaded) + " MB" + total + pct);
+      } else if (p.state === "verifying") {
+        setBar(100, t("update_verifying"));
+      } else if (p.state === "downloaded") {
+        clearInterval(updatePollTimer); updatePollTimer = null;
+        setBar(100, t("update_ready"));
+        try {
+          const d = await b.get_downloaded_update();
+          if (d && d.downloaded && d.valid) {
+            renderUpdateSlide({ version: d.version, features: d.features || [] }, "ready");
+          }
+        } catch (e) { /* the slide stays on the ready text */ }
+      } else if (p.state === "done") {
+        clearInterval(updatePollTimer); updatePollTimer = null;
+        setBar(100, t("update_done"));
+      } else if (p.state === "error") {
+        clearInterval(updatePollTimer); updatePollTimer = null;
+        setBar(null, t("update_failed"));
+      }
+    } catch (e) { /* the app may restart mid-poll - that means success */ }
+  }, 500);
+}
+
+async function startUpdateDownload() {
+  const b = getApi();
+  if (!b) { $("update-status").textContent = t("bridge_not_ready"); return; }
+  if (!updateSlideData) return;
+  renderUpdateSlide(updateSlideData, "downloading");
+  try { await b.download_update(); } catch (e) { /* see the log */ }
+  pollUpdateProgress();
+}
+
+async function installDownloadedNow() {
+  // "Install now": installs ONLY the already-downloaded file, then
+  // the app restarts. If the saved file turned out unusable, the
+  // backend re-downloads it and the poll shows the choice slide again.
+  const b = getApi();
+  if (!b) { $("update-status").textContent = t("bridge_not_ready"); return; }
+  $("update-status").textContent = t("update_installing");
+  try { await b.install_update(); } catch (e) { /* see the log */ }
+  pollUpdateProgress();
+}
+
+async function installDownloadedLater() {
+  // "Install later": close the slide, KEEP the downloaded file, and
+  // mark the reminder shown so it pops at most once today / once
+  // this session. The update stays installable from Settings.
+  const b = getApi();
+  if (b && b.dismiss_update_reminder) {
+    try { await b.dismiss_update_reminder(); } catch (e) { /* non-fatal */ }
+  }
+  updateReminderShownThisSession = true;
+  hideUpdateSlide();
+  $("update-status").textContent = t("update_saved_later");
+  const btn = $("install-downloaded-btn");
+  if (btn) btn.style.display = "";
+}
+
+async function refreshDownloadedState() {
+  // Called when the Updates section opens: a waiting download gets
+  // its "Install the downloaded update" button, and the reminder
+  // slide pops at most once a day (backend date flag) and once per
+  // session (this flag) - never twice in a row.
+  const b = getApi();
+  const btn = $("install-downloaded-btn");
+  if (!b || !b.get_downloaded_update) { if (btn) btn.style.display = "none"; return; }
+  try {
+    const d = await b.get_downloaded_update();
+    if (!d || !d.downloaded) { if (btn) btn.style.display = "none"; return; }
+    if (btn) btn.style.display = "";
+    if (d.valid && d.remind && !updateReminderShownThisSession) {
+      updateReminderShownThisSession = true;
+      if (b.dismiss_update_reminder) await b.dismiss_update_reminder();
+      renderUpdateSlide({ version: d.version, features: d.features || [] }, "ready");
+    }
+  } catch (e) { /* leave the button hidden */ }
+}
+
 // v1.4.1: Settings menu (DeliveryFlow-style) - one section at a time,
 // with a back button to the menu. The menu itself is a .settings-view.
 function showSettingsSection(name) {
@@ -929,6 +1196,7 @@ function showSettingsSection(name) {
   if (name === "memory") refreshMemory();
   if (name === "system") refreshMonitor();
   if (name === "notifications") refreshNotifications();
+  if (name === "updates") refreshDownloadedState();
 }
 function showSettingsMenu() {
   document.querySelectorAll(".settings-view").forEach(v => {
@@ -1125,60 +1393,39 @@ function init() {
   $("portfolio-btn").addEventListener("click", () => { const b = getApi(); if (b) b.open_portfolio(); });
   $("check-updates-btn").addEventListener("click", async () => {
     const st = $("update-status");
-    const installBtn = $("install-update-btn");
     const b = getApi();
-    if (!b) { st.textContent = t("bridge_not_ready"); installBtn.style.display = "none"; return; }
+    if (!b) { st.textContent = t("bridge_not_ready"); return; }
     st.textContent = t("update_checking");
-    installBtn.style.display = "none";
+    hideUpdateSlide();
     try {
       const res = await b.check_updates();
       if (res.status === "not_configured") st.textContent = t("update_not_configured");
       else if (res.status === "up_to_date") st.textContent = t("update_up_to_date") + " (v" + res.current + ")";
       else if (res.status === "update_available") {
-        st.textContent = t("update_available") + " v" + res.version + (res.notes ? " — " + res.notes : "");
-        installBtn.style.display = "";
+        // v1.4.3: no plain-text status line - the Apple-style slide
+        // shows the version + one card per feature. Already downloaded
+        // (Install later earlier)? Offer Install now straight away.
+        st.textContent = "";
+        const dl = res.downloaded || {};
+        if (dl.downloaded && dl.valid && dl.version === res.version) {
+          renderUpdateSlide({ version: res.version, features: normalizeFeatures(res) }, "ready");
+        } else {
+          renderUpdateSlide({ version: res.version, features: normalizeFeatures(res) }, "available");
+        }
       } else st.textContent = t("update_error") + (res.message ? " — " + res.message : "");
     } catch (e) {
       st.textContent = t("update_error");
     }
   });
-  $("install-update-btn").addEventListener("click", async () => {
+  // v1.4.3: "Install the downloaded update" (Settings) - installs the
+  // saved file; if it turned out unusable the backend re-downloads
+  // it and the poll brings the choice slide back when it is ready.
+  $("install-downloaded-btn").addEventListener("click", async () => {
     const b = getApi();
     if (!b) { $("update-status").textContent = t("bridge_not_ready"); return; }
-    if (!confirm(t("confirm_install"))) return;
     $("update-status").textContent = t("update_installing");
     try { await b.install_update(); } catch (e) { /* see the log */ }
-    // v1.3.1: the download used to run ~90s with zero feedback, so it
-    // looked dead. Poll the download progress and render the bar +
-    // "x MB / y MB (z%)" until the app restarts (or fails).
-    const bar = $("update-progress");
-    const fill = $("update-progress-fill");
-    const label = $("update-progress-label");
-    bar.style.display = "";
-    const fmtMB = (n) => (n / 1048576).toFixed(1);
-    const timer = setInterval(async () => {
-      try {
-        const p = await getApi().get_update_progress();
-        if (!p) return;
-        if (p.state === "downloading") {
-          const total = p.total ? " / " + fmtMB(p.total) + " MB" : "";
-          const pct = p.percent != null ? " (" + p.percent + "%)" : "";
-          label.textContent = t("update_downloading") + " " + fmtMB(p.downloaded) +
-            " MB" + total + pct;
-          fill.style.width = (p.percent != null ? p.percent : 0) + "%";
-        } else if (p.state === "verifying") {
-          label.textContent = t("update_verifying");
-          fill.style.width = "100%";
-        } else if (p.state === "done") {
-          label.textContent = t("update_done");
-          fill.style.width = "100%";
-          clearInterval(timer);
-        } else if (p.state === "error") {
-          label.textContent = t("update_failed");
-          clearInterval(timer);
-        }
-      } catch (e) { /* the app may restart mid-poll - that means success */ }
-    }, 500);
+    pollUpdateProgress();
   });
   $("quit-btn").addEventListener("click", async () => {
     const b = getApi();
