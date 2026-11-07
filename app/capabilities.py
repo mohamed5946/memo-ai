@@ -10,14 +10,15 @@
 #        / "not_built" (designed, not built yet) / "not_connected"
 #        (needs the user to connect something first).
 
-# WhatsApp linking: DESIGNED (3rd number only, WhatsApp Web QR, Memo AI
-# as a linked device; main number -> owner mode, others -> reply mode)
-# but NOT BUILT in v1.3.2. v1.4.0 (branch feat/whatsapp, separate build)
-# implements it and flips WHATSAPP to "ready" + sets WHATSAPP_LINKED
-# from the real session. Until then the brain must say: "not linked
-# yet — linking is being built, here's what it will need (QR + 3rd
-# number)", never a flat "I can't".
-WHATSAPP = "building"
+# WhatsApp linking: BUILT in v1.4.0 (branch feat/whatsapp) — Baileys
+# sidecar, QR in Settings, linked device on the 3rd number only; main
+# number -> owner mode, others -> reply mode. WHATSAPP_LINKED is NOT a
+# static flag anymore: whatsapp_status_line() reads the LIVE session
+# state from whatsapp.get_state() (lazy import — brain imports this
+# module, and whatsapp imports brain, so a top-level import would be a
+# cycle). The constants below are only the fallback when the WhatsApp
+# module is missing from the build.
+WHATSAPP = "ready"
 WHATSAPP_LINKED = False
 
 # Screen translation ("ترجم الشاشة"): designed, NOT built yet.
@@ -37,25 +38,98 @@ MODEL_7B = "not_built"
 XTTS_VOICE = "not_built"
 
 
+def _live_whatsapp_state() -> dict | None:
+    """Live link state from the WhatsApp module (lazy import: brain ->
+    capabilities -> whatsapp would be a cycle at module level, and
+    whatsapp imports brain. Returns None if the module is unavailable
+    in this build)."""
+    try:
+        from whatsapp import get_state
+        return get_state()
+    except Exception:
+        return None
+
+
 def whatsapp_status_line(language: str = "ar") -> str:
-    """One truthful line about WhatsApp, for the system prompt."""
-    if WHATSAPP_LINKED:
+    """One truthful line about WhatsApp, for the system prompt.
+    v1.4.0: reads the LIVE session state (linked / waiting for QR /
+    connecting / off) instead of a static flag, so the brain never
+    claims a link that does not exist - and never refuses blindly
+    when linking just needs a QR scan."""
+    st = _live_whatsapp_state()
+    if st is None:
+        # WhatsApp module missing from this build: static fallback.
+        if WHATSAPP_LINKED:
+            return _linked_line(language, None)
+        if WHATSAPP == "building":
+            return _building_line(language)
+        return _not_built_line(language)
+    status = st.get("status")
+    if status == "linked":
+        return _linked_line(language, st.get("linked_phone"))
+    if status == "waiting_qr":
         if language == "ar":
-            return ("الواتساب مربوط ✅ — تقدر تستقبل رسايل واتساب وترد عليها "
-                    "من هنا.")
-        return "WhatsApp is linked ✅ — you can receive and reply to WhatsApp messages from here."
-    if WHATSAPP == "building":
+            return ("الواتساب مستني مسح الـ QR — الكود ظاهر في الإعدادات، "
+                    "امسحه من واتساب على الرقم التالت (مش الأساسي) وهيتربط.")
+        return ("WhatsApp is waiting for the QR scan — the code is shown "
+                "in Settings; scan it from WhatsApp on the third number "
+                "(not the main one) and it will link.")
+    if status in ("connecting", "disconnected"):
         if language == "ar":
-            return ("الواتساب لسه مش مربوط — الربط نفسه بيتبني دلوقتي "
-                    "(هيتربط برقم تالت بـ QR من واتساب ويب)، فلحد ما يخلص "
-                    "مقدرش أسجّل دخول بالواتساب ولا أبعت/أستقبل رسايل واتساب. "
-                    "لو سألك عنه، اشرحله كده وعرّفه إنه هيتربط بـ QR أول ما "
-                    "النسخة الجديدة تنزل، وقدّم بديل (يكتب هنا في الشات).")
-        return ("WhatsApp is not linked yet — linking is being built right "
-                "now (it will link with a third number via a WhatsApp Web "
-                "QR code), so until then I cannot sign in to WhatsApp or "
-                "send/receive WhatsApp messages. If asked, explain that and "
-                "offer to chat here instead.")
+            return ("الواتساب بيحاول يتصل دلوقتي — لو فضل كده شوف السجل، "
+                    "ولو اتقطع هيرجع لوحده من غير QR جديد.")
+        return ("WhatsApp is (re)connecting right now — if it stays like "
+                "that, check the log; a dropped connection comes back on "
+                "its own without a new QR.")
+    if status == "error":
+        if language == "ar":
+            return ("الواتساب فيه مشكلة — شوف السجل للسبب الدقيق، "
+                    "وغالباً الحل إعادة تشغيل الربط من الإعدادات.")
+        return ("WhatsApp has a problem — check the log for the exact "
+                "reason; usually restarting the link from Settings fixes it.")
+    # off / disabled: not linked yet, needs enabling + a QR scan.
+    if language == "ar":
+        return ("الواتساب مش مربوط لسه — فعّله من الإعدادات وامسح الـ QR "
+                "من واتساب على الرقم التالت (مش الأساسي ومش رقم الشغل)، "
+                "وبعدها أقدر أستقبل رسايل واتساب وأرد عليها؛ رسايل الرقم "
+                "الأساسي أوامر للابتوب، وأي رقم تاني ردود شات بس.")
+    return ("WhatsApp is not linked yet — enable it in Settings and scan "
+            "the QR from WhatsApp on the third number (not the main one, "
+            "not the work number); then I can receive and reply to "
+            "WhatsApp messages. Messages from the main number are laptop "
+            "commands; any other number gets chat replies only.")
+
+
+def _linked_line(language: str, masked_phone: str | None) -> str:
+    if language == "ar":
+        line = ("الواتساب مربوط ✅ — بتستقبل رسايل واتساب وترد عليها من هنا؛ "
+                "رسايل الرقم الأساسي أوامر للابتوب، وأي رقم تاني ردود شات بس.")
+        if masked_phone:
+            line += f" (الرقم المربوط: {masked_phone})"
+        return line
+    line = ("WhatsApp is linked ✅ — you can receive and reply to WhatsApp "
+            "messages from here; messages from the main number are laptop "
+            "commands, any other number gets chat replies only.")
+    if masked_phone:
+        line += f" (Linked number: {masked_phone})"
+    return line
+
+
+def _building_line(language: str) -> str:
+    if language == "ar":
+        return ("الواتساب لسه مش مربوط — الربط نفسه بيتبني دلوقتي "
+                "(هيتربط برقم تالت بـ QR من واتساب ويب)، فلحد ما يخلص "
+                "مقدرش أسجّل دخول بالواتساب ولا أبعت/أستقبل رسايل واتساب. "
+                "لو سألك عنه، اشرحله كده وعرّفه إنه هيتربط بـ QR أول ما "
+                "النسخة الجديدة تنزل، وقدّم بديل (يكتب هنا في الشات).")
+    return ("WhatsApp is not linked yet — linking is being built right "
+            "now (it will link with a third number via a WhatsApp Web "
+            "QR code), so until then I cannot sign in to WhatsApp or "
+            "send/receive WhatsApp messages. If asked, explain that and "
+            "offer to chat here instead.")
+
+
+def _not_built_line(language: str) -> str:
     if language == "ar":
         return ("الواتساب مش مربوط لسه — الربط متصمم بس مش مبني: محتاج "
                 "يتربط الأول برقم تالت بـ QR من واتساب ويب، وبعدها أقدر "

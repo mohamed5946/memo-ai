@@ -10,3 +10,8 @@ app/data/settings.json
 app/data/logs/*.log
 # Local updater state
 app/data/update-state.json
+# v1.4.0: WhatsApp sidecar - installed by CI (npm ci), never committed
+app/whatsapp_sidecar/node_modules/
+app/whatsapp_sidecar/node/
+# v1.4.0: WhatsApp session (Signal keys) - local only, NEVER committed
+app/data/whatsapp_auth/

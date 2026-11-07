@@ -56,6 +56,36 @@ _PERMISSION_TIMEOUT = 120.0  # seconds; timeout = deny
 _pending: list = []          # list of pending request dicts (FIFO)
 _pending_lock = threading.Lock()
 
+# v1.4.0: verified-owner channel (WhatsApp owner number). The owner
+# number IS the authentication - a message can only arrive from that
+# SIM - and the owner is remote by definition, so an Allow/Deny dialog
+# on the laptop would never be seen. request_permission() auto-allows
+# in such a thread (logged as AUTO-ALLOWED). The destructive-command
+# blocklist still runs BEFORE any permission check, so it applies here
+# too, and there is still NO delete tool. Thread-local: the in-app
+# chat is never affected.
+_trusted = threading.local()
+
+
+def set_trusted_caller(flag: bool) -> None:
+    _trusted.flag = bool(flag)
+
+
+class trusted_caller:
+    """Context manager: run a block as a verified-owner channel."""
+    def __init__(self, flag: bool = True):
+        self.flag = flag
+        self.prev = False
+
+    def __enter__(self):
+        self.prev = getattr(_trusted, "flag", False)
+        set_trusted_caller(self.flag)
+        return self
+
+    def __exit__(self, *exc):
+        set_trusted_caller(self.prev)
+        return False
+
 # Hook set by main.py at startup: called (best effort) when a permission
 # request is created, so the app can bring the main window forward.
 on_permission_needed = None
@@ -67,7 +97,15 @@ def _log_request(req: dict, decision: str) -> None:
 
 def request_permission(kind: str, summary: str, detail: str = "") -> bool:
     """Ask the user (Allow/Deny). Blocks the calling (brain) thread until
-    the UI resolves it or the timeout hits. Returns True only on Allow."""
+    the UI resolves it or the timeout hits. Returns True only on Allow.
+
+    v1.4.0: in a verified-owner channel (WhatsApp owner number) the
+    permission is auto-allowed - the number IS the authentication and
+    the owner is remote, so no dialog could ever be answered."""
+    if getattr(_trusted, "flag", False):
+        info("tools", f"Permission AUTO-ALLOWED (verified owner channel): "
+                      f"{kind} - {summary}")
+        return True
     req = {
         "id": uuid.uuid4().hex[:8],
         "kind": kind,

@@ -73,6 +73,24 @@
     <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-autostart" checked>
       <span data-i18n="autostart_toggle">تشغيل Memo AI تلقائياً مع بدء ويندوز (يبدأ كجزيرة بس)</span></label>
 
+    <h3 data-i18n="sec_whatsapp">واتساب — ربط كجهاز مرتبط</h3>
+    <div class="field"><div class="hint" data-i18n="wa_hint">
+      Memo AI بيتربط بواتساب <b>الرقم التالت</b> اللي شبه مش بيستخدمه (مش رقم الشغل ومش الرقم الأساسي) كجهاز مرتبط عبر QR — زي WhatsApp Web. الرقم الأساسي اللي هتكتبه تحت بيقدر يأمر اللابتوب، وأي رقم تاني بياخد ردود شات بس.</div></div>
+    <label class="toggle"><input type="checkbox" id="set-whatsapp">
+      <span data-i18n="wa_toggle">تفعيل ربط الواتساب</span></label>
+    <div class="field" style="margin-top:10px">
+      <label data-i18n="wa_owner_label">رقمك الأساسي (owner) — اللي يأمر اللابتوب من الواتساب</label>
+      <input type="text" id="set-wa-owner" placeholder="01xxxxxxxxx" dir="ltr">
+    </div>
+    <div class="field"><div class="hint" id="wa-status" data-i18n="wa_status_off">الواتساب مش مفعّل.</div></div>
+    <div class="wa-qr-wrap" id="wa-qr-wrap" style="display:none">
+      <img id="wa-qr" alt="WhatsApp QR">
+      <div class="hint" data-i18n="wa_scan_hint">افتح واتساب على <b>الرقم التالت</b> ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز، وامسح الكود ده.</div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost-btn btn-3d" id="wa-disconnect-btn">🔌 <span data-i18n="wa_disconnect">فصل وإلغاء الربط</span></button>
+    </div>
+
     <h3 data-i18n="sec_voice">الصوت — 4 أصوات</h3>
     <div class="voice-grid" id="voice-grid">
       <button class="voice-card btn-3d" data-voice="boy_calm">
@@ -134,7 +152,7 @@
 
     <h3 data-i18n="sec_about">عن المطور</h3>
     <div class="about-box">
-      <div><b>Memo AI</b> v1.3.2</div>
+      <div><b>Memo AI</b> v1.4.0</div>
       <div data-i18n="about_by">صمم بواسطة <b>ENG/Mohamed El Sayed</b></div>
       <div>📧 ma4670156@gmail.com</div>
       <div>📱 01557887719</div>
@@ -142,7 +160,7 @@
     </div>
 
     <div class="todo-note" style="margin-top:16px" data-i18n="todo_note">
-      قيد التطوير (v2): ترجمة الشاشة، واتساب، المجلس متعدد النماذج، تنبيهات الجيميل والتقويم في التحية الصباحية، أصوات XTTS، وموديل 7B.
+      قيد التطوير (v2): ترجمة الشاشة، المجلس متعدد النماذج، تنبيهات الجيميل والتقويم في التحية الصباحية، أصوات XTTS، وموديل 7B.
     </div>
 
     <div class="row" style="margin-top:20px; justify-content: space-between">

@@ -59,6 +59,11 @@ DEFAULTS = {
     # ONLY as a SHA-256 hash in main.py (OWNER_CODE_HASH) - never as
     # plaintext in settings.json, logs, or anywhere else.
     "owner_unlocked": False,     # session flag, never persisted as true
+    # v1.4.0: WhatsApp linking (Baileys sidecar, QR, 3rd number only).
+    "whatsapp_enabled": False,   # off by default - opt in from Settings
+    # The owner's MAIN number (digits, e.g. 01557887719) - owner mode
+    # over WhatsApp. Empty = nobody is owner, everyone gets reply mode.
+    "whatsapp_owner_phone": "",
 }
 
 

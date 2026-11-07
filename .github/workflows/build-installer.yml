@@ -46,6 +46,39 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js 20 (WhatsApp sidecar)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install WhatsApp sidecar deps
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm ci --prefix app/whatsapp_sidecar --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw "npm ci (whatsapp sidecar) failed" }
+          if (-not (Test-Path "app/whatsapp_sidecar/node_modules/@whiskeysockets/baileys/package.json")) { throw "Baileys not installed" }
+
+      - name: Download portable Node 20 LTS (bundled runtime)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # The sidecar needs a Node runtime on the user's machine, but the
+          # user never installs anything by hand: bundle node.exe.
+          # Resolve the latest Node 20 LTS from the official dist index.
+          $index = Invoke-RestMethod https://nodejs.org/dist/index.json
+          $node20 = ($index | Where-Object { $_.version -like "v20.*" -and $_.lts } | Select-Object -First 1).version
+          if (-not $node20) { throw "Could not resolve latest Node 20 LTS" }
+          Write-Host "Bundling portable Node $node20"
+          $zip = "node-$node20-win-x64.zip"
+          Invoke-WebRequest "https://nodejs.org/dist/$node20/$zip" -OutFile $zip
+          Expand-Archive $zip -DestinationPath node-dl
+          $folder = $zip.Replace(".zip", "")
+          New-Item -ItemType Directory -Force app/whatsapp_sidecar/node | Out-Null
+          Copy-Item "node-dl/$folder/node.exe" app/whatsapp_sidecar/node/node.exe
+          if (-not (Test-Path "app/whatsapp_sidecar/node/node.exe")) { throw "node.exe was not placed" }
+          Remove-Item $zip, node-dl -Recurse -Force
+
       - name: Install dependencies
         shell: pwsh
         run: |
@@ -66,6 +99,11 @@ jobs:
           if (-not (Test-Path "dist\Memo AI\_internal\app\ui\index.html")) { throw "Bundled UI is missing from dist (expected under _internal)" }
           if (-not (Test-Path "dist\Memo AI\_internal\webview\js\api.js")) { throw "webview/js/api.js missing from bundle — window.pywebview would never exist" }
           if (-not (Test-Path "dist\Memo AI\_internal\app\ui\assets\cat-run.png")) { throw "cat-run.png missing from bundle — the pet run animation would have no sprite" }
+          # v1.4.0: the WhatsApp sidecar + bundled Node runtime must be in
+          # the bundle, or linking silently does nothing on the user's PC.
+          if (-not (Test-Path "dist\Memo AI\_internal\app\whatsapp_sidecar\sidecar.js")) { throw "whatsapp sidecar.js missing from bundle" }
+          if (-not (Test-Path "dist\Memo AI\_internal\app\whatsapp_sidecar\node_modules\@whiskeysockets\baileys\package.json")) { throw "Baileys missing from bundle" }
+          if (-not (Test-Path "dist\Memo AI\_internal\app\whatsapp_sidecar\node\node.exe")) { throw "bundled node.exe missing from bundle — WhatsApp cannot run" }
           # v1.3.1: the chroma-key is DELETED for good - it left the magenta
           # box visible AND made both windows fully click-through. Fail the
           # build loudly if the color or the mechanism ever comes back.

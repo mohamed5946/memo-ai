@@ -23,6 +23,20 @@ const I18N = {
     greeting_toggle: "التحية الصباحية عند التشغيل (مع الطقس)",
     pet_toggle: "إظهار الحيوان الأليف على الشاشة",
     autostart_toggle: "تشغيل Memo AI تلقائياً مع بدء ويندوز (يبدأ كجزيرة بس)",
+    sec_whatsapp: "واتساب — ربط كجهاز مرتبط",
+    wa_hint: "Memo AI بيتربط بواتساب الرقم التالت اللي شبه مش بيستخدمه (مش رقم الشغل ومش الرقم الأساسي) كجهاز مرتبط عبر QR — زي WhatsApp Web. الرقم الأساسي اللي هتكتبه تحت بيقدر يأمر اللابتوب، وأي رقم تاني بياخد ردود شات بس.",
+    wa_toggle: "تفعيل ربط الواتساب",
+    wa_owner_label: "رقمك الأساسي (owner) — اللي يأمر اللابتوب من الواتساب",
+    wa_status_off: "الواتساب مش مفعّل.",
+    wa_status_unavailable: "الواتساب مش متاح في النسخة دي.",
+    wa_status_connecting: "بيتصل بواتساب...",
+    wa_status_waiting: "امسح الـ QR من واتساب على الرقم التالت.",
+    wa_status_linked: "مربوط ✅ — الرقم: ",
+    wa_status_disconnected: "اتقطع الاتصال — بيحاول يرجع لوحده...",
+    wa_status_error: "فيه مشكلة في الواتساب — شوف السجل.",
+    wa_scan_hint: "افتح واتساب على الرقم التالت ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز، وامسح الكود ده.",
+    wa_disconnect: "فصل وإلغاء الربط",
+    wa_owner_missing: "⚠️ اكتب رقمك الأساسي فوق عشان أوامر الواتساب تشتغل — من غيره كل الرسايل هتاخد ردود شات بس.",
     sec_voice: "الصوت — 4 أصوات",
     voice_output_on: "صوت المساعد شغال 🔊",
     voice_output_off: "صوت المساعد مقفول 🔇",
@@ -58,7 +72,7 @@ const I18N = {
     sec_about: "عن المطور",
     about_by: "صمم بواسطة ENG/Mohamed El Sayed",
     visit_site: "زور الموقع",
-    todo_note: "قيد التطوير (v2): ترجمة الشاشة، واتساب، المجلس متعدد النماذج، تنبيهات الجيميل والتقويم في التحية الصباحية، أصوات XTTS، وموديل 7B.",
+    todo_note: "قيد التطوير (v2): ترجمة الشاشة، المجلس متعدد النماذج، تنبيهات الجيميل والتقويم في التحية الصباحية، أصوات XTTS، وموديل 7B.",
     quit: "إغلاق البرنامج", save: "حفظ",
     online: "Online", offline: "Offline",
     listening: "🎙️ بسمعك... اتكلم دلوقتي",
@@ -86,6 +100,20 @@ const I18N = {
     greeting_toggle: "Morning greeting on startup (with weather)",
     pet_toggle: "Show the desktop pet",
     autostart_toggle: "Start Memo AI automatically with Windows (island only)",
+    sec_whatsapp: "WhatsApp — link as a device",
+    wa_hint: "Memo AI links to the barely-used THIRD number (not the work number, not the main number) as a linked device via QR — like WhatsApp Web. The main number you type below can command the laptop; any other number only gets chat replies.",
+    wa_toggle: "Enable WhatsApp linking",
+    wa_owner_label: "Your main number (owner) — the one that commands the laptop from WhatsApp",
+    wa_status_off: "WhatsApp is off.",
+    wa_status_unavailable: "WhatsApp is not available in this build.",
+    wa_status_connecting: "Connecting to WhatsApp...",
+    wa_status_waiting: "Scan the QR from WhatsApp on the third number.",
+    wa_status_linked: "Linked ✅ — Number: ",
+    wa_status_disconnected: "Connection lost — reconnecting on its own...",
+    wa_status_error: "WhatsApp has a problem — see the log.",
+    wa_scan_hint: "Open WhatsApp on the THIRD number → Settings → Linked devices → Link a device, and scan this code.",
+    wa_disconnect: "Disconnect and unlink",
+    wa_owner_missing: "⚠️ Type your main number above so WhatsApp commands work — without it every message only gets chat replies.",
     sec_voice: "Voice — 4 voices",
     voice_output_on: "Assistant voice on 🔊",
     voice_output_off: "Assistant voice off 🔇",
@@ -121,7 +149,7 @@ const I18N = {
     sec_about: "About the developer",
     about_by: "Designed by ENG/Mohamed El Sayed",
     visit_site: "Visit website",
-    todo_note: "In development (v2): screen translation, WhatsApp, multi-model council, Gmail/calendar in the morning briefing, XTTS voices, and the 7B model.",
+    todo_note: "In development (v2): screen translation, multi-model council, Gmail/calendar in the morning briefing, XTTS voices, and the 7B model.",
     quit: "Quit the app", save: "Save",
     online: "Online", offline: "Offline",
     listening: "🎙️ Listening... speak now",
@@ -420,6 +448,9 @@ async function refreshStatus() {
       $("set-pet").checked = st.settings.pet_visible === true;
       // v1.3.1: autostart toggle (default ON) + pet button state.
       $("set-autostart").checked = st.settings.autostart !== false;
+      // v1.4.0: WhatsApp fields.
+      $("set-whatsapp").checked = st.settings.whatsapp_enabled === true;
+      $("set-wa-owner").value = st.settings.whatsapp_owner_phone || "";
       updatePetBtn(st.settings.pet_visible === true);
       selectedVoice = st.settings.voice || "girl_warm";
       // v1.3.0 voice-output toggle (persisted; default ON).
@@ -445,6 +476,35 @@ async function refreshLogs() {
   } catch (e) {
     box.textContent = "…";
   }
+}
+
+// v1.4.0: WhatsApp link status + QR (polled while the Settings modal
+// is open). The QR data URL changes on every re-issue, so the img src
+// is only replaced when it actually changed (avoids flicker).
+let lastWaQr = "";
+async function refreshWhatsApp() {
+  const bridge = getApi();
+  if (!bridge || !bridge.get_whatsapp_status) return;
+  try {
+    const st = await bridge.get_whatsapp_status();
+    const el = $("wa-status"), wrap = $("wa-qr-wrap"), img = $("wa-qr");
+    let text = t("wa_status_off");
+    if (st.status === "unavailable") text = t("wa_status_unavailable");
+    else if (st.status === "connecting") text = t("wa_status_connecting");
+    else if (st.status === "waiting_qr") text = t("wa_status_waiting");
+    else if (st.status === "linked") text = t("wa_status_linked") + (st.linked_phone || "");
+    else if (st.status === "disconnected") text = t("wa_status_disconnected");
+    else if (st.status === "error") text = t("wa_status_error") + (st.error ? " (" + st.error + ")" : "");
+    if (st.status === "linked" && !st.owner_configured) text += "\n" + t("wa_owner_missing");
+    el.textContent = text;
+    if (st.qr) {
+      if (st.qr !== lastWaQr) { img.src = st.qr; lastWaQr = st.qr; }
+      wrap.style.display = "block";
+    } else {
+      wrap.style.display = "none";
+      lastWaQr = "";
+    }
+  } catch (e) { /* status stays as-is */ }
 }
 
 function init() {
@@ -481,6 +541,13 @@ function init() {
   $("settings-btn").addEventListener("click", () => {
     $("settings-modal").classList.add("open");
     refreshLogs();
+    refreshWhatsApp();
+    // While Settings is open, poll the WhatsApp status (QR refreshes).
+    if (!window._waTimer) {
+      window._waTimer = setInterval(() => {
+        if ($("settings-modal").classList.contains("open")) refreshWhatsApp();
+      }, 3000);
+    }
   });
   $("settings-close").addEventListener("click", () => $("settings-modal").classList.remove("open"));
   $("settings-modal").addEventListener("click", e => {
@@ -515,11 +582,27 @@ function init() {
       autostart: $("set-autostart").checked,
     };
     await b.save_settings(JSON.stringify(payload));
+    // v1.4.0: WhatsApp settings live on their own path (separate
+    // whitelist in Python) - enabling starts the sidecar at once.
+    try {
+      await b.whatsapp_save(JSON.stringify({
+        enabled: $("set-whatsapp").checked,
+        owner_phone: $("set-wa-owner").value.trim(),
+      }));
+    } catch (e) { /* WhatsApp save is best-effort here */ }
+    refreshWhatsApp();
     LANG = payload.language;
     applyLang();
     refreshStatus();
     $("status").textContent = t("saved");
     setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2500);
+  });
+
+  $("wa-disconnect-btn").addEventListener("click", async () => {
+    const b = getApi();
+    if (!b || !b.whatsapp_disconnect) return;
+    await b.whatsapp_disconnect();
+    refreshWhatsApp();
   });
 
   $("logs-refresh").addEventListener("click", refreshLogs);

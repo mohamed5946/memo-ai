@@ -220,7 +220,15 @@ import weather
 import winshape
 import autostart
 
-VERSION = "1.3.2"
+# v1.4.0: WhatsApp linking (Baileys sidecar, app/whatsapp.py). Guarded:
+# if the module fails to import (missing sidecar files), the app runs
+# fine without WhatsApp - nothing else in main.py depends on it.
+try:
+    import whatsapp as whatsapp_mod
+except Exception:
+    whatsapp_mod = None
+
+VERSION = "1.4.0"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -820,6 +828,54 @@ class Api:
     def get_log_text(self):
         return {"text": log_text(200)}
 
+    # -- WhatsApp linking (v1.4.0) ----------------------------------------
+    def get_whatsapp_status(self):
+        """Link state for the Settings UI (status + QR + masked number).
+        The brain reads the same state via whatsapp.get_state() to answer
+        truthfully about WhatsApp (v1.3.2 system prompt)."""
+        if whatsapp_mod is None:
+            return {"enabled": False, "running": False,
+                    "status": "unavailable", "qr": None,
+                    "linked_phone": None, "owner_configured": False,
+                    "error": "WhatsApp module not available in this build"}
+        return whatsapp_mod.get_state()
+
+    def whatsapp_save(self, payload):
+        """Save WhatsApp settings from the UI: {enabled, owner_phone}.
+        Starts/stops the sidecar to match. (Api.save_settings and its
+        key whitelist are untouched by v1.4.0 - this is a separate path.)"""
+        if whatsapp_mod is None:
+            return {"ok": False, "error": "WhatsApp module not available"}
+        try:
+            data = json.loads(payload) if isinstance(payload, str) else payload
+        except Exception as exc:
+            error("app", f"Bad WhatsApp settings payload: {exc}")
+            return {"ok": False}
+        if "enabled" in data:
+            _APP.settings["whatsapp_enabled"] = bool(data["enabled"])
+        if "owner_phone" in data:
+            _APP.settings["whatsapp_owner_phone"] = \
+                whatsapp_mod.normalize_number(str(data["owner_phone"]))
+        ok = save_settings(_APP.settings)
+        if _APP.settings.get("whatsapp_enabled", False):
+            svc = whatsapp_mod.ensure_started(_APP.settings)
+            if svc is None or not svc.start():
+                return {"ok": False,
+                        "error": "could not start WhatsApp sidecar (see log)",
+                        "state": whatsapp_mod.get_state()}
+        else:
+            whatsapp_mod.stop_service()
+        return {"ok": ok, "state": whatsapp_mod.get_state()}
+
+    def whatsapp_disconnect(self):
+        """Log out + wipe the session (fresh QR next time)."""
+        if whatsapp_mod is None:
+            return {"ok": False}
+        svc = whatsapp_mod.get_service()
+        if svc is not None:
+            svc.logout()
+        return {"ok": True}
+
 
 class MemoApp:
     def __init__(self):
@@ -1186,6 +1242,12 @@ class MemoApp:
 
     def quit(self):
         self._quitting = True
+        # v1.4.0: stop the WhatsApp sidecar first (before the windows die).
+        if whatsapp_mod is not None:
+            try:
+                whatsapp_mod.stop_service()
+            except Exception:
+                pass
         speak.stop()
         try:
             if self.pet_window:
@@ -1269,6 +1331,14 @@ class MemoApp:
                 info("app", "Another Memo AI instance is already running - "
                             "exiting (could not signal it)")
             return
+        # v1.4.0: WhatsApp linking - start the sidecar if enabled.
+        # Guarded: a missing/broken WhatsApp module never blocks startup,
+        # and a second instance never reaches this line (see lock above).
+        if whatsapp_mod is not None:
+            try:
+                whatsapp_mod.start_service(self.settings)
+            except Exception as exc:
+                error("whatsapp", f"Could not start WhatsApp service: {exc}")
         threading.Thread(
             target=winshape.watch_show_main_event,
             args=(self._show_main_event, self.show_main,

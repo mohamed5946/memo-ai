@@ -1,0 +1,52 @@
+# Memo AI — WhatsApp headless checks
+#
+# Runs the v1.4.0 WhatsApp tests on Linux (no phone, no Windows):
+# sidecar --self-test protocol, Python service vs a fake sidecar,
+# owner/guest routing, trusted-caller rules, number handling.
+# The full Windows installer build still runs only from
+# build-installer.yml (tag / manual dispatch).
+#
+# Runs on pushes to feat/whatsapp and on pull requests to main, so the
+# branch stays green without ever touching a release.
+
+name: WhatsApp headless checks
+
+on:
+  push:
+    branches:
+      - "feat/whatsapp"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  whatsapp-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sidecar deps
+        run: npm ci --prefix app/whatsapp_sidecar --no-audit --no-fund
+
+      - name: Install Python test deps
+        run: pip install requests
+
+      - name: Run WhatsApp headless tests
+        run: python3 scripts/whatsapp-test.py
+
+      - name: Compile-check Python modules
+        run: python3 -m py_compile app/*.py installer/build_source_zip.py
+
+      - name: Compile-check PyInstaller spec
+        run: python3 -m py_compile installer/memo-ai.spec
