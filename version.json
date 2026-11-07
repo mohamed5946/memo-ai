@@ -1,8 +1,8 @@
 {
   "notes": "v1.4.1: القطة والجزيرة اتشالوا (النافذة الرئيسية على طول + إغلاق لـ tray) — إصلاح حفظ الصوت/الأفاتار/رقم الواتساب والـ QR — الإعدادات منظمة زي DeliveryFlow — إجابة 'مين المطور؟' بمعلومات عامة بس — وضع المالك بيشتغل فعلاً — إصلاح الـ 400 والـ 'none' في الردود.",
-  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.0/MemoAI-Setup-1.4.0.exe",
-  "sha256": "98eb75cfa18fe514aaccf13d466596f48201a9a8175c5d3a06b5a3660ce85c27",
-  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.0/memo-ai-v1.4.0.zip",
-  "version": "1.4.0",
-  "setup_sha256": "0d35047db280f0ba38197beba095411d0a0496ad60f0429e03e7b33ee6f2529a"
+  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.1/MemoAI-Setup-1.4.1.exe",
+  "sha256": "fd1ba2a47904ddd40283915dac9b2eeda5f1641ddf380a049d061e82bf9442f1",
+  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.1/memo-ai-v1.4.1.zip",
+  "version": "1.4.1",
+  "setup_sha256": "48a23271f01373d1f2bda756e002c69fa5e5fa220b2d6a26dcd7603b08ce62a2"
 }
