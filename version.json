@@ -1,9 +1,9 @@
 {
   "notes": "v1.4.3: بطاقة السماح/الرفض أصغر بأنيميشن ناعم — إصلاح أداة حالة الجهاز (الرام والقرص والمعالج بأرقام حقيقية، والحرارة غير المتاحة بتتقال بصراحة) — توليد صور مجاني من غير API key — مفيش نافذة Terminal بتتفتح تاني (كل العمليات مخفية) — إصلاح عاصفة Bad MAC في فك تشفير الواتساب (إيقاف الفيضان + محاولة إعادة تأسيس الجلسة + حالة «مش قادر يفك التشفير» مع إعادة ربط) — التحديث مبيتثبّتش لوحده: «تثبيت الآن» أو «تثبيت لاحقاً» مع شاشة «إيه الجديد» على شكل Apple.",
-  "setup_sha256": "2365a420b457cb6b535ae4aced9c3dc886b1b20887a7496862a714e33005dbb7",
-  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.2/MemoAI-Setup-1.4.2.exe",
-  "sha256": "e47cb0692f506430fa3e9d64ee73914e1aedd6be974a281f16c128669a7eb419",
-  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.2/memo-ai-v1.4.2.zip",
+  "setup_sha256": "d3e268d3d2aac006307650f32746c2f85dc9dd7ebbe284f1cfc700f9c8f2a55f",
+  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.3/MemoAI-Setup-1.4.3.exe",
+  "sha256": "0fa1e8c51a475f6ada485d48ebbb093bb35ea7d753242e26d1085f467c62d8d5",
+  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.3/memo-ai-v1.4.3.zip",
   "version": "1.4.3",
   "features": [
     {
