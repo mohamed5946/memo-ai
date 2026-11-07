@@ -1,4 +1,13 @@
 // Memo AI v1.4.0 — WhatsApp sidecar (Node + Baileys 6.7.x).
+// v1.4.3: Bad MAC decrypt-failure watch (see decrypt_watch.js):
+//   - libsignal's unthrottled console.error flood is deduped + masked.
+//   - undecryptable messages (CIPHERTEXT stubs) are counted per sender;
+//     after 3 distinct failures the session is force re-keyed via
+//     sock.assertSessions([jid], true); after 5 the link is reported
+//     DEGRADED (needs a clean re-link) instead of silently "linked".
+//   - a CIPHERTEXT stub is NEVER marked seen: the sender's retry
+//     re-sends the SAME message id, and marking it seen would drop the
+//     healed re-send when it finally decrypts.
 //
 // Memo AI itself is Python; WhatsApp Web has no trustworthy free Python
 // client (yowsup is dead pre-multi-device, pywa is the paid Business
@@ -41,6 +50,14 @@
 //     {"event":"disconnected","reason":"...","logged_out":bool}
 //     {"event":"logged_out"}   {"event":"pong"}   {"event":"error","error":"..."}
 //     {"event":"log","level":"info|warn|error","msg":"..."}
+//     v1.4.3 decrypt-failure events (masked sender, never content):
+//     {"event":"decrypt_failed","sender":"…01@s.whatsapp.net",
+//      "failures":3,"reason":"No matching sessions found for message"}
+//     {"event":"decrypt_rekey","sender":"…01@s.whatsapp.net",
+//      "attempt":1,"attempted":true,"ok":true}
+//     {"event":"decrypt_degraded","sender":"…01@s.whatsapp.net",
+//      "failures":5,"needs_relink":true}
+//     {"event":"decrypt_recovered","sender":"…01@s.whatsapp.net"}
 //
 // SAFETY: only 1:1 text messages are surfaced (groups, status,
 // self-messages and media are ignored). No message content is ever
@@ -50,6 +67,12 @@
 // Usage: node sidecar.js <auth-dir> [--self-test]
 //   --self-test: exercise the JSON-lines protocol without connecting
 //   (CI/headless check: fake QR + ping + send-without-socket error).
+//   --self-test-decrypt: headless Bad MAC storm simulation (no
+//   network, no WhatsApp): a fake socket + repeated undecryptable
+//   (CIPHERTEXT) messages + repeated libsignal Bad MAC console.error
+//   lines; asserts one masked log line, a bounded re-key attempt and
+//   a degraded event, then a recovery. Emits the decrypt_* events
+//   above plus {"event":"self_test_decrypt_done", ...} and exits 0.
 
 import { createInterface } from "node:readline";
 import { promises as fs } from "node:fs";
@@ -64,16 +87,48 @@ import { Boom } from "@hapi/boom";
 import QRCode from "qrcode";
 import pino from "pino";
 import { HttpsProxyAgent } from "https-proxy-agent";
+import {
+  CIPHERTEXT_STUB_TYPE,
+  DecryptWatch,
+  looksLikeDecryptFailure,
+  maskDigits,
+  maskJid,
+} from "./decrypt_watch.js";
 
 const AUTH_DIR = process.argv[2] || "./whatsapp_auth";
 const SELF_TEST = process.argv.includes("--self-test");
+const SELF_TEST_DECRYPT = process.argv.includes("--self-test-decrypt");
+
+// v1.4.3: libsignal's SessionCipher.decryptWithSessions() logs EVERY
+// failed decrypt via console.error ("Failed to decrypt message with
+// any known session..." + a full stack per error), bypassing Baileys'
+// pino logger (silenced below). That is the ~5s log flood in the
+// field log. Intercept console.error at the global level — libsignal
+// looks console up at call time, so this catches it even though the
+// import was hoisted — and gate ONLY the decrypt-failure lines
+// (DecryptWatch.noteConsoleError): first occurrence per session logs
+// once, masked; repeats are counted and swallowed, with a periodic
+// summary. Everything else passes through untouched.
+const origConsoleError = console.error.bind(console);
+const decryptWatch = new DecryptWatch();
+console.error = (...args) => {
+  const text = args
+    .map((a) => (a instanceof Error ? a.stack || a.message : String(a)))
+    .join(" ");
+  const gate = decryptWatch.noteConsoleError(text);
+  if (!gate.log) return; // suppressed repeat of the Bad MAC flood
+  if (gate.gated) origConsoleError(`[sidecar:error] ${gate.text}`);
+  else origConsoleError(...args);
+};
 
 // stdout is the protocol channel — NEVER console.log anything else.
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 function diag(level, msg) {
-  console.error(`[sidecar:${level}] ${msg}`);
+  // v1.4.3: diag bypasses the console.error filter above (it uses the
+  // saved original) so sidecar diagnostics always reach stderr.
+  origConsoleError(`[sidecar:${level}] ${msg}`);
   emit({ event: "log", level, msg });
 }
 
@@ -135,6 +190,9 @@ class Sidecar {
     this.reconnectDelay = 2000;
     this.recentKeys = new Map(); // msg id -> { jid, key } (for quoted replies)
     this.seenIds = new Set(); // dedup: Baileys can deliver a message twice
+    // v1.4.3: per-sender Bad MAC watch (re-key + degraded escalation).
+    // One watch per sidecar lifetime; logout() resets it (fresh keys).
+    this.decryptWatch = new DecryptWatch();
   }
 
   async start() {
@@ -248,6 +306,27 @@ class Sidecar {
   onMessage(msg) {
     if (isIgnorable(msg)) return;
     const id = msg.key?.id || "";
+    const senderJid = msg.key?.remoteJid || "";
+    // v1.4.3: UNDECRYPTABLE MESSAGE (Baileys could not decrypt it:
+    // messageStubType CIPHERTEXT, no .message content). This check
+    // runs BEFORE the seenIds dedup on purpose: the sender's retry
+    // re-sends the SAME message id once the retry receipt + fresh
+    // keys arrive, and marking the failed id seen would silently
+    // drop the healed re-send. Count the failure (distinct ids
+    // only — re-deliveries of the same id do not inflate it),
+    // force a re-key when due, escalate to degraded when the
+    // session stays broken. Never emit a "message" event for it:
+    // there is no text, and the brain must never answer a stub.
+    if (!msg.message && msg.messageStubType === CIPHERTEXT_STUB_TYPE) {
+      const reason = msg.messageStubParameters?.[0] || "";
+      if (looksLikeDecryptFailure(reason) || !reason) {
+        // Fire-and-forget (guarded inside); a failure here must never
+        // break message handling — but never leave a rejection dangling.
+        this.onDecryptFailed({ senderJid, msgId: id, reason }).catch((err) =>
+          diag("error", `decrypt-failure handling failed: ${err?.message || err}`));
+      }
+      return;
+    }
     if (id && this.seenIds.has(id)) return; // dedup
     if (id) {
       this.seenIds.add(id);
@@ -291,6 +370,70 @@ class Sidecar {
       text,
       ts: Number(msg.messageTimestamp) || 0,
     });
+    // v1.4.3: a REAL decrypted message from this sender — if the
+    // sender was degraded, the session healed (retry receipt + fresh
+    // keys worked): clear the watch and tell Python it recovered.
+    const healed = this.decryptWatch.recordSuccess(senderJid);
+    if (healed.recovered) {
+      emit({ event: "decrypt_recovered", sender: healed.senderMasked });
+      diag("info", `WhatsApp decrypt recovered for sender ${healed.senderMasked}`);
+    }
+  }
+
+  // v1.4.3: one undecryptable message arrived. Count it (distinct
+  // ids only), emit decrypt_failed, force a session re-key when due,
+  // escalate to degraded when the session stays broken. Fire-and-
+  // forget from onMessage — every await is guarded, so a failure
+  // here can never break message handling.
+  async onDecryptFailed({ senderJid, msgId, reason }) {
+    try {
+      const res = this.decryptWatch.recordFailure({ senderJid, msgId, reason });
+      if (!res.isNewMessage) return; // re-delivery of a known failure: silent
+      emit({ event: "decrypt_failed", sender: res.senderMasked,
+             failures: res.count,
+             reason: maskDigits(res.reason) });
+      diag("warn", `WhatsApp message from ${res.senderMasked} failed to ` +
+                   `decrypt (${res.count} distinct failures; ${res.reason})`);
+      if (res.rekeyDue) {
+        // RE-KEY: Baileys 6.7.24 has no public sendRetryReceipt — the
+        // retry receipt is internal (messages-recv.js) and already
+        // fires per message (cap 5, fresh pre-keys from retry #2).
+        // The public primitive left is sock.assertSessions([jid],
+        // true) (messages-send.js:158): fetch a fresh pre-key bundle
+        // from the server and inject a new E2E session, so the next
+        // message is encrypted under fresh keys. Capped by the
+        // watch (max 2 per sender, 60s cooldown) — never a loop.
+        let ok = false;
+        let errText = "";
+        try {
+          if (this.sock?.assertSessions) {
+            await this.sock.assertSessions([senderJid], true);
+            ok = true;
+          } else {
+            errText = "no socket";
+          }
+        } catch (err) {
+          errText = err?.message || String(err);
+        }
+        this.decryptWatch.noteRekeyResult({ senderJid, ok, error: errText });
+        emit({ event: "decrypt_rekey", sender: res.senderMasked,
+               attempt: res.rekeyAttempt, attempted: true, ok,
+               error: maskDigits(errText).slice(0, 120) });
+        diag(ok ? "info" : "warn",
+             `WhatsApp session re-key for ${res.senderMasked} ` +
+             (ok ? "requested (fresh pre-keys)" : `failed: ${errText}`));
+      }
+      if (res.degradedNow) {
+        emit({ event: "decrypt_degraded", sender: res.senderMasked,
+               failures: res.count, needs_relink: true });
+        diag("error", `WhatsApp decrypt DEGRADED for ${res.senderMasked} ` +
+                      `(${res.count} messages undecryptable, re-key did not ` +
+                      `heal the session) — messages are being lost, ` +
+                      `a clean re-link is needed`);
+      }
+    } catch (err) {
+      diag("error", `decrypt-failure handling failed: ${err?.message || err}`);
+    }
   }
 
   async lookup(jids) {
@@ -320,6 +463,9 @@ class Sidecar {
 
   async logout() {
     this.shouldRun = false;
+    // v1.4.3: logout wipes the session keys — the decrypt watch for
+    // the old session is stale with them.
+    this.decryptWatch = new DecryptWatch();
     if (this.sock) {
       try { await this.sock.logout(); } catch { /* already out */ }
       try { this.sock.end(); } catch { /* already closed */ }
@@ -343,7 +489,74 @@ class Sidecar {
 // stdin command loop (JSON lines)
 // ---------------------------------------------------------------------------
 
+// v1.4.3 headless Bad MAC storm simulation (no network, no WhatsApp).
+// Feeds the REAL onMessage path: repeated libsignal Bad MAC
+// console.error lines (with the field log's session id), 6 distinct
+// CIPHERTEXT stubs from one sender (plus 2 re-deliveries of the same
+// id, which must NOT inflate the count), then one good message from
+// the same sender. Expected stdout events: decrypt_failed x6,
+// decrypt_rekey x1 (assertSessions called once, force=true),
+// decrypt_degraded x1, decrypt_recovered x1; stderr must carry
+// exactly ONE masked Bad MAC line (never the raw session id).
+async function selfTestDecrypt() {
+  const sidecar = new Sidecar(AUTH_DIR);
+  const rekeyCalls = [];
+  sidecar.sock = {
+    async assertSessions(jids, force) {
+      rekeyCalls.push({ jids: [...jids], force: !!force });
+      return true;
+    },
+  };
+  const sender = "201000000001@s.whatsapp.net";
+  const stub = (id) => ({
+    key: { remoteJid: sender, fromMe: false, id },
+    messageTimestamp: 1790000000,
+    pushName: "Guest",
+    messageStubType: CIPHERTEXT_STUB_TYPE,
+    messageStubParameters: ["No matching sessions found for message"],
+  });
+  // The field log's flood, verbatim in shape: libsignal's
+  // console.error per failed decrypt, same session id every time.
+  const stack =
+    "Error: Bad MAC\n" +
+    "    at verifyMAC (libsignal/src/crypto.js:87:15)\n" +
+    "    at SessionCipher.doDecryptWhisperMessage " +
+    "(libsignal/src/session_cipher.js:251:9)\n" +
+    "    at SessionCipher.decryptWithSessions " +
+    "(libsignal/src/session_cipher.js:137:5) [231864564510752.0]";
+  for (let i = 0; i < 12; i++) {
+    console.error("Failed to decrypt message with any known session...");
+    console.error("Session error: " + new Error("Bad MAC"), stack);
+  }
+  for (const id of ["bad-1", "bad-2", "bad-3", "bad-4", "bad-5", "bad-6"]) {
+    sidecar.onMessage(stub(id));
+    await sleep(50);
+  }
+  // Re-deliveries of an already-failed id: must stay silent (no new
+  // decrypt_failed event, no count inflation, no second re-key).
+  sidecar.onMessage(stub("bad-1"));
+  sidecar.onMessage(stub("bad-1"));
+  await sleep(100);
+  // The session heals: one real decrypted message from the same sender.
+  sidecar.onMessage({
+    key: { remoteJid: sender, fromMe: false, id: "good-1" },
+    message: { conversation: "hello again" },
+    messageTimestamp: 1790000001,
+    pushName: "Guest",
+  });
+  await sleep(100);
+  emit({ event: "self_test_decrypt_done",
+         sender: maskJid(sender),
+         rekey_calls: rekeyCalls,
+         watch: sidecar.decryptWatch.snapshot() });
+  process.exit(0);
+}
+
 async function main() {
+  if (SELF_TEST_DECRYPT) {
+    await selfTestDecrypt();
+    return;
+  }
   if (SELF_TEST) {
     // Headless protocol check (no network, no WhatsApp): fake QR, ping,
     // send-without-socket error, lookup-without-socket error, clean stop.

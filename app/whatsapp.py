@@ -63,6 +63,48 @@
 #   message-key shape, so the next failure can be diagnosed instead
 #   of guessed at.
 #
+# v1.4.3 - BAD MAC DECRYPT STORM (field log 2026-11-07 12:52:42-12:55:18):
+#   Incoming WhatsApp messages reached the sidecar but NEVER
+#   decrypted — "Failed to decrypt message with any known session..."
+#   + "Session error: Error: Bad MAC" every ~5s, same session id.
+#   Root cause, in the installed Baileys 6.7.24:
+#     * Decryption happens INSIDE Baileys, before messages.upsert:
+#       decode-wa-message.js decryptMessageNode().decrypt() catches
+#       the libsignal SessionError and marks the message
+#       messageStubType = CIPHERTEXT (2) with no .message content.
+#       Baileys then sends a RETRY RECEIPT automatically
+#       (messages-recv.js sendRetryRequest: retry #1 = placeholder
+#       resend, retry #>1 includes fresh pre-keys — the sender is
+#       asked to re-encrypt with fresh keys = session
+#       re-establishment), capped at maxMsgRetryCount = 5 PER MESSAGE.
+#       There is NO public sendRetryReceipt in 6.7.24; the retry
+#       receipt is internal and already fires on its own.
+#     * The LOG FLOOD is libsignal, not Baileys: libsignal's
+#       SessionCipher.decryptWithSessions() console.errors EVERY
+#       failed decrypt (+ a full stack), bypassing Baileys' silenced
+#       pino logger. The ~5s cadence is the retry/resend cycle: each
+#       NEW message restarts Baileys' per-message retry counter, so
+#       the storm never ends while the session is broken.
+#   The fix (sidecar decrypt_watch.js + this module):
+#     * sidecar: libsignal console.error is gated (first Bad MAC per
+#       session logs once, masked; repeats counted + swallowed);
+#       CIPHERTEXT stubs are counted per sender (distinct ids only —
+#       and NEVER marked seen, so the sender's retry re-send of the
+#       SAME id still delivers when it heals); after 3 distinct
+#       failures the session is force re-keyed via the only public
+#       primitive, sock.assertSessions([jid], true); after 5 the
+#       link is DEGRADED (needs a clean re-link). A real decrypted
+#       message from the sender clears it (recovery is proven).
+#     * this module: aggregates the sidecar's decrypt_failed /
+#       decrypt_rekey / decrypt_degraded / decrypt_recovered events
+#       into get_state() (status "decrypt_failed" + counts), escalates
+#       to DEGRADED itself at 5 failures (belt and braces), keeps the
+#       "ready" event from silently re-greening a degraded link, and
+#       gates any Bad MAC lines that still reach stderr (defense in
+#       depth — same window, masked, stack frames swallowed too).
+#     * sends still work while degraded (the socket is live; the send
+#       path asserts sessions itself), and logout() clears the state.
+#
 # v1.4.2 - UTF-8 STDOUT READER: the sidecar's stdout/stderr are read
 #   as UTF-8 with errors='replace' (v1.4.1 used the Windows locale
 #   codec, so one 0x81 byte killed the reader thread and no WhatsApp
@@ -116,11 +158,26 @@ STATUS_LINKED = "linked"
 STATUS_DISCONNECTED = "disconnected"
 STATUS_ERROR = "error"
 STATUS_DEAD = "dead"   # v1.4.2: sidecar crashed too often, not restarting
+STATUS_DEGRADED = "decrypt_failed"  # v1.4.3: linked, but incoming
+#   messages are NOT decrypting (Bad MAC storm) — messages are being
+#   lost; a clean re-link is needed. Never shown as green "linked".
+# v1.4.3: Python-side escalation mirrors the sidecar's (5 distinct
+# undecryptable messages -> degraded), so the UI degrades even if a
+# decrypt_degraded event is missed. Re-key attempts are the sidecar's
+# job (assertSessions); Python only counts them.
+_DECRYPT_FAILURES_BEFORE_DEGRADED = 5
+_DECRYPT_STDERR_SUPPRESS_S = 600.0  # re-log a Bad MAC storm summary
 
 MAX_REPLY_CHARS = 4000
 MAX_INCOMING_CHARS = 4000
 _SEND_TIMEOUT = 30.0
 _MAX_PROC_RESTARTS = 5
+# v1.4.3: Bad MAC decrypt-failure tracking (see the header note).
+# All senders here are MASKED by the sidecar ("…01@s.whatsapp.net");
+# full numbers never reach this module from decrypt events.
+_BAD_MAC_RE = re.compile(
+    r"bad mac|failed to decrypt message with any known session", re.I)
+_STACK_FRAME_RE = re.compile(r"^\s*at\s", re.I)
 # v1.4.2: real backoff between crash restarts (attempt 1 -> 1s, ...).
 _BACKOFF_DELAYS = (1.0, 2.0, 5.0, 10.0, 30.0)
 _MAX_STDERR_TAIL = 20
@@ -232,6 +289,23 @@ class WhatsAppService:
         self._lid_lock = threading.Lock()
         self._lid_to_phone: dict = {}
         self._owner_lid = ""
+        # v1.4.3: Bad MAC decrypt-failure state (aggregated from the
+        # sidecar's decrypt_* events; see _record_decrypt_failure).
+        # NOT cleared by start()/ready — the Signal session survives
+        # both, so a broken session must stay visible. Cleared by
+        # logout() (keys wiped) and by decrypt_recovered (a real
+        # message decrypted again = the session healed).
+        self._decrypt_failures = 0
+        self._decrypt_senders: dict = {}  # masked sender -> failures
+        self._decrypt_since = 0.0
+        self._decrypt_rekeys = 0
+        self._decrypt_needs_relink = False
+        self._decrypt_last_reason = ""
+        # v1.4.3 stderr flood gate (defense in depth — the sidecar
+        # already gates libsignal's console.error at the source).
+        self._decrypt_stderr_last_log = 0.0
+        self._decrypt_stderr_last_badmac = 0.0
+        self._decrypt_stderr_suppressed = 0
         self._load_lid_cache()
 
     # -- LID cache (persistent, local only) ---------------------------------
@@ -333,6 +407,19 @@ class WhatsAppService:
                 "dead_reason": self._last_error if self._sidecar_dead else "",
                 "restarts": self._restarts,
                 "last_stderr": "\n".join(self._stderr_tail),
+                # v1.4.3 decrypt-failure fields (STATUS_DEGRADED):
+                # "decrypt_failed" is True exactly when status is
+                # "decrypt_failed" — the UI keys its warning + re-link
+                # button off it. Senders are masked ("…01@..."); the
+                # reason is a libsignal error string, never content.
+                "decrypt_failed": self._status == STATUS_DEGRADED,
+                "decrypt_failures": self._decrypt_failures,
+                "decrypt_senders": dict(self._decrypt_senders),
+                "decrypt_since": self._decrypt_since or None,
+                "decrypt_rekeys": self._decrypt_rekeys,
+                "decrypt_needs_relink": self._decrypt_needs_relink,
+                "decrypt_reason": self._decrypt_last_reason,
+                "decrypt_stderr_suppressed": self._decrypt_stderr_suppressed,
             }
 
     # -- lifecycle -----------------------------------------------------------
@@ -454,6 +541,10 @@ class WhatsAppService:
             _shutil.rmtree(AUTH_DIR, ignore_errors=True)
         except Exception:
             pass
+        # v1.4.3: keys wiped (even if the sidecar was already dead and
+        # never emitted logged_out) — the decrypt state dies with them.
+        with self._lock:
+            self._clear_decrypt_state()
         info("whatsapp", "Logged out - session wiped, fresh QR needed next time")
 
     # -- sidecar protocol ----------------------------------------------------
@@ -528,11 +619,54 @@ class WhatsAppService:
                 except Exception:
                     continue
                 if line:
-                    with self._lock:
-                        self._stderr_tail.append(line[:300])
-                    info("whatsapp-sidecar", line[:300])
+                    # v1.4.3: gate any Bad MAC lines that still reach
+                    # stderr (the sidecar already gates libsignal's
+                    # console.error at the source; this is defense in
+                    # depth). Repeats are counted + swallowed — they
+                    # must not fill the log OR the crash-report tail.
+                    log_it, text = self._gate_decrypt_stderr_line(line)
+                    if log_it:
+                        with self._lock:
+                            self._stderr_tail.append(text[:300])
+                        info("whatsapp-sidecar", text[:300])
         except Exception:
             pass
+
+    def _gate_decrypt_stderr_line(self, line: str) -> tuple:
+        """(log_it, text_to_log) for one sidecar stderr line.
+
+        A Bad MAC line logs once per window as a masked one-line
+        summary; repeats in the window are counted and swallowed.
+        Stack-frame lines arriving within 2s of a Bad MAC line are
+        part of the same libsignal stack — swallowed too. Anything
+        else passes through unchanged (never hide a real crash)."""
+        if _BAD_MAC_RE.search(line):
+            now = time.monotonic()
+            with self._lock:
+                self._decrypt_stderr_last_badmac = now
+                if (self._decrypt_stderr_last_log and
+                        now - self._decrypt_stderr_last_log <
+                        _DECRYPT_STDERR_SUPPRESS_S):
+                    self._decrypt_stderr_suppressed += 1
+                    return False, ""
+                extra = (f" (+{self._decrypt_stderr_suppressed} repeats "
+                         "suppressed)") if self._decrypt_stderr_suppressed else ""
+                self._decrypt_stderr_last_log = now
+                self._decrypt_stderr_suppressed = 0
+            masked = re.sub(r"\d{6,}",
+                            lambda m: f"…{m.group(0)[-2:]}", line)
+            return True, ("WhatsApp decrypt failed (Bad MAC) — messages "
+                          "not decrypting; retry/re-key in progress" +
+                          extra + f" [sidecar: {masked[:120]}]")
+        if _STACK_FRAME_RE.match(line):
+            now = time.monotonic()
+            with self._lock:
+                recent = (self._decrypt_stderr_last_badmac and
+                          now - self._decrypt_stderr_last_badmac < 2.0)
+                if recent:
+                    self._decrypt_stderr_suppressed += 1
+                    return False, ""
+        return True, line
 
     def _watchdog_loop(self) -> None:
         """If the sidecar process dies (crash), restart it a few times
@@ -626,6 +760,65 @@ class WhatsAppService:
                 if phone == self.owner_number():
                     self._learn_owner_lid(lid)
 
+    # -- v1.4.3 decrypt-failure aggregation -------------------------------
+    # Called with self._lock held (from _on_event) unless noted.
+    # The sender in these events is already masked by the sidecar
+    # ("…01@s.whatsapp.net"); the reason is a libsignal error
+    # string, never message content — safe to log as-is.
+    def _record_decrypt_failure(self, event: dict) -> None:
+        """One DISTINCT undecryptable message arrived. Count it and
+        escalate to DEGRADED at the threshold (belt and braces next
+        to the sidecar's own decrypt_degraded event)."""
+        sender = str(event.get("sender") or "")
+        reason = str(event.get("reason") or "")[:120]
+        self._decrypt_failures += 1
+        if sender:
+            self._decrypt_senders[sender] = \
+                self._decrypt_senders.get(sender, 0) + 1
+        if not self._decrypt_since:
+            self._decrypt_since = time.time()
+        if reason:
+            self._decrypt_last_reason = reason
+        warn("whatsapp", "WhatsApp message from "
+                         f"{sender or 'unknown sender'} failed to decrypt "
+                         f"({self._decrypt_failures} distinct failures; "
+                         f"{reason})")
+        if (self._status == STATUS_LINKED and self._decrypt_failures >=
+                _DECRYPT_FAILURES_BEFORE_DEGRADED):
+            self._set_decrypt_degraded()
+
+    def _set_decrypt_degraded(self) -> None:
+        """The session is unrecoverable from here: mark the link
+        DEGRADED (never green "linked") and point at a clean re-link."""
+        if self._status == STATUS_DEGRADED:
+            return
+        self._status = STATUS_DEGRADED
+        self._decrypt_needs_relink = True
+        if not self._decrypt_since:
+            self._decrypt_since = time.time()
+        self._last_error = ("WhatsApp cannot decrypt incoming messages "
+                            "(Bad MAC) — messages are being lost; "
+                            "re-link WhatsApp from Settings")
+        error("whatsapp", "WhatsApp decrypt DEGRADED: incoming messages "
+                          "are not decrypting (Bad MAC) — re-link needed "
+                          "(Settings > WhatsApp > Re-link)")
+
+    def _clear_decrypt_state(self, restored: bool = False) -> None:
+        """Drop all decrypt-failure state. restored=True (a real
+        message decrypted again) also re-greens a degraded link;
+        logout() calls this with restored=False (status is OFF)."""
+        self._decrypt_failures = 0
+        self._decrypt_senders = {}
+        self._decrypt_since = 0.0
+        self._decrypt_rekeys = 0
+        self._decrypt_needs_relink = False
+        self._decrypt_last_reason = ""
+        if restored and self._status == STATUS_DEGRADED:
+            self._status = STATUS_LINKED
+            self._last_error = ""
+            info("whatsapp", "WhatsApp decrypt recovered — messages "
+                             "decrypting again")
+
     def _on_event(self, event: dict) -> None:
         # v1.4.2: the sidecar emits both legacy {"event": ...} and new
         # {"type": ...} shapes; either names the kind.
@@ -642,8 +835,13 @@ class WhatsAppService:
                 self._me_name = me.get("name", "")
                 self._me_lid = _normalize_lid(me.get("lid") or "")
                 self._qr = None
-                self._status = STATUS_LINKED
-                self._last_error = ""
+                # v1.4.3: a (re)connect does NOT heal a broken Signal
+                # session (same keys) — never re-green a degraded
+                # link back to "linked" here; only a real decrypted
+                # message (decrypt_recovered) or a clean re-link does.
+                if self._status != STATUS_DEGRADED:
+                    self._status = STATUS_LINKED
+                    self._last_error = ""
                 self._restarts = 0  # a live link is a healthy sidecar
                 info("whatsapp", "WhatsApp linked as "
                      f"{mask_number(jid_to_number(self._me))} "
@@ -658,6 +856,23 @@ class WhatsAppService:
                     self._learn_lid_mapping(lid, phone)
             elif kind == "lookup_result":
                 self._on_lookup_result(event)
+            elif kind == "decrypt_failed":
+                # v1.4.3: one DISTINCT undecryptable message (the
+                # sidecar already deduped re-deliveries of the same
+                # id). Count it; escalate to DEGRADED at the threshold
+                # even if a decrypt_degraded event is missed.
+                self._record_decrypt_failure(event)
+            elif kind == "decrypt_rekey":
+                self._decrypt_rekeys += 1
+                info("whatsapp", "WhatsApp session re-key attempted for "
+                     f"{event.get('sender') or 'a sender'} "
+                     f"(attempt {event.get('attempt') or self._decrypt_rekeys}, "
+                     f"ok={bool(event.get('ok'))})")
+            elif kind == "decrypt_degraded":
+                self._set_decrypt_degraded()
+            elif kind == "decrypt_recovered":
+                # A real message decrypted again: the session healed.
+                self._clear_decrypt_state(restored=True)
             elif kind in ("sent", "send_error"):
                 req_id = event.get("req_id")
                 if req_id and req_id in self._pending_sends:
@@ -676,6 +891,9 @@ class WhatsAppService:
                 self._qr = None
                 self._me = ""
                 self._me_lid = ""
+                # v1.4.3: logout wipes the keys — the decrypt state
+                # belongs to the dead session, not the next link.
+                self._clear_decrypt_state()
                 warn("whatsapp", "Logged out (session revoked) - "
                                  "fresh QR needed")
             elif kind == "error":
@@ -734,7 +952,11 @@ class WhatsAppService:
             status = self._status
         if proc is None:
             return {"ok": False, "detail": "sidecar not running"}
-        if status != STATUS_LINKED:
+        # v1.4.3: a DEGRADED link still sends — the socket is live and
+        # the send path asserts a fresh session itself; only the
+        # INBOUND decrypt for (at least) one sender is broken. Refusing
+        # every send because one sender's session broke would be wrong.
+        if status not in (STATUS_LINKED, STATUS_DEGRADED):
             return {"ok": False, "detail": f"WhatsApp not linked (status={status})"}
         req_id = uuid.uuid4().hex[:12]
         waiter: queue.Queue = queue.Queue()
@@ -954,8 +1176,11 @@ class WhatsAppService:
         # v1.4.2: confirmed send when linked (success only after
         # Baileys confirms); legacy fire-and-forget when not linked,
         # so a reply is still attempted if link state lags reality.
+        # v1.4.3: DEGRADED counts as linked here — the socket is live,
+        # only inbound decrypt for (at least) one sender is broken.
         reply_to_jid = event.get("from") or event.get("remoteJid") or ""
-        if self._status == STATUS_LINKED and self._proc is not None:
+        if self._status in (STATUS_LINKED, STATUS_DEGRADED) and \
+                self._proc is not None:
             res = self.send_message(reply_to_jid, reply, reply_to=msg_id or None)
             if not res["ok"]:
                 error("whatsapp", "Could not send WhatsApp reply: "
@@ -1014,7 +1239,12 @@ def get_state() -> dict:
                 "qr": None, "linked_phone": None,
                 "owner_configured": False, "error": "",
                 "sidecar_dead": False, "dead_reason": "", "restarts": 0,
-                "last_stderr": ""}
+                "last_stderr": "",
+                # v1.4.3 decrypt-failure fields (same keys as get_state):
+                "decrypt_failed": False, "decrypt_failures": 0,
+                "decrypt_senders": {}, "decrypt_since": None,
+                "decrypt_rekeys": 0, "decrypt_needs_relink": False,
+                "decrypt_reason": "", "decrypt_stderr_suppressed": 0}
     return _SERVICE.get_state()
 
 
