@@ -22,6 +22,16 @@ const I18N = {
     language: "لغة الواجهة",
     greeting_toggle: "التحية الصباحية عند التشغيل (مع الطقس)",
     autostart_toggle: "تشغيل Memo AI تلقائياً مع بدء ويندوز (يفتح النافذة الرئيسية)",
+    wakeword_toggle: "الاستماع الدايم — نادي «يا ميمو» بصوتك فيرد عليك من غير ما تدوس المايك",
+    wakeword_status_loading: "الاستماع الدايم: بيجهّز…",
+    wakeword_status_listening: "الاستماع الدايم شغال ✅ — نادي «يا ميمو»",
+    wakeword_status_paused: "الاستماع الدايم واقف مؤقتاً",
+    wakeword_status_off: "الاستماع الدايم مقفول — المايك مقفول تماماً.",
+    wakeword_status_loading_model: "الاستماع الدايم: بينزّل موديل السمع (مرة واحدة، ~500MB)…",
+    wakeword_status_error: "الاستماع الدايم مش شغال: ",
+    wakeword_status_unavailable: "الاستماع الدايم مش متاح في النسخة دي.",
+    wakeword_heard: "👂 سمعتك — اتكلم",
+    wakeword_no_command: "ماسمعتش حاجة — نادي «يا ميمو» تاني",
     menu_general: "عام", menu_whatsapp: "WhatsApp", menu_voices: "الأصوات",
     menu_avatar: "الأفاتار", menu_logs: "سجل التشخيص", menu_updates: "التحديثات",
     back: "→ رجوع",
@@ -164,6 +174,16 @@ const I18N = {
     language: "Interface language",
     greeting_toggle: "Morning greeting on startup (with weather)",
     autostart_toggle: "Start Memo AI automatically with Windows (opens the main window)",
+    wakeword_toggle: "Always listening — call “Ya Memo” out loud and it answers, no mic tap needed",
+    wakeword_status_loading: "Always listening: starting…",
+    wakeword_status_listening: "Always listening is on ✅ — call “Ya Memo”",
+    wakeword_status_paused: "Always listening paused for now",
+    wakeword_status_off: "Always listening is off — the mic is fully closed.",
+    wakeword_status_loading_model: "Always listening: downloading the hearing model (one-time, ~500MB)…",
+    wakeword_status_error: "Always listening isn't working: ",
+    wakeword_status_unavailable: "Always listening is not available in this build.",
+    wakeword_heard: "👂 Heard you — go ahead",
+    wakeword_no_command: "Didn't catch anything — call “Ya Memo” again",
     menu_general: "General", menu_whatsapp: "WhatsApp", menu_voices: "Voices",
     menu_avatar: "Avatar", menu_logs: "Diagnostics log", menu_updates: "Updates",
     back: "→ Back",
@@ -715,6 +735,66 @@ async function voiceChat() {
   busy = false;
 }
 
+// v1.5: wake word "يا ميمو" — these are called FROM Python (via
+// evaluate_js) when the listener wakes, hears a command, or gets no
+// command. They mirror the voiceChat() rendering path (heard message
+// + reply), so a wake-driven turn looks exactly like a mic-button
+// turn in the chat.
+function onWakeWord() {
+  // Gentle flash (no pop-in): the mic button pulses + the status
+  // line says "heard you". The chime itself comes from Python.
+  const mic = $("mic-btn");
+  if (mic) {
+    mic.classList.remove("wake-flash");
+    void mic.offsetWidth; // restart the animation
+    mic.classList.add("wake-flash");
+    setTimeout(() => mic.classList.remove("wake-flash"), 2600);
+  }
+  $("status").textContent = t("wakeword_heard");
+  $("status").classList.add("listening");
+}
+
+function wakeHeard(text) {
+  addMsg(text, "user", t("heard_prefix").trim());
+  flyHeroToHeader();
+  $("status").textContent = t("thinking");
+}
+
+function wakeReply(reply) {
+  addMsg(safeReply(reply), "ai", "Memo AI");
+  $("status").textContent = "";
+  $("status").classList.remove("listening");
+}
+
+function wakeNoCommand() {
+  $("status").textContent = t("wakeword_no_command");
+  $("status").classList.remove("listening");
+  setTimeout(() => { if (!busy) $("status").textContent = ""; }, 3000);
+}
+
+// v1.5: wake-word status line in the General section (polled with
+// refreshStatus while Settings is open). Honest about the state:
+// listening / loading model / paused / off / error + reason.
+async function refreshWakewordStatus() {
+  const el = $("wakeword-status");
+  if (!el) return;
+  const bridge = getApi();
+  if (!bridge || !bridge.get_wakeword_status) {
+    el.textContent = t("wakeword_status_unavailable");
+    return;
+  }
+  try {
+    const st = await bridge.get_wakeword_status();
+    if (!st.enabled) el.textContent = t("wakeword_status_off");
+    else if (st.state === "listening") el.textContent = t("wakeword_status_listening");
+    else if (st.state === "loading-model") el.textContent = t("wakeword_status_loading_model");
+    else if (st.state === "paused") el.textContent = t("wakeword_status_paused");
+    else if (st.state === "error") el.textContent = t("wakeword_status_error") + (st.detail || "");
+    else if (st.state === "unavailable") el.textContent = t("wakeword_status_unavailable");
+    else el.textContent = t("wakeword_status_loading");
+  } catch (e) { /* keep the last text */ }
+}
+
 // v1.3.0 voice-output toggle (OUTPUT only - the mic button is separate).
 // Icon + style show the state: 🔊 normal when ON, 🔇 dimmed amber when OFF.
 function updateVoiceBtn() {
@@ -762,6 +842,9 @@ async function refreshStatus() {
       setVal("set-greeting", !!st.settings.greeting_enabled);
       // v1.4.1: autostart toggle (default ON). No pet/island controls.
       setVal("set-autostart", st.settings.autostart !== false);
+      // v1.5: wake-word toggle (default ON) + its status line.
+      setVal("set-wakeword", st.settings.wakeword_enabled !== false);
+      refreshWakewordStatus();
       // v1.4.1: WhatsApp fields.
       setVal("set-whatsapp", st.settings.whatsapp_enabled === true);
       setVal("set-wa-owner", st.settings.whatsapp_owner_phone || "");
@@ -1357,6 +1440,7 @@ function init() {
       voice_output: $("set-voice-output").checked,
       greeting_enabled: $("set-greeting").checked,
       autostart: $("set-autostart").checked,
+      wakeword_enabled: $("set-wakeword").checked,
     };
     await b.save_settings(JSON.stringify(payload));
     LANG = payload.language;
@@ -1432,6 +1516,21 @@ function init() {
       voiceOutput = checked;
       updateVoiceBtn();
     } catch (e) { /* keep the old state */ }
+  });
+
+  // v1.5: wake-word toggle saves + applies immediately (starts/stops
+  // the listener at once - the mic must close the moment it is off).
+  // Falls back to plain save_settings on builds whose bridge has no
+  // set_wakeword_enabled yet.
+  $("set-wakeword").addEventListener("change", async () => {
+    const b = getApi();
+    if (!b) return;
+    const checked = $("set-wakeword").checked;
+    try {
+      if (b.set_wakeword_enabled) await b.set_wakeword_enabled(checked);
+      else await b.save_settings(JSON.stringify({ wakeword_enabled: checked }));
+    } catch (e) { /* keep the old state */ }
+    refreshWakewordStatus();
   });
 
   $("github-btn").addEventListener("click", () => { const b = getApi(); if (b) b.open_github(); });

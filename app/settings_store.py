@@ -89,6 +89,14 @@ DEFAULTS = {
     "monitor_cooldown_min": 30,
     "monitor_alert_in_app": True,   # show alerts inside the app
     "monitor_alert_toast": True,    # ... and as a Windows toast
+    # v1.5: wake word "يا ميمو" (always-listening, offline).
+    # Default ON - the user asked for it. The mic is fully closed
+    # when this is off. The spotter is faster-whisper "small" (no new
+    # dependency, no key, no account); the model downloads ~500 MB on
+    # first enable and needs ~485 MB RAM resident (measured).
+    "wakeword_enabled": True,
+    "wakeword_phrase": "يا ميمو",
+    "wakeword_cooldown_sec": 5,
     # v1.4.2: important-notification alerts (Windows toast listener).
     "notifications_enabled": True,
     "notifications_important_apps": [
