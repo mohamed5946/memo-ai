@@ -1,8 +1,8 @@
 {
   "notes": "v1.3.2: إصلاح تعليق أول تشغيل + الأدوات بقت شغالة في كل شات (افتح VS Code وغيره) + المخ بقى يعرف اسمك وقدراته الحقيقية + القطة المخفية مبتظهرش كمستطيل أسود وبتتسحب عادي + القطة بتطير للهيدر والشات بيكبر + فحص ذاتي عند التشغيل.",
-  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.3.2/MemoAI-Setup-1.3.2.exe",
-  "sha256": "6bb463905ce7336153eaf02c8c0e6fe59e7ec8d874b95f545e068cad36eea051",
-  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.3.2/memo-ai-v1.3.2.zip",
-  "version": "1.3.2",
-  "setup_sha256": "ed1280fdb66902fe745e70720428185fa3d95aea978cc2012cf47bfe653d070b"
+  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.0/MemoAI-Setup-1.4.0.exe",
+  "sha256": "98eb75cfa18fe514aaccf13d466596f48201a9a8175c5d3a06b5a3660ce85c27",
+  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.0/memo-ai-v1.4.0.zip",
+  "version": "1.4.0",
+  "setup_sha256": "0d35047db280f0ba38197beba095411d0a0496ad60f0429e03e7b33ee6f2529a"
 }
