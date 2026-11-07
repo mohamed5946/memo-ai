@@ -1,8 +1,8 @@
 {
   "notes": "v1.5.0: الاستماع الدايم «يا ميمو» — نادي على Memo AI بصوتك فيرد عليك من غير ما تدوس المايك (أوفلاين بالكامل، موديل سمع صغير بينزّل مرة واحدة عند أول تفعيل؛ زرار في الإعدادات يقفل المايك تماماً؛ المايك العادي وزرار الصوت زي ما هما).",
-  "setup_sha256": "2365a420b457cb6b535ae4aced9c3dc886b1b20887a7496862a714e33005dbb7",
+  "setup_sha256": "d005af62230c8e44d01f743360f99e2e1e6beaecdb216d961394f67da796e184",
   "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.5.0/MemoAI-Setup-1.5.0.exe",
-  "sha256": "e47cb0692f506430fa3e9d64ee73914e1aedd6be974a281f16c128669a7eb419",
+  "sha256": "f67c8ccd227fadc8a377c74af6c14ec04e276d500731f991d7434603a236d267",
   "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.5.0/memo-ai-v1.5.0.zip",
   "version": "1.5.0",
   "features": [
