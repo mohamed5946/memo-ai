@@ -325,7 +325,15 @@ try:
 except Exception:
     whatsapp_mod = None
 
-VERSION = "1.4.3"
+# v1.5: wake word "يا ميمو" (app/wakeword.py). Guarded the same way:
+# a broken/missing wake-word module never blocks startup - the
+# feature just reports "unavailable" in Settings.
+try:
+    import wakeword as wakeword_mod
+except Exception:
+    wakeword_mod = None
+
+VERSION = "1.5.0"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -675,7 +683,8 @@ class Api:
             return {"ok": False}
         for key in ("ai_name", "user_name", "language", "voice",
                     "greeting_enabled", "voice_output", "avatar",
-                    "pet_visible", "pet_parked", "autostart"):
+                    "pet_visible", "pet_parked", "autostart",
+                    "wakeword_enabled"):
             if key in data:
                 _APP.settings[key] = data[key]
         ok = save_settings(_APP.settings)
@@ -786,9 +795,17 @@ class Api:
         """Record 5s -> transcribe -> answer -> speak. Returns heard + reply.
         In owner mode the answer runs the tool loop in the background, so
         this returns {"pending": True, "chat_id": ...} and the UI polls
-        chat_result() (same as chat)."""
+        chat_result() (same as chat).
+        v1.5: the wake-word listener is PAUSED while the turn-based mic
+        records (one mic, one owner - the two streams must never fight
+        over it, and the listener must not hear its own recording and
+        re-wake). It resumes in the finally, whatever happens."""
         lang = _APP.settings.get("language", "ar")
-        heard = hear.listen(lang)
+        _APP.pause_wakeword()
+        try:
+            heard = hear.listen(lang)
+        finally:
+            _APP.resume_wakeword()
         if not heard["text"]:
             return {"heard": "", "reply": heard.get("error", "مقدرتش أسمعك."),
                     "engine": ""}
@@ -816,6 +833,37 @@ class Api:
             speak.stop()  # stop anything currently playing
         info("app", f"Voice output {'ON' if new else 'OFF'} (speaker button)")
         return {"voice_output": new}
+
+    # -- wake word "يا ميمو" (v1.5) ---------------------------------------
+    def get_wakeword_status(self):
+        """Wake-word listener state for the Settings UI (enabled,
+        state, model readiness, wake count). Honest when the module
+        is missing or the model failed to load."""
+        if wakeword_mod is None:
+            return {"enabled": False, "state": "unavailable",
+                    "detail": "wake-word module not available in "
+                              "this build",
+                    "model_ready": False,
+                    "phrase": "يا ميمو", "wake_count": 0,
+                    "last_wake_at": "", "bursts_checked": 0,
+                    "bursts_discarded_noise": 0}
+        return _APP.get_wakeword_status()
+
+    def set_wakeword_enabled(self, enabled):
+        """Settings toggle for always-listening: applies at once
+        (starts/stops the listener) and persists. Turning it off
+        closes the microphone completely."""
+        enabled = bool(enabled)
+        _APP.settings["wakeword_enabled"] = enabled
+        ok = save_settings(_APP.settings)
+        if enabled:
+            _APP.start_wakeword()
+        else:
+            _APP.stop_wakeword()
+        info("app", f"Wake word {'ON' if enabled else 'OFF'} "
+                    "(Settings toggle)")
+        return {"ok": ok, "wakeword_enabled": enabled,
+                "status": _APP.get_wakeword_status()}
 
     # -- tool permissions (v1.3.0, in-chat cards since v1.4.2) --------------
     def get_pending_permission(self):
@@ -1315,6 +1363,12 @@ class MemoApp:
         # startup). _alerts is the in-app banner feed (Api.get_alerts).
         self._monitor = None
         self._notif_watcher = None
+        # v1.5: wake-word listener (created in run() when enabled -
+        # best effort like the monitor; None = never started / module
+        # missing). _speaking_until is the mic guard: while the app is
+        # playing a reply, its own voice must never re-wake it.
+        self._wakeword = None
+        self._speaking_until = 0.0
         self._alerts: list = []
         self._alerts_lock = threading.Lock()
         self._alert_seq = 0
@@ -1770,6 +1824,193 @@ class MemoApp:
         threading.Thread(target=_run, daemon=True,
                          name="memo-notif-start").start()
 
+    # -- wake word "يا ميمو" (v1.5) --------------------------------------
+    def _wake_is_speaking(self) -> bool:
+        """Mic guard: True while the app is playing a spoken reply
+        (the listener ignores detections then - its own TTS must
+        never re-wake it)."""
+        return time.time() < self._speaking_until
+
+    def start_wakeword(self):
+        """Start the always-listening wake-word listener (best
+        effort - a missing module / model / mic never blocks anything;
+        the state surfaces honestly in Settings)."""
+        if wakeword_mod is None:
+            warn("wakeword", "Wake-word module unavailable - feature off")
+            return
+        if not self.settings.get("wakeword_enabled", True):
+            return
+        if self._wakeword is not None and self._wakeword.running:
+            return
+        try:
+            self._wakeword = wakeword_mod.WakeWordListener(
+                self.settings, on_wake=self._on_wake_word,
+                is_speaking=self._wake_is_speaking)
+            self._wakeword.start()
+        except Exception as exc:
+            warn("wakeword", f"Wake-word listener did not start: {exc}")
+            self._wakeword = None
+
+    def stop_wakeword(self):
+        """Stop the listener fully (toggle off / quitting). The mic
+        is closed; the model object is dropped."""
+        if self._wakeword is not None:
+            try:
+                self._wakeword.stop()
+            except Exception:
+                pass
+            self._wakeword = None
+
+    def pause_wakeword(self):
+        """Pause listening (turn-based mic recording). No-op when the
+        listener is not running."""
+        if self._wakeword is not None:
+            try:
+                self._wakeword.pause()
+            except Exception:
+                pass
+
+    def resume_wakeword(self):
+        """Resume listening after a pause. No-op when not running."""
+        if self._wakeword is not None:
+            try:
+                self._wakeword.resume()
+            except Exception:
+                pass
+
+    def get_wakeword_status(self) -> dict:
+        if wakeword_mod is None:
+            return {"enabled": False, "state": "unavailable",
+                    "detail": "wake-word module not available in "
+                              "this build",
+                    "model_ready": False,
+                    "phrase": wakeword_mod.WAKE_PHRASE
+                    if wakeword_mod else "يا ميمو",
+                    "wake_count": 0, "last_wake_at": "",
+                    "bursts_checked": 0, "bursts_discarded_noise": 0}
+        if self._wakeword is None:
+            return {"enabled": bool(self.settings.get(
+                "wakeword_enabled", True)),
+                "state": "off", "detail": "",
+                "model_ready": False,
+                "phrase": wakeword_mod.WAKE_PHRASE,
+                "wake_count": 0, "last_wake_at": "",
+                "bursts_checked": 0, "bursts_discarded_noise": 0}
+        return self._wakeword.status()
+
+    def _wake_chime(self):
+        """Short two-tone chime on wake (Windows only, no network, no
+        TTS quota - a spoken "نعم؟" would burn the Gemini TTS daily
+        limit on every wake). Guarded: silence on failure."""
+        if sys.platform != "win32":
+            return
+        try:
+            import winsound
+            winsound.Beep(880, 120)
+            time.sleep(0.05)
+            winsound.Beep(1318, 150)
+        except Exception:
+            pass
+
+    def _on_wake_word(self, command: str):
+        """A wake was detected (listener thread). Show the main window,
+        chime + flash the UI, then get the command: if the wake burst
+        already held one ("يا ميمو افتح النور"), run it directly; else
+        record 5 s with the normal mic path. The listener stays
+        paused until the reply has finished playing, so the mic never
+        hears its own TTS. The transcript itself is never logged."""
+        info("wakeword", "Wake handled - bringing the main window "
+                         "forward")
+        try:
+            self.show_main()
+        except Exception:
+            pass
+        try:
+            if self.main_window:
+                self.main_window.evaluate_js("onWakeWord()")
+        except Exception:
+            pass
+        self._wake_chime()
+        if self._wakeword is not None:
+            try:
+                self._wakeword.pause()
+            except Exception:
+                pass
+        try:
+            lang = self.settings.get("language", "ar")
+            heard_text = (command or "").strip()
+            if heard_text:
+                # The command rode along in the wake burst - no second
+                # recording needed.
+                try:
+                    if self.main_window:
+                        self.main_window.evaluate_js(
+                            "wakeHeard(" +
+                            json.dumps(heard_text, ensure_ascii=False) +
+                            ")")
+                except Exception:
+                    pass
+            else:
+                # Phrase only - record the command (normal mic path).
+                heard = hear.listen(lang)
+                heard_text = (heard.get("text") or "").strip()
+                if not heard_text:
+                    try:
+                        if self.main_window:
+                            self.main_window.evaluate_js(
+                                "wakeNoCommand()")
+                    except Exception:
+                        pass
+                    return
+                try:
+                    if self.main_window:
+                        self.main_window.evaluate_js(
+                            "wakeHeard(" +
+                            json.dumps(heard_text, ensure_ascii=False) +
+                            ")")
+                except Exception:
+                    pass
+            # Run the command through the normal chat path (rules +
+            # tool loop). The reply is pushed to the UI when done.
+            result = self.api.chat(heard_text)
+            if result.get("pending"):
+                chat_id = result["chat_id"]
+                deadline = time.time() + 120
+                done = None
+                while time.time() < deadline:
+                    done = self.api.chat_result(chat_id)
+                    if done.get("done"):
+                        break
+                    time.sleep(0.5)
+                if done and done.get("done"):
+                    reply = done.get("reply", "")
+                else:
+                    reply = "طوّلت شوية — جرّب تاني."
+            else:
+                reply = result.get("reply", "")
+            try:
+                if self.main_window:
+                    self.main_window.evaluate_js(
+                        "wakeReply(" +
+                        json.dumps(reply, ensure_ascii=False) + ")")
+            except Exception:
+                pass
+        except Exception as exc:
+            error("wakeword", f"Wake handling failed: {exc}")
+        finally:
+            # Resume only after the spoken reply has finished (the
+            # mic guard covers the TTS window) + the cooldown.
+            try:
+                deadline = time.time() + 35
+                while time.time() < self._speaking_until and \
+                        time.time() < deadline:
+                    time.sleep(0.5)
+                time.sleep(float(self.settings.get(
+                    "wakeword_cooldown_sec", 5)))
+            except Exception:
+                pass
+            self.resume_wakeword()
+
     def _show_main_for_permission(self):
         """Permission hook (tools.on_permission_needed): a tool is waiting
         for Allow/Deny, so bring the main window forward - the dialog
@@ -1788,10 +2029,19 @@ class MemoApp:
             info("speak", "Voice output is OFF - reply stays text-only "
                           "(no TTS call)")
             return
+        # v1.5 wake-word guard: the app is about to speak, so the
+        # always-listening mic must ignore detections until the reply
+        # has finished (its own TTS must never re-wake it). Set
+        # optimistically now (max 30 s), refined to the real duration
+        # once synthesis returns.
+        self._speaking_until = time.time() + 30
+
         def _run():
             online = brain.is_online()
             result = speak.speak(text, self.settings.get("voice", "girl_warm"), online)
             if result["engine"] != "none" and result["duration"] > 0:
+                self._speaking_until = time.time() + min(
+                    result["duration"], 30)
                 try:
                     if self.main_window:
                         self.main_window.evaluate_js("setSpeaking(true)")
@@ -1800,6 +2050,9 @@ class MemoApp:
                         self.main_window.evaluate_js("setSpeaking(false)")
                 except Exception:
                     pass
+            else:
+                # Nothing was actually spoken - lift the guard at once.
+                self._speaking_until = time.time()
         threading.Thread(target=_run, daemon=True).start()
 
     def morning_briefing(self):
@@ -1865,6 +2118,11 @@ class MemoApp:
                 self._notif_watcher.stop()
             except Exception:
                 pass
+        # v1.5: stop the wake-word listener (closes the mic).
+        try:
+            self.stop_wakeword()
+        except Exception:
+            pass
         speak.stop()
         try:
             if self.pet_window:
@@ -2032,6 +2290,13 @@ class MemoApp:
             self._start_notifications()
         except Exception as exc:
             warn("app", f"Notification watcher did not start: {exc}")
+        # v1.5: always-listening wake word (best effort - the model
+        # loads in the background; a missing mic/model never blocks
+        # startup or the chat).
+        try:
+            self.start_wakeword()
+        except Exception as exc:
+            warn("app", f"Wake-word listener did not start: {exc}")
         # v1.3.2: bridge-ready watchdog - each page logs READY on
         # pywebviewready; after 20s the log names any page that never
         # became ready, with the exact reason. v1.4.1: only the enabled
