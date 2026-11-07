@@ -60,6 +60,45 @@ const I18N = {
     perm_title: "طلب تنفيذ إجراء ⚠️",
     perm_allow: "سماح",
     perm_deny: "رفض",
+    perm_allowed: "تم السماح ✅",
+    perm_denied: "تم الرفض ❌",
+    perm_timeout: "انتهت المهلة — تم الرفض ⏱️",
+    menu_memory: "الذاكرة",
+    sec_memory: "الذاكرة الطويلة",
+    mem_hint: "دي الحاجات اللي Memo AI فاكرها عنك من المحادثات — محفوظة على جهازك بس، ومبتترفعش لأي مكان. تقدر تمسح أي حاجة منها، أو تمسح الكل.",
+    mem_facts: "حقائق محفوظة",
+    mem_rules: "قواعد اتعلمتها من تصحيحاتك",
+    mem_routines: "روتينك وعاداتك",
+    mem_style: "أسلوبك اللي اتعلمته",
+    mem_summary: "ملخص محادثات سابقة",
+    mem_empty: "لسه مفيش حاجة محفوظة — قولي «افتكر إن...» في الشات.",
+    mem_clear: "مسح كل الذاكرة",
+    mem_clear_confirm: "متأكد إنك عايز تمسح كل ذاكرة Memo AI عنك؟",
+    mem_deleted: "اتمسحت ✅",
+    menu_system: "صحة الجهاز",
+    menu_notifications: "الإشعارات",
+    sec_system: "صحة الجهاز",
+    sec_notifications: "الإشعارات المهمة",
+    mon_enable: "مراقبة صحة الجهاز والتنبيه عند الخطر",
+    mon_ram_free: "تنبيه لما الرام الفاضية تقل عن (MB)",
+    mon_ram_pct: "أو لما استهلاك الرام يزيد عن (%)",
+    mon_disk_free: "تنبيه لما القرص الفاضي يقل عن (GB)",
+    mon_disk_pct: "أو لما القرص الفاضي يقل عن (%)",
+    mon_temp_warn: "تنبيه حرارة المعالج (°م)",
+    mon_cpu: "تنبيه حمل معالج مستمر فوق (%) لمدة (دقائق)",
+    mon_battery: "تنبيه بطارية منخفضة تحت (%)",
+    mon_cooldown: "عدم تكرار نفس التنبيه قبل (دقيقة)",
+    mon_in_app: "التنبيه داخل التطبيق",
+    mon_toast: "التنبيه كـ toast من ويندوز",
+    sys_temp_unavailable: "⚠️ حرارة المعالج مش متاحة على الجهاز ده (مفيش حساس مقروء) — المراقبة شغالة من غيرها، ومفيش رقم حرارة متخمن.",
+    notif_enable: "التنبيه عند إشعار مهم من ويندوز",
+    notif_access: "طلب إذن الوصول للإشعارات",
+    notif_apps: "تطبيقات مهمة (سطر لكل تطبيق)",
+    notif_keywords: "كلمات مفتاحية مهمة (سطر لكل كلمة)",
+    notif_unavailable: "الاستماع لإشعارات ويندوز مش متاح على الجهاز ده.",
+    notif_denied: "إذن الوصول للإشعارات مرفوض — فعّله من إعدادات ويندوز (الإشعارات) أو دوس «طلب إذن الوصول» تاني.",
+    notif_granted: "الاستماع للإشعارات شغال ✅",
+    notif_not_requested: "لسه مطلبتش إذن الوصول للإشعارات — دوس «طلب إذن الوصول للإشعارات».",
     logs_refresh: "تحديث", logs_copy: "نسخ السجل",
     sec_updates: "التحديثات",
     update_idle: "اضغط «التحقق من التحديثات» عشان تشوف لو فيه نسخة جديدة.",
@@ -148,6 +187,45 @@ const I18N = {
     perm_title: "Action request ⚠️",
     perm_allow: "Allow",
     perm_deny: "Deny",
+    perm_allowed: "Allowed ✅",
+    perm_denied: "Denied ❌",
+    perm_timeout: "Timed out — denied ⏱️",
+    menu_memory: "Memory",
+    sec_memory: "Long-term memory",
+    mem_hint: "Things Memo AI remembers about you from conversations — stored on your laptop only, never uploaded. You can delete any of them, or wipe everything.",
+    mem_facts: "Saved facts",
+    mem_rules: "Rules learned from your corrections",
+    mem_routines: "Your routines and habits",
+    mem_style: "Your style, as learned",
+    mem_summary: "Summary of earlier conversations",
+    mem_empty: "Nothing saved yet — tell me “remember that...” in the chat.",
+    mem_clear: "Wipe all memory",
+    mem_clear_confirm: "Are you sure you want to wipe all of Memo AI's memories about you?",
+    mem_deleted: "Deleted ✅",
+    menu_system: "System health",
+    menu_notifications: "Notifications",
+    sec_system: "System health",
+    sec_notifications: "Important notifications",
+    mon_enable: "Monitor system health and alert on danger",
+    mon_ram_free: "Alert when free RAM drops below (MB)",
+    mon_ram_pct: "Or when RAM usage rises above (%)",
+    mon_disk_free: "Alert when free disk drops below (GB)",
+    mon_disk_pct: "Or when free disk drops below (%)",
+    mon_temp_warn: "CPU temperature alert (°C)",
+    mon_cpu: "Sustained CPU load above (%) for (minutes)",
+    mon_battery: "Low battery alert below (%)",
+    mon_cooldown: "Don't repeat the same alert within (minutes)",
+    mon_in_app: "Alert inside the app",
+    mon_toast: "Alert as a Windows toast",
+    sys_temp_unavailable: "⚠️ CPU temperature is not available on this machine (no readable sensor) — monitoring runs without it, and no temperature is guessed.",
+    notif_enable: "Alert on important Windows notifications",
+    notif_access: "Request notification access",
+    notif_apps: "Important apps (one per line)",
+    notif_keywords: "Important keywords (one per line)",
+    notif_unavailable: "Listening to Windows notifications is not available on this machine.",
+    notif_denied: "Notification access is denied — enable it in Windows Settings (Notifications) or tap “Request notification access” again.",
+    notif_granted: "Notification listening is on ✅",
+    notif_not_requested: "Notification access hasn't been requested yet — tap “Request notification access”.",
     logs_refresh: "Refresh", logs_copy: "Copy log",
     sec_updates: "Updates",
     update_idle: "Tap “Check for updates” to see if a new version is available.",
@@ -194,7 +272,9 @@ let busy = false;
 let selectedVoice = "girl_warm";
 let selectedAvatar = "cat";  // v1.4.1: the avatar pick is real state now
 let voiceOutput = true;      // v1.3.0 speaker toggle (OUTPUT only - mic is separate)
-let currentPermId = null;    // id of the permission request shown in the modal
+// v1.4.2: in-chat permission cards (req id -> card element). Cards stay
+// in the chat history after they resolve (final state, buttons dead).
+let permCards = {};
 let permPollTimer = null;    // polls for Allow/Deny requests while a tool chat runs
 
 // v1.4.1: avatar images (all 4 are real now - dog/boy/girl shipped in
@@ -408,8 +488,8 @@ async function sendText(text) {
     hideTyping();
     if (res && res.pending) {
       // v1.3.2: tool chat runs in a background thread (the bridge must
-      // never block on a permission). Poll for the result; the
-      // permission poller shows any Allow/Deny dialog meanwhile.
+      // never block on a permission). Poll for the result; any
+      // Allow/Deny request appears as a card in the chat meanwhile.
       startPermPolling();
       const done = await waitForChatResult(res.chat_id);
       stopPermPolling();
@@ -438,27 +518,97 @@ function waitForChatResult(chatId) {
   });
 }
 
-// v1.3.0: while a tool chat runs, poll for Allow/Deny requests and show
-// the permission modal for the oldest unresolved one.
+// v1.4.2: while a tool chat runs, poll for Allow/Deny requests and
+// show each one as a MESSAGE IN THE CHAT with Allow/Deny buttons
+// (not a popup/modal anymore). A card stays in the chat until it is
+// answered - or until the 120s timeout denies it - and then flips to
+// its final state ("تم السماح" / "تم الرفض" / "انتهت المهلة") with
+// dead buttons. If the user sends another message while one is
+// pending, the card simply stays visible in the history.
+function addPermCard(p) {
+  const chat = $("chat");
+  const div = document.createElement("div");
+  div.className = "msg perm";
+  div.dataset.permId = p.id;
+  const title = document.createElement("div");
+  title.className = "perm-kind";
+  title.textContent = t("perm_title") + (p.kind ? " • " + p.kind : "");
+  const summary = document.createElement("div");
+  summary.className = "perm-summary";
+  summary.textContent = p.summary || "";
+  div.appendChild(title);
+  div.appendChild(summary);
+  if (p.detail) {
+    const detail = document.createElement("pre");
+    detail.className = "perm-detail";
+    detail.textContent = p.detail;
+    div.appendChild(detail);
+  }
+  const btns = document.createElement("div");
+  btns.className = "perm-btns";
+  const allowBtn = document.createElement("button");
+  allowBtn.className = "gold-btn btn-3d";
+  allowBtn.textContent = "✓ " + t("perm_allow");
+  const denyBtn = document.createElement("button");
+  denyBtn.className = "danger-btn btn-3d";
+  denyBtn.textContent = "✕ " + t("perm_deny");
+  const answer = async (allowed) => {
+    allowBtn.disabled = true;
+    denyBtn.disabled = true;
+    const b = getApi();
+    if (b) {
+      try { await b.resolve_permission(p.id, allowed); } catch (e) { /* timeout = deny */ }
+    }
+    finalizePermCard(p.id, allowed ? "allowed" : "denied");
+  };
+  allowBtn.addEventListener("click", () => answer(true));
+  denyBtn.addEventListener("click", () => answer(false));
+  btns.appendChild(denyBtn);
+  btns.appendChild(allowBtn);
+  div.appendChild(btns);
+  const meta = document.createElement("span");
+  meta.className = "meta";
+  meta.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  div.appendChild(meta);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  permCards[p.id] = { el: div, allowBtn, denyBtn, done: false };
+  return div;
+}
+
+function finalizePermCard(id, status) {
+  const card = permCards[id];
+  if (!card || card.done) return;
+  card.done = true;
+  card.allowBtn.disabled = true;
+  card.denyBtn.disabled = true;
+  card.el.classList.add("resolved-" + status);
+  const state = document.createElement("div");
+  state.className = "perm-state";
+  state.textContent = status === "allowed" ? t("perm_allowed")
+    : status === "timeout" ? t("perm_timeout") : t("perm_denied");
+  card.el.appendChild(state);
+}
+
 function startPermPolling() {
   stopPermPolling();
   permPollTimer = setInterval(async () => {
     try {
-      const p = await getApi().get_pending_permission();
-      if (p && p.id && p.id !== currentPermId) {
-        currentPermId = p.id;
-        $("perm-kind").textContent = p.kind || "";
-        $("perm-summary").textContent = p.summary || "";
-        $("perm-detail").textContent = p.detail || "";
-        $("perm-modal").classList.add("open");
+      const st = await getApi().get_pending_permission();
+      if (!st) return;
+      const pending = st.pending;
+      if (pending && pending.id && !permCards[pending.id]) {
+        addPermCard(pending);
       }
+      (st.resolved || []).forEach(r => {
+        if (r && r.id && permCards[r.id]) finalizePermCard(r.id, r.status);
+      });
     } catch (e) { /* keep polling */ }
   }, 1000);
 }
 function stopPermPolling() {
   if (permPollTimer) { clearInterval(permPollTimer); permPollTimer = null; }
-  currentPermId = null;
-  $("perm-modal").classList.remove("open");
+  // Cards intentionally stay: they are chat history now.
 }
 
 async function voiceChat() {
@@ -562,6 +712,162 @@ async function refreshStatus() {
       if (vl && st.version) vl.textContent = t("version_label") + "v" + st.version;
     }
   } catch (e) { /* UI keeps working offline */ }
+  pollAlerts();
+}
+
+// v1.4.2: Memory section - what the brain remembers, with a delete
+// button per item (fact / learned rule / routine) + wipe-all.
+async function refreshMemory() {
+  const box = $("memory-list");
+  if (!box) return;
+  const bridge = getApi();
+  if (!bridge || !bridge.get_memory) { box.textContent = t("no_bridge"); return; }
+  try {
+    const mem = await bridge.get_memory();
+    box.innerHTML = "";
+    const addGroup = (title, items, kind) => {
+      if (!items || !items.length) return;
+      const h = document.createElement("div");
+      h.className = "mem-group-title";
+      h.textContent = title;
+      box.appendChild(h);
+      items.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "mem-row";
+        const span = document.createElement("span");
+        span.className = "mem-text";
+        span.textContent = item.text || "";
+        const del = document.createElement("button");
+        del.className = "mem-del btn-3d";
+        del.textContent = "✕";
+        del.title = t("mem_deleted");
+        del.addEventListener("click", async () => {
+          const b = getApi();
+          if (b && b.delete_memory_item) {
+            await b.delete_memory_item(kind, item.id);
+            refreshMemory();
+          }
+        });
+        row.appendChild(span);
+        row.appendChild(del);
+        box.appendChild(row);
+      });
+    };
+    addGroup(t("mem_facts"), mem.facts, "fact");
+    addGroup(t("mem_rules"), mem.rules, "rule");
+    addGroup(t("mem_routines"), mem.routines, "routine");
+    const st = mem.style || {};
+    const styleBox = $("memory-style");
+    if (styleBox) {
+      const tone = st.tone === "short" ? "قصيرة ومباشرة"
+        : st.tone === "detailed" ? "مفصّلة" : "مختصرة (تلقائي)";
+      let txt = "عربي مصري • صيغ مذكر بس • نبرة: " + tone;
+      if (st.phrases && st.phrases.length) txt += "\nعبارات مفضلة: " + st.phrases.join("، ");
+      if (st.notes && st.notes.length) txt += "\n" + st.notes.join("\n");
+      styleBox.textContent = txt;
+    }
+    const sumBox = $("memory-summary");
+    if (sumBox) sumBox.textContent = mem.summary || "—";
+    if (!mem.facts.length && !mem.rules.length && !mem.routines.length) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = t("mem_empty");
+      box.appendChild(empty);
+    }
+  } catch (e) {
+    box.textContent = "…";
+  }
+}
+
+// v1.4.2: System section - live numbers + thresholds. Filled on
+// open/save only (never mid-type - refreshStatus does not touch it).
+async function refreshMonitor() {
+  const bridge = getApi();
+  if (!bridge || !bridge.get_monitor_status) return;
+  try {
+    const res = await bridge.get_monitor_status();
+    const st = res.status || {};
+    const ram = st.ram || {}, disk = st.disk || {}, cpu = st.cpu || {};
+    const lines = [];
+    if (ram.total_mb) lines.push(`الرام: ${ram.used_mb}MB / ${ram.total_mb}MB (${ram.percent}% — فاضي ${ram.free_mb}MB)`);
+    if (disk.total_gb) lines.push(`القرص: فاضي ${disk.free_gb}GB من ${disk.total_gb}GB (${disk.percent_free}% فاضي)`);
+    if (cpu.percent != null) lines.push(`المعالج: ${cpu.percent}%` + (cpu.sustained_high ? " (حمل مرتفع مستمر ⚠️)" : ""));
+    if (st.temp_c != null) lines.push(`حرارة المعالج: ${st.temp_c}°م`);
+    if (st.battery) lines.push(`البطارية: ${st.battery.percent}%` + (st.battery.charging ? " (بتشحن 🔌)" : ""));
+    const el = $("sys-status");
+    if (el) el.textContent = lines.join("\n") || "…";
+    const note = $("sys-temp-note");
+    if (note) note.textContent = res.temp_available ? "" : t("sys_temp_unavailable");
+    const s = res.settings || {};
+    const setNum = (id, v) => { const e = $(id); if (e && v != null) e.value = v; };
+    const setChk = (id, v) => { const e = $(id); if (e) e.checked = !!v; };
+    setChk("set-monitor-enabled", s.monitor_enabled !== false);
+    setNum("set-mon-ram-free", s.monitor_ram_free_mb);
+    setNum("set-mon-ram-pct", s.monitor_ram_percent);
+    setNum("set-mon-disk-free", s.monitor_disk_free_gb);
+    setNum("set-mon-disk-pct", s.monitor_disk_percent_free);
+    setNum("set-mon-temp-warn", s.monitor_temp_warn_c);
+    setNum("set-mon-cpu-pct", s.monitor_cpu_sustained_percent);
+    setNum("set-mon-cpu-min", s.monitor_cpu_sustained_minutes);
+    setNum("set-mon-batt", s.monitor_battery_warn_percent);
+    setNum("set-mon-cooldown", s.monitor_cooldown_min);
+    setChk("set-mon-in-app", s.monitor_alert_in_app !== false);
+    setChk("set-mon-toast", s.monitor_alert_toast !== false);
+  } catch (e) { /* status stays as-is */ }
+}
+
+// v1.4.2: Notifications section - listener state (honest when
+// unavailable/denied) + filter lists.
+async function refreshNotifications() {
+  const bridge = getApi();
+  if (!bridge || !bridge.get_notification_status) return;
+  try {
+    const res = await bridge.get_notification_status();
+    const l = res.listener || {};
+    const el = $("notif-status");
+    if (el) {
+      if (!l.available) el.textContent = t("notif_unavailable") + (l.detail ? " (" + l.detail + ")" : "");
+      else if (l.access === "granted") el.textContent = t("notif_granted");
+      else if (l.access === "denied") el.textContent = t("notif_denied");
+      else el.textContent = t("notif_not_requested");
+    }
+    const chk = $("set-notif-enabled");
+    if (chk) chk.checked = !!res.enabled;
+    const apps = $("set-notif-apps");
+    if (apps && document.activeElement !== apps) apps.value = (res.apps || []).join("\n");
+    const kws = $("set-notif-keywords");
+    if (kws && document.activeElement !== kws) kws.value = (res.keywords || []).join("\n");
+  } catch (e) { /* status stays as-is */ }
+}
+
+// v1.4.2: alert banners - system/notification alerts polled with the
+// status refresh (15s) and rendered once each above the chat.
+let seenAlerts = {};
+function pollAlerts() {
+  const bridge = getApi();
+  if (!bridge || !bridge.get_alerts) return;
+  bridge.get_alerts().then(res => {
+    const box = $("alerts");
+    if (!box || !res || !res.alerts) return;
+    res.alerts.forEach(a => {
+      if (!a || !a.id || seenAlerts[a.id]) return;
+      seenAlerts[a.id] = true;
+      const div = document.createElement("div");
+      div.className = "alert-banner" + (a.level === "critical" ? " critical" : "");
+      const title = document.createElement("b");
+      title.textContent = a.title || "تنبيه";
+      const msg = document.createElement("span");
+      msg.textContent = (a.notification_title ? a.notification_title + " — " : "") + (a.message || "");
+      const x = document.createElement("button");
+      x.className = "alert-x btn-3d";
+      x.textContent = "✕";
+      x.addEventListener("click", () => div.remove());
+      div.appendChild(title);
+      div.appendChild(msg);
+      div.appendChild(x);
+      box.appendChild(div);
+    });
+  }).catch(() => { /* alerts stay hidden until the next poll */ });
 }
 
 async function refreshLogs() {
@@ -620,6 +926,9 @@ function showSettingsSection(name) {
   });
   if (name === "logs") refreshLogs();
   if (name === "whatsapp") refreshWhatsApp();
+  if (name === "memory") refreshMemory();
+  if (name === "system") refreshMonitor();
+  if (name === "notifications") refreshNotifications();
 }
 function showSettingsMenu() {
   document.querySelectorAll(".settings-view").forEach(v => {
@@ -877,17 +1186,76 @@ function init() {
     if (confirm(t("confirm_quit"))) await b.quit_app();
   });
 
-  // v1.3.0 permission dialog: Allow/Deny resolve the pending tool request.
-  const answerPerm = async (allowed) => {
+  // v1.4.2: Memory section - view/delete what the brain remembers.
+  const memClearBtn = $("memory-clear-btn");
+  if (memClearBtn) memClearBtn.addEventListener("click", async () => {
     const b = getApi();
-    if (b && currentPermId) {
-      try { await b.resolve_permission(currentPermId, allowed); } catch (e) { /* timeout = deny */ }
+    if (!b || !b.clear_memory) return;
+    if (!confirm(t("mem_clear_confirm"))) return;
+    await b.clear_memory();
+    refreshMemory();
+  });
+
+  // v1.4.2: System section save (thresholds + toggles).
+  const saveSysBtn = $("save-system");
+  if (saveSysBtn) saveSysBtn.addEventListener("click", async () => {
+    const b = getApi();
+    const el = $("save-status-system");
+    if (!b || !b.save_monitor_settings) return;
+    const num = (id, fallback) => {
+      const el = $(id);
+      const v = el ? parseInt(el.value, 10) : NaN;
+      return Number.isFinite(v) ? v : fallback;
+    };
+    const payload = {
+      monitor_enabled: $("set-monitor-enabled").checked,
+      monitor_ram_free_mb: num("set-mon-ram-free", 500),
+      monitor_ram_percent: num("set-mon-ram-pct", 92),
+      monitor_disk_free_gb: num("set-mon-disk-free", 10),
+      monitor_disk_percent_free: num("set-mon-disk-pct", 10),
+      monitor_temp_warn_c: num("set-mon-temp-warn", 85),
+      monitor_cpu_sustained_percent: num("set-mon-cpu-pct", 85),
+      monitor_cpu_sustained_minutes: num("set-mon-cpu-min", 5),
+      monitor_battery_warn_percent: num("set-mon-batt", 20),
+      monitor_cooldown_min: num("set-mon-cooldown", 30),
+      monitor_alert_in_app: $("set-mon-in-app").checked,
+      monitor_alert_toast: $("set-mon-toast").checked,
+    };
+    const res = await b.save_monitor_settings(JSON.stringify(payload));
+    if (el) {
+      el.textContent = res && res.ok ? t("saved") : t("save_failed");
+      setTimeout(() => { el.textContent = ""; }, 2500);
     }
-    currentPermId = null;
-    $("perm-modal").classList.remove("open");
-  };
-  $("perm-allow").addEventListener("click", () => answerPerm(true));
-  $("perm-deny").addEventListener("click", () => answerPerm(false));
+    refreshMonitor();
+  });
+
+  // v1.4.2: Notifications section save + access request.
+  const saveNotifBtn = $("save-notifications");
+  if (saveNotifBtn) saveNotifBtn.addEventListener("click", async () => {
+    const b = getApi();
+    const el = $("save-status-notifications");
+    if (!b || !b.save_notification_settings) return;
+    const lines = (id) => ($(id).value || "").split("\n").map(s => s.trim()).filter(Boolean);
+    const payload = {
+      enabled: $("set-notif-enabled").checked,
+      apps: lines("set-notif-apps"),
+      keywords: lines("set-notif-keywords"),
+    };
+    const res = await b.save_notification_settings(JSON.stringify(payload));
+    if (el) {
+      el.textContent = res && res.ok ? t("saved") : t("save_failed");
+      setTimeout(() => { el.textContent = ""; }, 2500);
+    }
+    refreshNotifications();
+  });
+  const notifAccessBtn = $("notif-access-btn");
+  if (notifAccessBtn) notifAccessBtn.addEventListener("click", async () => {
+    const b = getApi();
+    if (!b || !b.request_notification_access) return;
+    await b.request_notification_access();
+    setTimeout(refreshNotifications, 1500);
+    setTimeout(refreshNotifications, 4000);
+  });
 }
 
 document.addEventListener("DOMContentLoaded", init);

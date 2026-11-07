@@ -316,3 +316,65 @@ header .spacer { flex: 1; }
 .wa-qr-wrap img { width: 220px; height: 220px; background: #fff;
   border-radius: 16px; padding: 10px; box-shadow: 0 8px 22px rgba(0,0,0,.45); }
 .wa-qr-wrap .hint { margin-top: 8px; }
+
+/* v1.4.2: in-chat permission card (replaces the old Allow/Deny modal).
+   Lives in the chat flow like any message; gold border while pending,
+   green/red/grey tint once resolved. Buttons die after the choice. */
+.msg.perm {
+  background: linear-gradient(180deg, rgba(232,201,122,0.10), rgba(232,201,122,0.04));
+  border: 1px solid rgba(232,201,122,0.55);
+  border-radius: 16px;
+}
+.msg.perm .perm-detail {
+  background: rgba(0,0,0,0.25); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 10px; font-size: 12.5px;
+  white-space: pre-wrap; word-break: break-word; margin: 8px 0;
+  max-height: 140px; overflow-y: auto; direction: rtl; text-align: right;
+}
+.msg.perm .perm-btns { display: flex; gap: 10px; margin-top: 10px; }
+.msg.perm .perm-btns button { flex: 1; }
+.msg.perm .perm-btns button:disabled { opacity: 0.45; cursor: default; }
+.msg.perm .perm-state { font-weight: 700; font-size: 13.5px; margin-top: 10px; }
+.msg.perm.resolved-allowed { border-color: rgba(74,222,128,0.55); }
+.msg.perm.resolved-allowed .perm-state { color: #4ade80; }
+.msg.perm.resolved-denied { border-color: rgba(248,113,113,0.45); opacity: 0.85; }
+.msg.perm.resolved-denied .perm-state { color: #f87171; }
+.msg.perm.resolved-timeout { border-color: rgba(148,163,184,0.45); opacity: 0.8; }
+.msg.perm.resolved-timeout .perm-state { color: #94a3b8; }
+
+/* v1.4.2: Memory section rows. */
+.mem-group-title { font-weight: 700; font-size: 14px; color: var(--gold); margin: 14px 0 6px; }
+.mem-row {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--glass); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 10px; margin-bottom: 6px;
+  font-size: 13.5px; line-height: 1.5;
+}
+.mem-row .mem-text { flex: 1; }
+.mem-del {
+  background: rgba(248,113,113,0.12); color: var(--red);
+  border: 1px solid rgba(248,113,113,0.4); border-radius: 999px;
+  width: 26px; height: 26px; flex: 0 0 26px; font-size: 12px; cursor: pointer;
+}
+
+/* v1.4.2: alert banners (system monitor + important notifications) -
+   rendered above the chat, dismissible, critical ones in red. */
+.alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.alerts:empty { display: none; }
+.alert-banner {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(180deg, rgba(232,201,122,0.12), rgba(232,201,122,0.05));
+  border: 1px solid rgba(232,201,122,0.55); border-radius: 12px;
+  padding: 10px 12px; font-size: 13.5px; line-height: 1.5;
+}
+.alert-banner.critical {
+  background: linear-gradient(180deg, rgba(248,113,113,0.14), rgba(248,113,113,0.05));
+  border-color: rgba(248,113,113,0.6);
+}
+.alert-banner b { color: var(--gold); white-space: nowrap; }
+.alert-banner.critical b { color: #f87171; }
+.alert-banner span { flex: 1; }
+.alert-x {
+  background: transparent; border: none; color: var(--muted);
+  font-size: 14px; cursor: pointer; flex: 0 0 auto; padding: 2px 6px;
+}

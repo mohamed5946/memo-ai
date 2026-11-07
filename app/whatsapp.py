@@ -1,4 +1,4 @@
-# Memo AI v1.4.0 - WhatsApp linking (Baileys sidecar over stdio JSON lines).
+# Memo AI v1.4.2 - WhatsApp linking (Baileys sidecar over stdio JSON lines).
 #
 # The WhatsApp leg runs as a small Node sidecar (app/whatsapp_sidecar/):
 # Baileys speaks the WhatsApp Web multi-device protocol directly over a
@@ -32,7 +32,60 @@
 #
 # DIAGNOSTICS: category "whatsapp" from day one - link state, QR
 # readiness, connect/disconnect with the exact reason, send failures.
+#
+# v1.4.2 - SENDER IDENTIFICATION (the v1.4.1 field failure):
+#   WhatsApp now sometimes delivers the sender as a LID JID
+#   ("123456789012345@lid") instead of a phone JID
+#   ("201557887719@s.whatsapp.net"), and v1.4.1 dropped every such
+#   message as "unidentifiable". Baileys 6.7.24 offers NO public
+#   LID->phone API (no lidMapping / getPNForLID; SignalRepository has
+#   no LID methods; remoteJidAlt is a proto field that may arrive on
+#   the wire; USyncUser.withLid() exists but the shipped protocols do
+#   not convey it). The ONLY direction Baileys exposes is phone->LID:
+#   sock.onWhatsApp(...jids) returns {jid, exists, lid}. So this
+#   module identifies senders from EVERY observable source and
+#   persists what it learns in app/data/lid_cache.json (local only):
+#     1. any @s.whatsapp.net JID in the message (from / from_alt /
+#        participant / participantAlt / key.* / remoteJidAlt) - the
+#        phone, when WhatsApp supplies it alongside the LID;
+#     2. a persistent LID->phone cache, learned from (a) onWhatsApp
+#        lookups of the owner phone at link time, (b) any inbound
+#        message where a LID and a phone are observable together,
+#        (c) Baileys' chats.phoneNumberShare event, which WhatsApp
+#        itself sends to pair a LID with its phone number;
+#     3. the OWNER'S OWN LID, learned once via onWhatsApp(owner
+#        phone) and persisted: a message whose sender LID matches it
+#        IS the owner even if no phone mapping exists for it;
+#     4. the chat remoteJid as a last resort when no sender field
+#        identifies anyone (1:1 chats: the chat IS the sender).
+#   Only when ALL of those fail is the message ignored - and then the
+#   raw sender fields are logged MASKED (last 2 digits) plus the
+#   message-key shape, so the next failure can be diagnosed instead
+#   of guessed at.
+#
+# v1.4.2 - UTF-8 STDOUT READER: the sidecar's stdout/stderr are read
+#   as UTF-8 with errors='replace' (v1.4.1 used the Windows locale
+#   codec, so one 0x81 byte killed the reader thread and no WhatsApp
+#   event ever reached the app again). The reader also decodes raw
+#   byte lines defensively and never dies on a single bad line.
+#
+# v1.4.2 - SIDECAR SUPERVISION: every exit logs its exit code plus
+#   the last ~20 stderr lines; restarts back off 1s/2s/5s/10s/30s with
+#   a counter that actually increments; after 5 crashes the sidecar
+#   is marked DEAD (status "dead" in get_state(), with the reason)
+#   and is NOT restarted again until the user re-enables WhatsApp or
+#   the app restarts.
+#
+# v1.4.2 - CONFIRMED SEND: WhatsAppService.send_message(to, text)
+#   sends via the sidecar and reports success ONLY after Baileys
+#   confirms the send ({"type":"sent"}); anything else - sidecar
+#   down, not linked, timeout, Baileys error - is ok=False with a
+#   reason. Brain-initiated sends (tools.py) use this; the auto-reply
+#   path uses it too when linked, and falls back to the legacy
+#   fire-and-forget write when the service is not linked (so a reply
+#   is still attempted if link state lags behind reality).
 
+import collections
 import json
 import queue
 import re
@@ -41,6 +94,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import brain
@@ -53,6 +107,7 @@ SIDECAR_JS = SIDECAR_DIR / "sidecar.js"
 NODE_BUNDLED_WIN = SIDECAR_DIR / "node" / "node.exe"   # frozen installer
 NODE_BUNDLED_POSIX = SIDECAR_DIR / "node" / "node"     # dev on Linux/macOS
 AUTH_DIR = DATA_DIR / "whatsapp_auth"
+LID_CACHE_FILENAME = "lid_cache.json"
 
 STATUS_OFF = "off"
 STATUS_CONNECTING = "connecting"
@@ -60,11 +115,15 @@ STATUS_WAITING_QR = "waiting_qr"
 STATUS_LINKED = "linked"
 STATUS_DISCONNECTED = "disconnected"
 STATUS_ERROR = "error"
+STATUS_DEAD = "dead"   # v1.4.2: sidecar crashed too often, not restarting
 
 MAX_REPLY_CHARS = 4000
 MAX_INCOMING_CHARS = 4000
 _SEND_TIMEOUT = 30.0
 _MAX_PROC_RESTARTS = 5
+# v1.4.2: real backoff between crash restarts (attempt 1 -> 1s, ...).
+_BACKOFF_DELAYS = (1.0, 2.0, 5.0, 10.0, 30.0)
+_MAX_STDERR_TAIL = 20
 
 
 # ---------------------------------------------------------------------------
@@ -86,20 +145,52 @@ def normalize_number(raw: str) -> str:
     return digits
 
 
+# Back-compat alias: the task brief (and tools.py wiring) call it
+# normalize_phone; the historic name is normalize_number.
+normalize_phone = normalize_number
+
+
 def mask_number(digits: str) -> str:
     """Last 2 digits only, for logs: '…19'. Never the full number."""
     d = re.sub(r"\D", "", str(digits or ""))
     return f"…{d[-2:]}" if len(d) >= 2 else "…??"
 
 
+def mask_jid(jid: str) -> str:
+    """Mask a JID for logs: '…19@s.whatsapp.net' / '…45@lid'.
+    Never the full number, never the full LID."""
+    jid = str(jid or "")
+    if "@" not in jid:
+        return mask_number(jid)
+    user, domain = jid.split("@", 1)
+    d = re.sub(r"\D", "", user)
+    return f"…{d[-2:] if len(d) >= 2 else '??'}@{domain}"
+
+
 def jid_to_number(jid: str) -> str:
     """'201557887719@s.whatsapp.net' -> '201557887719'. Returns '' for
     LID JIDs (@lid), groups (@g.us) and broadcasts - those carry no
-    phone number (see from_alt handling in _handle_message)."""
+    phone number (see identify_sender for the LID fallbacks)."""
     jid = str(jid or "")
     if not jid.endswith("@s.whatsapp.net"):
         return ""
     return re.sub(r"\D", "", jid.split("@")[0])
+
+
+def _is_lid_jid(jid: str) -> bool:
+    return str(jid or "").endswith("@lid")
+
+
+def _normalize_lid(jid: str) -> str:
+    """'123456789012345@lid' -> same, canonical. Bare digits that came
+    from a LID field -> 'digits@lid'. Anything else -> ''."""
+    jid = str(jid or "").strip()
+    if not jid:
+        return ""
+    if jid.endswith("@lid"):
+        digits = re.sub(r"\D", "", jid.split("@")[0])
+        return f"{digits}@lid" if digits else ""
+    return ""
 
 
 def _is_arabic(text: str) -> bool:
@@ -120,15 +211,98 @@ class WhatsAppService:
         self._qr = None
         self._me = ""            # linked account JID (the 3rd number)
         self._me_name = ""
+        self._me_lid = ""        # linked account's own LID (if Baileys gives it)
         self._last_error = ""
         self._restarts = 0
+        self._sidecar_dead = False
+        self._stderr_tail: collections.deque = collections.deque(
+            maxlen=_MAX_STDERR_TAIL)
         self._msg_queue: queue.Queue = queue.Queue()
         self._seen_ids: set = set()
         self._worker = None
+        self._send_timeout = _SEND_TIMEOUT
+        # Pending confirmed sends: req_id -> Queue[dict]. Filled by
+        # _on_event on {"type":"sent"/"send_error"} from the sidecar.
+        self._pending_sends: dict = {}
         # Brain histories: owner keeps his own (shared with no one);
         # each guest sender gets a small private history.
         self._owner_history: list = []
         self._guest_histories: dict = {}
+        # v1.4.2: persistent LID -> phone cache + the owner's own LID.
+        self._lid_lock = threading.Lock()
+        self._lid_to_phone: dict = {}
+        self._owner_lid = ""
+        self._load_lid_cache()
+
+    # -- LID cache (persistent, local only) ---------------------------------
+    @property
+    def _lid_cache_path(self) -> Path:
+        # Resolved per access (not at import): tests point DATA_DIR at
+        # a temp dir before constructing the service.
+        return DATA_DIR / LID_CACHE_FILENAME
+
+    def _load_lid_cache(self) -> None:
+        try:
+            path = self._lid_cache_path
+            if not path.is_file():
+                return
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return
+            mapping = data.get("lid_to_phone") or {}
+            if isinstance(mapping, dict):
+                self._lid_to_phone = {
+                    _normalize_lid(k): normalize_number(v)
+                    for k, v in mapping.items()
+                    if _normalize_lid(k) and normalize_number(v)}
+            owner_lid = _normalize_lid(data.get("owner_lid") or "")
+            if owner_lid:
+                self._owner_lid = owner_lid
+        except Exception as exc:
+            warn("whatsapp", f"Could not load LID cache, starting empty: {exc}")
+            self._lid_to_phone = {}
+            self._owner_lid = ""
+
+    def _save_lid_cache(self) -> None:
+        try:
+            path = self._lid_cache_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(
+                {"version": 1, "lid_to_phone": self._lid_to_phone,
+                 "owner_lid": self._owner_lid},
+                ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(path)
+        except Exception as exc:
+            warn("whatsapp", f"Could not save LID cache: {exc}")
+
+    def _learn_lid_mapping(self, lid_jid: str, phone: str) -> bool:
+        """Record LID -> phone (persisted). True if it is new/changed."""
+        lid = _normalize_lid(lid_jid)
+        phone = normalize_number(phone)
+        if not lid or not phone:
+            return False
+        with self._lid_lock:
+            if self._lid_to_phone.get(lid) == phone:
+                return False
+            self._lid_to_phone[lid] = phone
+            self._save_lid_cache()
+        info("whatsapp", f"Learned LID mapping {mask_jid(lid)} -> "
+                         f"phone {mask_number(phone)}")
+        return True
+
+    def _learn_owner_lid(self, lid_jid: str) -> bool:
+        """Record the owner's own LID (persisted). True if new."""
+        lid = _normalize_lid(lid_jid)
+        if not lid:
+            return False
+        with self._lid_lock:
+            if self._owner_lid == lid:
+                return False
+            self._owner_lid = lid
+            self._save_lid_cache()
+        info("whatsapp", f"Learned owner LID {mask_jid(lid)}")
+        return True
 
     # -- state ---------------------------------------------------------------
     def enabled(self) -> bool:
@@ -141,7 +315,9 @@ class WhatsAppService:
         """Link state for the Settings UI + the brain (v1.3.2 system
         prompt reads this to answer truthfully about WhatsApp). The QR
         data URL is included when waiting for a scan; the linked number
-        is masked (last 2 digits only)."""
+        is masked (last 2 digits only). v1.4.2 adds the sidecar-dead
+        flag/reason, the restart count and the last stderr tail, so
+        the UI can show WHY WhatsApp is down instead of a blank."""
         with self._lock:
             return {
                 "enabled": self.enabled(),
@@ -152,6 +328,11 @@ class WhatsAppService:
                                 if self._me else None,
                 "owner_configured": bool(self.owner_number()),
                 "error": self._last_error,
+                # v1.4.2 supervision fields:
+                "sidecar_dead": self._sidecar_dead,
+                "dead_reason": self._last_error if self._sidecar_dead else "",
+                "restarts": self._restarts,
+                "last_stderr": "\n".join(self._stderr_tail),
             }
 
     # -- lifecycle -----------------------------------------------------------
@@ -166,12 +347,25 @@ class WhatsAppService:
             return found
         return None
 
-    def start(self) -> bool:
+    def start(self, reset_restarts: bool = True) -> bool:
         """Spawn the sidecar (no-op if already running). Returns True if
-        the process is up. Runs in background threads; never blocks."""
+        the process is up. Runs in background threads; never blocks.
+        reset_restarts=True (user start / re-enable) clears the crash
+        counter and the dead flag; the watchdog restarts with
+        reset_restarts=False so the counter actually increments."""
         with self._lock:
             if self._proc is not None:
                 return True
+            if self._sidecar_dead and not reset_restarts:
+                return False
+            if reset_restarts:
+                # A user start (re-enable / app restart) clears the
+                # crash counter and the dead flag up front, even if
+                # this start itself then fails (e.g. node missing) -
+                # the failure is reported via status=error instead.
+                self._restarts = 0
+                self._sidecar_dead = False
+                self._last_error = ""
             node = self._find_node()
             if node is None:
                 self._status = STATUS_ERROR
@@ -186,10 +380,16 @@ class WhatsAppService:
                 return False
             AUTH_DIR.mkdir(parents=True, exist_ok=True)
             try:
+                # v1.4.2: UTF-8 with errors='replace' on BOTH streams.
+                # text=True alone uses the Windows locale codec
+                # (cp1252), so one non-UTF-8 byte (0x81 in the v1.4.1
+                # log) raised in the reader and killed WhatsApp input
+                # for the rest of the session.
                 self._proc = subprocess.Popen(
                     [node, str(SIDECAR_JS), str(AUTH_DIR)],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, text=True, bufsize=1,
+                    encoding="utf-8", errors="replace",
                     cwd=str(SIDECAR_DIR))
             except Exception as exc:
                 self._status = STATUS_ERROR
@@ -197,7 +397,7 @@ class WhatsAppService:
                 error("whatsapp", self._last_error)
                 return False
             self._stop.clear()
-            self._restarts = 0
+            self._stderr_tail.clear()
             self._status = STATUS_CONNECTING
             self._qr = None
             info("whatsapp", "Sidecar started (Baileys) - waiting for link")
@@ -221,6 +421,7 @@ class WhatsAppService:
             self._proc = None
             self._status = STATUS_OFF
             self._qr = None
+            self._sidecar_dead = False
         self._stop.set()
         if proc is not None:
             try:
@@ -270,17 +471,31 @@ class WhatsAppService:
             warn("whatsapp", f"Could not write to sidecar stdin: {exc}")
             return False
 
+    @staticmethod
+    def _decode_line(raw) -> str:
+        """One stdout/stderr line as text. Bytes are decoded UTF-8
+        with errors='replace' - a bad byte must NEVER kill the reader
+        (v1.4.1: 0x81 under the cp1252 locale codec did exactly that)."""
+        if isinstance(raw, bytes):
+            return raw.decode("utf-8", errors="replace")
+        return str(raw)
+
     def _reader_loop(self) -> None:
-        """Read stdout JSON-lines events from the sidecar."""
+        """Read stdout JSON-lines events from the sidecar. NEVER dies
+        on a bad byte or a bad line: each line is handled in its own
+        try/except, so one corrupt line cannot silence WhatsApp."""
         with self._lock:
             proc = self._proc
         if proc is None or proc.stdout is None:
             return
         try:
-            for line in proc.stdout:
+            for raw in proc.stdout:
                 if self._stop.is_set():
                     break
-                line = line.strip()
+                try:
+                    line = self._decode_line(raw).strip()
+                except Exception:
+                    continue
                 if not line:
                     continue
                 try:
@@ -288,58 +503,133 @@ class WhatsAppService:
                 except json.JSONDecodeError:
                     warn("whatsapp", "Non-JSON line from sidecar (ignored)")
                     continue
-                self._on_event(event)
+                try:
+                    self._on_event(event)
+                except Exception as exc:
+                    error("whatsapp", f"Sidecar event handling failed: {exc}")
         except Exception as exc:
             if not self._stop.is_set():
                 warn("whatsapp", f"Sidecar stdout reader ended: {exc}")
 
     def _stderr_loop(self) -> None:
-        """Sidecar diagnostics (stderr) -> the diagnostics log, capped."""
+        """Sidecar diagnostics (stderr) -> the diagnostics log, capped.
+        Also keeps the last ~20 lines for the watchdog, so a crash
+        report can name the exit code AND what the sidecar said."""
         with self._lock:
             proc = self._proc
         if proc is None or proc.stderr is None:
             return
         try:
-            for line in proc.stderr:
+            for raw in proc.stderr:
                 if self._stop.is_set():
                     break
-                line = line.strip()
+                try:
+                    line = self._decode_line(raw).strip()
+                except Exception:
+                    continue
                 if line:
+                    with self._lock:
+                        self._stderr_tail.append(line[:300])
                     info("whatsapp-sidecar", line[:300])
         except Exception:
             pass
 
     def _watchdog_loop(self) -> None:
         """If the sidecar process dies (crash), restart it a few times
-        with backoff; then give up loudly (status=error) instead of
-        spinning forever. (The sidecar reconnects to WhatsApp on its own;
-        this only covers process crashes.)"""
+        with REAL backoff (1s, 2s, 5s, 10s, 30s) and a counter that
+        actually increments; then give up loudly (status=dead) instead
+        of spinning forever. (The sidecar reconnects to WhatsApp on
+        its own; this only covers process crashes.)"""
         with self._lock:
             proc = self._proc
         if proc is None:
             return
-        proc.wait()
+        try:
+            proc.wait()
+        except Exception:
+            pass
         if self._stop.is_set():
             return
         with self._lock:
+            if self._proc is not proc:
+                return  # superseded by a newer sidecar process
             self._proc = None
             self._restarts += 1
             restarts = self._restarts
-        if restarts > _MAX_PROC_RESTARTS:
+            stderr_tail = list(self._stderr_tail)
+            try:
+                exit_code = proc.returncode
+            except Exception:
+                exit_code = None
+        tail_text = "\n".join(stderr_tail)
+        reason = f"sidecar exited (code {exit_code})"
+        if tail_text:
+            reason += f"; last stderr: {tail_text[-1000:]}"
+        with self._lock:
+            self._last_error = reason[:500]
+        error("whatsapp", reason)
+        if restarts >= _MAX_PROC_RESTARTS:
             with self._lock:
-                self._status = STATUS_ERROR
-                self._last_error = (f"sidecar crashed {restarts} times - "
-                                    "not restarting (see log)")
+                self._status = STATUS_DEAD
+                self._sidecar_dead = True
+                self._last_error = (
+                    f"sidecar crashed {restarts} times "
+                    f"(last exit code {exit_code}) - not restarting; "
+                    "re-enable WhatsApp or restart the app")
             error("whatsapp", self._last_error)
             return
-        warn("whatsapp", f"Sidecar process exited - restarting "
-                         f"(attempt {restarts}/{_MAX_PROC_RESTARTS})")
-        time.sleep(5)
-        if not self._stop.is_set():
-            self.start()
+        delay = _BACKOFF_DELAYS[min(restarts - 1, len(_BACKOFF_DELAYS) - 1)]
+        warn("whatsapp", f"Sidecar process exited (code {exit_code}) - "
+                         f"restarting (attempt {restarts}/{_MAX_PROC_RESTARTS}) "
+                         f"in {delay:g}s")
+        time.sleep(delay)
+        if not self._stop.is_set() and not self._sidecar_dead:
+            self.start(reset_restarts=False)
+
+    # -- LID learning via onWhatsApp -----------------------------------------
+    def _request_lookup(self, jids: list) -> bool:
+        """Ask the sidecar to run sock.onWhatsApp(...jids) (phone ->
+        LID). The reply arrives as a lookup_result event."""
+        jids = [j for j in (jids or []) if j]
+        if not jids:
+            return False
+        return self._send_raw({"type": "lookup",
+                               "req_id": uuid.uuid4().hex[:12],
+                               "jids": jids})
+
+    def _request_owner_lookup(self) -> bool:
+        """Learn the owner's LID (and phone->LID mapping) once the
+        socket is up. Called on the ready event: onWhatsApp needs a
+        live socket, so asking at start() time would always fail."""
+        owner = self.owner_number()
+        if not owner:
+            return False
+        ok = self._request_lookup([f"{owner}@s.whatsapp.net"])
+        if ok:
+            info("whatsapp", "Requested onWhatsApp lookup for the owner "
+                             f"number {mask_number(owner)} (learning its LID)")
+        return ok
+
+    def _on_lookup_result(self, event: dict) -> None:
+        err = event.get("error")
+        if err:
+            warn("whatsapp", f"onWhatsApp lookup failed: {str(err)[:200]}")
+            return
+        for item in event.get("results") or []:
+            if not isinstance(item, dict):
+                continue
+            phone = jid_to_number(item.get("jid") or "") or \
+                normalize_number(item.get("jid") or "")
+            lid = _normalize_lid(item.get("lid") or "")
+            if lid and phone:
+                self._learn_lid_mapping(lid, phone)
+                if phone == self.owner_number():
+                    self._learn_owner_lid(lid)
 
     def _on_event(self, event: dict) -> None:
-        kind = event.get("event")
+        # v1.4.2: the sidecar emits both legacy {"event": ...} and new
+        # {"type": ...} shapes; either names the kind.
+        kind = event.get("event") or event.get("type")
         with self._lock:
             if kind == "qr":
                 self._qr = event.get("qr") or None
@@ -350,14 +640,32 @@ class WhatsAppService:
                 me = event.get("me") or {}
                 self._me = me.get("id", "")
                 self._me_name = me.get("name", "")
+                self._me_lid = _normalize_lid(me.get("lid") or "")
                 self._qr = None
                 self._status = STATUS_LINKED
                 self._last_error = ""
+                self._restarts = 0  # a live link is a healthy sidecar
                 info("whatsapp", "WhatsApp linked as "
                      f"{mask_number(jid_to_number(self._me))} "
                      f"({self._me_name or 'no name'})")
             elif kind == "message":
                 self._msg_queue.put(event)
+            elif kind == "phone_share":
+                # WhatsApp itself pairing a LID with its phone number.
+                lid = _normalize_lid(event.get("lid") or "")
+                phone = jid_to_number(event.get("jid") or "")
+                if lid and phone:
+                    self._learn_lid_mapping(lid, phone)
+            elif kind == "lookup_result":
+                self._on_lookup_result(event)
+            elif kind in ("sent", "send_error"):
+                req_id = event.get("req_id")
+                if req_id and req_id in self._pending_sends:
+                    self._pending_sends[req_id].put({
+                        "ok": kind == "sent",
+                        "id": event.get("id", ""),
+                        "error": event.get("error", ""),
+                    })
             elif kind == "disconnected":
                 self._status = STATUS_DISCONNECTED
                 self._last_error = str(event.get("reason", ""))[:200]
@@ -367,6 +675,7 @@ class WhatsAppService:
                 self._status = STATUS_OFF
                 self._qr = None
                 self._me = ""
+                self._me_lid = ""
                 warn("whatsapp", "Logged out (session revoked) - "
                                  "fresh QR needed")
             elif kind == "error":
@@ -381,7 +690,78 @@ class WhatsAppService:
                     warn("whatsapp-sidecar", msg)
                 else:
                     info("whatsapp-sidecar", msg)
-            # 'sent' / 'pong': no action needed.
+            # 'pong': no action needed.
+        # The owner-LID lookup needs the socket, so it goes out AFTER
+        # the ready event is fully recorded (and outside the lock, so
+        # _send_raw's own lock acquisition cannot deadlock).
+        if kind == "ready":
+            self._request_owner_lookup()
+
+    # -- confirmed send (v1.4.2) ---------------------------------------------
+    def send_message(self, to, text, reply_to=None) -> dict:
+        """Send a WhatsApp text message and report success ONLY after
+        Baileys confirms the send.
+
+        to: a digits phone ("01557887719", "+20 155...", "20155...")
+            (normalized exactly like normalize_number) or a full JID
+            ("20155...@s.whatsapp.net" / "123...@lid").
+        text: the message text (non-empty).
+        reply_to: optional message id to quote (internal replies only).
+
+        Returns {"ok": bool, "detail": str}:
+          ok=True  -> detail is the sent message id (or "sent").
+          ok=False -> detail names the reason: "invalid recipient",
+            "empty message text", "sidecar not running",
+            "WhatsApp not linked (status=...)", "could not write to
+            sidecar", "send timed out after 30s ...", or the Baileys
+            error text. Numbers are masked in the log (last 2 digits).
+        Waits up to ~30s for the sidecar's {"type":"sent"} /
+        {"type":"send_error"}; call from a background thread, never
+        from the UI thread."""
+        text = str(text or "")
+        if not text:
+            return {"ok": False, "detail": "empty message text"}
+        raw_to = str(to or "").strip()
+        if "@" in raw_to:
+            jid = raw_to
+        else:
+            digits = normalize_number(raw_to)
+            if not digits:
+                return {"ok": False, "detail": "invalid recipient"}
+            jid = f"{digits}@s.whatsapp.net"
+        with self._lock:
+            proc = self._proc
+            status = self._status
+        if proc is None:
+            return {"ok": False, "detail": "sidecar not running"}
+        if status != STATUS_LINKED:
+            return {"ok": False, "detail": f"WhatsApp not linked (status={status})"}
+        req_id = uuid.uuid4().hex[:12]
+        waiter: queue.Queue = queue.Queue()
+        with self._lock:
+            self._pending_sends[req_id] = waiter
+        try:
+            payload = {"type": "send", "req_id": req_id,
+                       "to": jid, "text": text}
+            if reply_to:
+                payload["reply_to"] = reply_to
+            if not self._send_raw(payload):
+                return {"ok": False, "detail": "could not write to sidecar"}
+            try:
+                result = waiter.get(timeout=self._send_timeout)
+            except queue.Empty:
+                return {"ok": False,
+                        "detail": f"send timed out after {self._send_timeout:g}s "
+                                  "(no confirmation from sidecar)"}
+            if result.get("ok"):
+                info("whatsapp", f"WhatsApp message sent to {mask_jid(jid)} "
+                                 f"(id {result.get('id') or '?'})")
+                return {"ok": True, "detail": result.get("id") or "sent"}
+            return {"ok": False,
+                    "detail": str(result.get("error") or "send failed")[:200]}
+        finally:
+            with self._lock:
+                self._pending_sends.pop(req_id, None)
 
     # -- message handling ----------------------------------------------------
     def _worker_loop(self) -> None:
@@ -395,6 +775,97 @@ class WhatsAppService:
             except Exception as exc:
                 error("whatsapp", f"Message handling failed: {exc}")
 
+    def identify_sender(self, event: dict) -> dict:
+        """Identify the sender of an inbound message event.
+
+        Returns {"phone": str, "is_owner": bool, "lid": str, "via": str}:
+          phone: digits phone ("20155...") or "" if no phone is known.
+          is_owner: True only when the sender is proven to be the owner
+            (phone == owner number, or sender LID == learned owner LID).
+          lid: the sender's LID JID ("...@lid") when one was observed.
+          via: how it was identified - "phone", "lid_cache",
+            "owner_lid", "chat_remoteJid", or "" when unidentified.
+
+        Sources, in order (see the v1.4.2 header note for WHY):
+          1. any @s.whatsapp.net JID among the sender fields the
+             sidecar passes through (from / from_alt / participant /
+             participantAlt / key.*) - a LID seen together with a phone
+             also teaches the cache for next time;
+          2. the persistent LID->phone cache for a @lid sender;
+          3. the learned owner LID (owner even with no phone mapping);
+          4. the chat remoteJid when no sender field identifies anyone
+             (1:1 chats: the chat IS the sender).
+        Never logs a full number or any message content."""
+        if not isinstance(event, dict):
+            return {"phone": "", "is_owner": False, "lid": "", "via": ""}
+        key = event.get("key") if isinstance(event.get("key"), dict) else {}
+
+        def _fields(*names):
+            for name in names:
+                value = event.get(name) or key.get(name)
+                if value:
+                    yield str(value)
+
+        sender_phones = []
+        sender_lids = []
+        for value in _fields("from_alt", "participant_alt", "participant",
+                             "from", "remoteJidAlt"):
+            if value.endswith("@s.whatsapp.net"):
+                sender_phones.append(jid_to_number(value))
+            elif _is_lid_jid(value):
+                sender_lids.append(_normalize_lid(value))
+        for value in _fields("participantPn", "participant_pn"):
+            phone = normalize_number(value)
+            if phone:
+                sender_phones.append(phone)
+        for value in _fields("participantLid", "participant_lid"):
+            lid = _normalize_lid(value)
+            if lid:
+                sender_lids.append(lid)
+
+        chat_phones = []
+        chat_lids = []
+        for value in _fields("remoteJid",):
+            if value.endswith("@s.whatsapp.net"):
+                chat_phones.append(jid_to_number(value))
+            elif _is_lid_jid(value):
+                chat_lids.append(_normalize_lid(value))
+
+        # A LID observed together with a phone teaches the cache.
+        for lid in sender_lids + chat_lids:
+            for phone in sender_phones + chat_phones:
+                if lid and phone:
+                    self._learn_lid_mapping(lid, phone)
+
+        owner = self.owner_number()
+        lid = sender_lids[0] if sender_lids else (
+            chat_lids[0] if chat_lids else "")
+        if sender_phones:
+            phone = sender_phones[0]
+            return {"phone": phone,
+                    "is_owner": bool(owner and phone == owner),
+                    "lid": lid, "via": "phone"}
+        if lid:
+            if self._me_lid and lid == self._me_lid:
+                return {"phone": "", "is_owner": False,
+                        "lid": lid, "via": "self_lid"}
+            with self._lid_lock:
+                phone = self._lid_to_phone.get(lid, "")
+            if phone:
+                return {"phone": phone,
+                        "is_owner": bool(owner and phone == owner),
+                        "lid": lid, "via": "lid_cache"}
+            if self._owner_lid and lid == self._owner_lid and owner:
+                return {"phone": owner, "is_owner": True,
+                        "lid": lid, "via": "owner_lid"}
+            return {"phone": "", "is_owner": False, "lid": lid, "via": ""}
+        if chat_phones:
+            phone = chat_phones[0]
+            return {"phone": phone,
+                    "is_owner": bool(owner and phone == owner),
+                    "lid": lid, "via": "chat_remoteJid"}
+        return {"phone": "", "is_owner": False, "lid": lid, "via": ""}
+
     def _handle_message(self, event: dict) -> None:
         msg_id = str(event.get("id", ""))
         if msg_id:
@@ -403,12 +874,25 @@ class WhatsAppService:
             self._seen_ids.add(msg_id)
             if len(self._seen_ids) > 200:
                 self._seen_ids.clear()
-        # Prefer the phone-number JID (remoteJidAlt) when Baileys
-        # delivered a LID JID as remoteJid.
-        sender = jid_to_number(event.get("from_alt") or "") or \
-            jid_to_number(event.get("from") or "")
+        ident = self.identify_sender(event)
+        sender = ident["phone"]
         if not sender:
-            warn("whatsapp", "Message from an unidentifiable sender - ignored")
+            # v1.4.1 logged only "unidentifiable sender" and the cause
+            # stayed invisible. Log the raw sender fields MASKED plus
+            # the key shape, then ignore as before.
+            raw_fields = []
+            for name in ("from", "from_alt", "participant",
+                         "participant_alt", "remoteJid", "remoteJidAlt",
+                         "participantLid", "participantPn"):
+                value = event.get(name)
+                if value:
+                    raw_fields.append(f"{name}={mask_jid(str(value))}")
+            key = event.get("key")
+            key_shape = (f"key=[{','.join(sorted(key.keys()))}]"
+                         if isinstance(key, dict) else f"key={type(key).__name__}")
+            warn("whatsapp", "Message from an unidentifiable sender - ignored "
+                             f"({' '.join(raw_fields) or 'no sender fields'}; "
+                             f"{key_shape}; lid={mask_jid(ident['lid'])})")
             return
         text = str(event.get("text", "") or "").strip()
         if not text or len(text) > MAX_INCOMING_CHARS:
@@ -419,7 +903,7 @@ class WhatsAppService:
         ai_name = self.settings.get("ai_name", "Memo")
         user_name = self.settings.get("user_name", "Mohamed")
 
-        if owner and sender == owner:
+        if ident["is_owner"]:
             # OWNER mode: tools on. The number IS the authentication, so
             # the tool dialogs are auto-allowed in this thread (see
             # tools.trusted_caller); the destructive blocklist still
@@ -439,8 +923,12 @@ class WhatsAppService:
             # REPLY mode: chat only, no tools, private per-sender history
             # (never the shared in-app history - other people must not
             # see the owner's chats, and vice versa).
+            # v1.4.2: memory_enabled=False - a guest's words must never
+            # enter the owner's long-term memory, style, rules or
+            # routines (see brain._record_turn).
             hist = self._guest_histories.setdefault(sender, [])
-            result = brain.ask(text, ai_name, user_name, lang, history=hist)
+            result = brain.ask(text, ai_name, user_name, lang, history=hist,
+                               memory_enabled=False)
             self._guest_histories[sender] = hist[-20:]
             if len(self._guest_histories) > 8:  # cap tracked senders
                 oldest = next(iter(self._guest_histories))
@@ -463,11 +951,21 @@ class WhatsAppService:
         info("whatsapp", f"Message from {mode} sender {mask_number(sender)}, "
                          f"{len(text)} chars -> reply {len(reply)} chars "
                          f"(engine {engine})")
-        ok = self._send_raw({"cmd": "send", "to": event.get("from", ""),
-                             "text": reply, "reply_to": msg_id or None})
-        if not ok:
-            error("whatsapp", "Could not send WhatsApp reply "
-                              "(sidecar not running)")
+        # v1.4.2: confirmed send when linked (success only after
+        # Baileys confirms); legacy fire-and-forget when not linked,
+        # so a reply is still attempted if link state lags reality.
+        reply_to_jid = event.get("from") or event.get("remoteJid") or ""
+        if self._status == STATUS_LINKED and self._proc is not None:
+            res = self.send_message(reply_to_jid, reply, reply_to=msg_id or None)
+            if not res["ok"]:
+                error("whatsapp", "Could not send WhatsApp reply: "
+                                 f"{res['detail']}")
+        else:
+            ok = self._send_raw({"cmd": "send", "to": reply_to_jid,
+                                 "text": reply, "reply_to": msg_id or None})
+            if not ok:
+                error("whatsapp", "Could not send WhatsApp reply "
+                                  "(sidecar not running)")
 
 
 # ---------------------------------------------------------------------------
@@ -514,5 +1012,18 @@ def get_state() -> dict:
     if _SERVICE is None:
         return {"enabled": False, "running": False, "status": STATUS_OFF,
                 "qr": None, "linked_phone": None,
-                "owner_configured": False, "error": ""}
+                "owner_configured": False, "error": "",
+                "sidecar_dead": False, "dead_reason": "", "restarts": 0,
+                "last_stderr": ""}
     return _SERVICE.get_state()
+
+
+def send_message(to: str, text: str) -> dict:
+    """Module-level send (v1.4.2, for the brain's send_whatsapp_message
+    tool in tools.py): delegate to the running service's confirmed
+    send. Returns {"ok": bool, "detail": str} - ok=True ONLY after
+    Baileys confirms the send. {"ok": False, "detail": "WhatsApp
+    service not running"} when no service exists."""
+    if _SERVICE is None:
+        return {"ok": False, "detail": "WhatsApp service not running"}
+    return _SERVICE.send_message(to, text)

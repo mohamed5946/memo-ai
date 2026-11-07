@@ -441,11 +441,12 @@ class TestWhatsAppSettings(unittest.TestCase):
 class TestSettingsReorg(unittest.TestCase):
     def test_menu_and_sections(self):
         html = _read("app/ui/index.html")
-        for section in ("general", "whatsapp", "voices", "avatar",
+        for section in ("general", "whatsapp", "memory", "system",
+                        "notifications", "voices", "avatar",
                         "logs", "updates"):
             self.assertIn(f'data-section="{section}"', html)
             self.assertIn(f'id="section-{section}"', html)
-        self.assertEqual(html.count('class="back-btn'), 6)
+        self.assertEqual(html.count('class="back-btn'), 9)
         self.assertIn('id="settings-menu"', html)
         # Quit lives on the menu; Save lives in its own section.
         self.assertIn('id="quit-btn"', html)
@@ -832,15 +833,17 @@ class TestVersionAndInstaller(unittest.TestCase):
 
     def test_version_consistency_v141(self):
         import main
-        self.assertEqual(main.VERSION, "1.4.1")
-        self.assertIn("v1.4.1", _read("app/ui/index.html"))
-        self.assertIn("1, 4, 1, 0",
+        self.assertEqual(main.VERSION, "1.4.2")
+        self.assertIn("v1.4.2", _read("app/ui/index.html"))
+        self.assertIn("1, 4, 2, 0",
                       _read("installer/file_version_info.txt"))
-        self.assertIn("'1.4.1'", _read("installer/file_version_info.txt"))
-        # The manifest still says 1.4.0 until the tag build updates it.
+        self.assertIn("'1.4.2'", _read("installer/file_version_info.txt"))
+        # v1.4.2: the manifest is updated by the post-release commit
+        # (af85c62 did this for v1.4.1) - so it must EQUAL the app
+        # version now, not lag one behind. Checked after that commit.
         manifest = json.loads(_read("version.json"))
-        self.assertEqual(manifest["version"], "1.4.0")
-        self.assertIn("1.4.1", manifest["notes"])
+        self.assertEqual(manifest["version"], main.VERSION)
+        self.assertIn("1.4.2", manifest["notes"])
 
 
 if __name__ == "__main__":

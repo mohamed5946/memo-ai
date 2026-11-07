@@ -365,15 +365,16 @@ class TestSelfTestAndInstaller(unittest.TestCase):
 
     def test_version_consistency(self):
         import main
-        self.assertEqual(main.VERSION, "1.4.1")
-        self.assertIn("v1.4.1", _read("app/ui/index.html"))
-        self.assertIn("1, 4, 1, 0",
+        self.assertEqual(main.VERSION, "1.4.2")
+        self.assertIn("v1.4.2", _read("app/ui/index.html"))
+        self.assertIn("1, 4, 2, 0",
                       _read("installer/file_version_info.txt"))
         # version.json is updated BY THE CI after the tag build (it
-        # carries the real release hashes) - it must NOT be hand-edited
-        # here, so it still says 1.4.0 until the tag build lands.
+        # carries the real release hashes) - and the post-release commit
+        # points it at the new version (af85c62 for v1.4.1). So the
+        # manifest must EQUAL the app version; checked after that commit.
         manifest = json.loads(_read("version.json"))
-        self.assertEqual(manifest["version"], "1.4.0")
+        self.assertEqual(manifest["version"], main.VERSION)
 
 
 class TestLiveGroqToolCall(unittest.TestCase):

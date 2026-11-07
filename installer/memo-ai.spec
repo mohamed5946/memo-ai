@@ -115,7 +115,11 @@ hiddenimports = [
 
 # Heavy binary deps: collect the whole package (modules + native libs).
 for _pkg in ("webview", "faster_whisper", "ctranslate2", "av",
-             "sounddevice", "groq", "clr_loader", "pystray", "PIL"):
+             "sounddevice", "groq", "clr_loader", "pystray", "PIL",
+             # v1.4.2: psutil (native _psutil_windows), ddgs (pure
+             # Python, collected for safety - it is imported lazily
+             # inside tools.py), winrt (Windows toast .pyd modules).
+             "psutil", "ddgs", "winrt"):
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b

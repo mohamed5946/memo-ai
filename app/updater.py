@@ -126,17 +126,32 @@ def _fetch_manifest():
         url = urlunsplit(parts._replace(query=urlencode(query)))
     except Exception:
         pass
-    try:
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-        manifest = resp.json()
-        if not isinstance(manifest, dict) or "version" not in manifest:
-            error("update", "Manifest is not a valid version.json (no 'version')")
-            return None
-        return manifest
-    except Exception as exc:
-        error("update", f"Could not fetch update manifest from {url}: {exc}")
-        return None
+    # v1.4.2 RETRY: the v1.4.1 field log showed the first manifest fetch
+    # failing on a transient "Read timed out (read timeout=15)" while the
+    # retry worked - so fetch up to 3 times with backoff (2s, 5s) before
+    # giving up. A single transient network blip must not hide an update.
+    last_exc = None
+    for attempt in (1, 2, 3):
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            manifest = resp.json()
+            if not isinstance(manifest, dict) or "version" not in manifest:
+                error("update", "Manifest is not a valid version.json (no 'version')")
+                return None
+            if attempt > 1:
+                info("update", f"Manifest fetched on attempt {attempt}/3")
+            return manifest
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 3:
+                wait = 2 if attempt == 1 else 5
+                warn("update", f"Manifest fetch attempt {attempt}/3 failed "
+                               f"({exc}) - retrying in {wait}s")
+                time.sleep(wait)
+    error("update", f"Could not fetch update manifest from {url} "
+                    f"(3 attempts): {last_exc}")
+    return None
 
 
 def check_update() -> dict:

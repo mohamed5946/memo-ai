@@ -1,8 +1,1 @@
-{
-  "notes": "v1.4.1: القطة والجزيرة اتشالوا (النافذة الرئيسية على طول + إغلاق لـ tray) — إصلاح حفظ الصوت/الأفاتار/رقم الواتساب والـ QR — الإعدادات منظمة زي DeliveryFlow — إجابة 'مين المطور؟' بمعلومات عامة بس — وضع المالك بيشتغل فعلاً — إصلاح الـ 400 والـ 'none' في الردود.",
-  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.1/MemoAI-Setup-1.4.1.exe",
-  "sha256": "fd1ba2a47904ddd40283915dac9b2eeda5f1641ddf380a049d061e82bf9442f1",
-  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.4.1/memo-ai-v1.4.1.zip",
-  "version": "1.4.1",
-  "setup_sha256": "48a23271f01373d1f2bda756e002c69fa5e5fa220b2d6a26dcd7603b08ce62a2"
-}
+{"notes":"v1.4.2: إصلاح عدم الرد على الواتساب (تعريف المرسل LID + قارئ stdout بـ UTF-8 ميموتش + تسجيل stderr/exit code للـ sidecar + backoff) — أداة إرسال واتساب حقيقية — ذاكرة طويلة محلية + تعلم من المستخدم — بحث ويب مجاني — مراقبة صحة اللابتوب + تنبيهات — تنبيه الإشعارات المهمة — أذونات الأدوات كرسالة في الشات (سماح/رفض) مش popup — retry لجلب الـ manifest.","setup_sha256":"48a23271f01373d1f2bda756e002c69fa5e5fa220b2d6a26dcd7603b08ce62a2","setup_url":"https://github.com/mohamed5946/memo-ai/releases/download/v1.4.2/MemoAI-Setup-1.4.2.exe","sha256":"fd1ba2a47904ddd40283915dac9b2eeda5f1641ddf380a049d061e82bf9442f1","url":"https://github.com/mohamed5946/memo-ai/releases/download/v1.4.2/memo-ai-v1.4.2.zip","version":"1.4.2"}

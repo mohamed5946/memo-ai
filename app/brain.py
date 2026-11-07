@@ -15,6 +15,7 @@ from logger import error, info, warn
 from settings_store import keys_status, read_key
 
 import capabilities
+import memory as memory_mod
 import tools
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -23,6 +24,27 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "openai/gpt-oss-120b"
 
 _history: list = []
+
+# v1.4.2: long-term memory (local file, see memory.py). The store is
+# lazy - a missing/corrupt file must never break the brain - and
+# replaceable for tests (set_memory_store). A failed load is remembered
+# as False so we don't retry (and re-log) on every turn.
+_memory_store = None
+
+
+def get_memory_store():
+    global _memory_store
+    if _memory_store is None:
+        try:
+            _memory_store = memory_mod.get_store()
+        except Exception:
+            _memory_store = False
+    return _memory_store or None
+
+
+def set_memory_store(store) -> None:
+    global _memory_store
+    _memory_store = store
 
 
 def is_online(timeout: float = 2.0) -> bool:
@@ -49,7 +71,7 @@ def _capability_block(language: str) -> str:
             "قدراتك الحقيقية (من حالة التطبيق الفعلية — متخترعش غيرها):",
             f"- المخ الأونلاين (Groq): {'متصل ✅' if groq_ok else 'مش متصل — مفتاح Groq مش موجود في keys/'}",
             f"- الصوت الأونلاين (Gemini TTS): {'متصل ✅' if gemini_ok else 'مش متصل — مفتاح Gemini مش موجود'}",
-            "- الأدوات على اللابتوب ✅: تقدر تفتح برامج، تعمل ملفات وتكتب فيها، تعدّل ملفات، تقرأ ملفات، وتشغّل أوامر — عن طريق أدواتك. كل إجراء بيظهر لصاحبك نافذة سماح/رفض لوحدها، فماتسألوش عن الإذن في الكلام — نادي الأداة على طول.",
+            "- الأدوات على اللابتوب ✅: تقدر تفتح برامج، تعمل ملفات وتكتب فيها، تعدّل ملفات، تقرأ ملفات، وتشغّل أوامر، وتبعت رسايل واتساب، وتدور على النت، وتشوف حالة اللابتوب (رام، قرص، حرارة، بطارية) — عن طريق أدواتك. كل إجراء بيظهر لصاحبك رسالة في الشات فيها زرارين: سماح ورفض، فماتسألوش عن الإذن في الكلام — نادي الأداة على طول.",
             "- " + capabilities.whatsapp_status_line("ar"),
             "- " + capabilities.not_built_line("ترجمة الشاشة", "Screen translation", "ar"),
             "- " + capabilities.not_built_line("المجلس متعدد النماذج", "Multi-model council", "ar"),
@@ -65,7 +87,7 @@ def _capability_block(language: str) -> str:
         "Your real capabilities (from the app's actual state — never invent others):",
         f"- Online brain (Groq): {'connected ✅' if groq_ok else 'not connected — no Groq key in keys/'}",
         f"- Online voice (Gemini TTS): {'connected ✅' if gemini_ok else 'not connected — no Gemini key'}",
-        "- Laptop tools ✅: you can open apps, create/write/edit/read files, and run commands — through your tools. Every action shows the user an Allow/Deny dialog by itself, so do NOT ask for permission in text — call the tool directly.",
+        "- Laptop tools ✅: you can open apps, create/write/edit/read files, run commands, send WhatsApp messages, search the web, and check the laptop's status (RAM, disk, temperature, battery) — through your tools. Every action appears to the user as a chat message with Allow / Deny buttons, so do NOT ask for permission in text — call the tool directly.",
         "- " + capabilities.whatsapp_status_line("en"),
         "- " + capabilities.not_built_line("Screen translation", "Screen translation", "en"),
         "- " + capabilities.not_built_line("Multi-model council", "Multi-model council", "en"),
@@ -107,7 +129,8 @@ def _developer_block(language: str) -> str:
 
 def system_prompt(ai_name: str, user_name: str, language: str,
                   tools_available: bool = False,
-                  owner_unlocked: bool = False) -> str:
+                  owner_unlocked: bool = False,
+                  memory_block: str = "") -> str:
     """v1.3.2: the user's name is stated EXPLICITLY (the v1.3.1 prompt
     only said 'on {user_name}'s laptop', so the brain answered 'I don't
     know your name'). The capability block is always included, so the
@@ -117,7 +140,10 @@ def system_prompt(ai_name: str, user_name: str, language: str,
     source-code questions normally instead of refusing with "contact
     the developer" (the v1.4.0 field bug: the unlock confirmed but the
     model still refused, because the prompt never knew owner mode was
-    open). Also carries the public-only developer block."""
+    open). Also carries the public-only developer block.
+    v1.4.2: memory_block carries the long-term memory for THIS turn
+    (retrieved facts + learned style + correction rules + routines +
+    rolling summary) - empty when there is nothing to remember yet."""
     name = (user_name or "").strip() or "غير معروف"
     if language == "ar":
         if name == "غير معروف":
@@ -147,14 +173,21 @@ def system_prompt(ai_name: str, user_name: str, language: str,
             "ممنوع تذكر أي تفاصيل تقنية عن النماذج اللي بتشغلك. "
             + _capability_block("ar")
         )
+        if memory_block:
+            prompt += "\n\n" + memory_block
         if tools_available:
             prompt += (
                 " عندك أدوات حقيقية على اللابتوب — استخدمها: لما المستخدم "
                 "يطلب منك تعمل حاجة (افتح برنامج، اعمل ملف، عدّل ملف، شغّل "
-                "أمر) نادي الأداة المناسبة على طول بدل ما تشرحله إزاي يعملها "
-                "بنفسه، وممنوع تقول 'مش قادر أفتح البرامج من هنا' — أنت تقدر، "
-                "عن طريق الأدوات. نافذة السماح/الرفض هتظهر لصاحبك لوحدها "
-                "قبل التنفيذ، فماتسألوش عن الإذن في الكلام."
+                "أمر، ابعت رسالة واتساب، شوف حالة اللابتوب) نادي الأداة "
+                "المناسبة على طول بدل ما تشرحله إزاي يعملها بنفسه، وممنوع "
+                "تقول 'مش قادر أفتح البرامج من هنا' — أنت تقدر، عن طريق "
+                "الأدوات. رسالة سماح/رفض هتظهر لصاحبك في الشات قبل "
+                "التنفيذ، فماتسألوش عن الإذن في الكلام. "
+                "ولو سألك عن حاجة متعرفهاش (أخبار جارية، أسعار، حقائق بعد "
+                "تدريبك) نادي أداة web_search بدل ما تخمن أو تقول «معرفش» — "
+                "جاوب من النتايج واذكر المصدر؛ ولو البحث فشل قول بصراحة "
+                "إنك مقدرتش تلاقيها، وممنوع تخمن."
             )
         return prompt
     if name == "غير معروف":
@@ -183,15 +216,23 @@ def system_prompt(ai_name: str, user_name: str, language: str,
         + _developer_block("en") + " "
         + _capability_block("en")
     )
+    if memory_block:
+        prompt += "\n\n" + memory_block
     if tools_available:
         prompt += (
             " You have real tools on the laptop — use them: when the user "
             "asks you to DO something (open an app, create a file, edit a "
-            "file, run a command), call the right tool right away instead "
+            "file, run a command, send a WhatsApp message, check the "
+            "laptop's status), call the right tool right away instead "
             "of explaining how he can do it himself, and never say 'I "
             "cannot open apps from here' — you can, through the tools. "
-            "The Allow/Deny dialog appears to the user by itself before "
-            "execution, so do not ask for permission in text."
+            "An Allow/Deny message appears to the user in the chat before "
+            "execution, so do not ask for permission in text. "
+            "If he asks about something you do not know (current events, "
+            "prices, facts past your training), call the web_search tool "
+            "instead of guessing or saying 'I don't know' — answer from "
+            "the results and name the source; if the search fails, say "
+            "honestly that you could not find it, never guess."
         )
     return prompt
 
@@ -378,7 +419,8 @@ def _looks_like_action(text: str) -> bool:
 
 def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                    language: str, history: list | None = None,
-                   owner_unlocked: bool = False) -> dict:
+                   owner_unlocked: bool = False,
+                   memory_enabled: bool = True) -> dict:
     """Brain WITH tools (v1.3.2: this is the NORMAL chat path now, not
     owner-only — v1.3.0 gated tools behind the secret code, so in normal
     chat Groq had no tools at all and refused 'open VS Code' in text.
@@ -402,13 +444,26 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
     lang = "ar" if any("\u0600" <= ch <= "\u06ff" for ch in user_text) \
         else language
     hist = _history if history is None else history
+    # v1.4.2: explicit memory commands are answered locally (no model
+    # call, works offline); otherwise the retrieved memory block joins
+    # the system prompt for this turn.
+    _mem, mem_block, cmd_reply = _memory_for_turn(
+        user_text, lang, memory_enabled)
+    if cmd_reply is not None:
+        _record_turn(user_text, cmd_reply, "memory", hist, learn=False,
+                     language=lang)
+        return {"reply": cmd_reply, "engine": "memory", "tools_used": 0,
+                "tools_disabled": False}
     system = {"role": "system",
               "content": system_prompt(ai_name, user_name, lang, True,
-                                       owner_unlocked=owner_unlocked)}
+                                       owner_unlocked=owner_unlocked,
+                                       memory_block=mem_block)}
     # `turn` collects ONLY this turn's messages (user + tool calls +
     # tool results) so the shared history never duplicates old entries.
     turn = [{"role": "user", "content": user_text}]
-    messages = [system] + hist[-20:] + turn
+    # v1.4.2: wider active window (40 messages = 20 turns, was 20);
+    # older turns are summarized into the memory file, not dropped.
+    messages = [system] + hist[-memory_mod.HISTORY_KEEP:] + turn
 
     if not is_online():
         info("brain", "Offline - tools disabled, local Qwen 3B (chat only)")
@@ -421,7 +476,8 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                 "دلوقتي مفيش نت فأقدر أجاوب بس.")
         if _looks_like_action(user_text):
             reply = reply + "\n\n" + note
-        _record_turn(user_text, reply, engine, hist)
+        _record_turn(user_text, reply, engine, hist,
+                     learn=memory_enabled, language=lang)
         return {"reply": reply, "engine": engine, "tools_used": 0,
                 "tools_disabled": True}
 
@@ -444,7 +500,8 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                 # 400d on it - the v1.4.0 field failure ("after a few
                 # good replies"). The tool round-trip lives in the
                 # working `messages` list only; history stays clean.
-                _record_turn(user_text, reply, "groq", hist)
+                _record_turn(user_text, reply, "groq", hist,
+                             learn=memory_enabled, language=lang)
                 return {"reply": reply, "engine": "groq",
                         "tools_used": tools_used, "tools_disabled": False}
             # Feed the assistant's tool-call message back, then execute.
@@ -478,7 +535,8 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         # 5 rounds and the model still wants more tools: stop politely.
         reply = ("عملت اللي أقدر عليه في الخطوات دي — لو لسه ناقص حاجة "
                  "قولي أكمل إيه بالظبط.")
-        _record_turn(user_text, reply, "groq", hist)
+        _record_turn(user_text, reply, "groq", hist,
+                     learn=memory_enabled, language=lang)
         return {"reply": reply, "engine": "groq", "tools_used": tools_used,
                 "tools_disabled": False}
     except RuntimeError as exc:
@@ -498,7 +556,8 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         if _looks_like_action(user_text):
             reply += ("\n\nالأدوات (فتح برامج، ملفات، أوامر) محتاجة Groq "
                       "أونلاين — دلوقتي شغال على المخ المحلي فأقدر أجاوب بس.")
-        _record_turn(user_text, reply, engine, hist)
+        _record_turn(user_text, reply, engine, hist,
+                     learn=memory_enabled, language=lang)
         return {"reply": reply, "engine": engine, "tools_used": 0,
                 "tools_disabled": True}
     except Exception as exc:
@@ -507,39 +566,89 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         reply, engine = _ask_local(messages, lang)
         if not engine:
             reply = _groq_failure_note("failed", lang) + " " + reply
-        _record_turn(user_text, reply, engine, hist)
+        _record_turn(user_text, reply, engine, hist,
+                     learn=memory_enabled, language=lang)
         return {"reply": reply, "engine": engine, "tools_used": 0,
                 "tools_disabled": True}
 
 
+def _memory_for_turn(user_text: str, lang: str,
+                     memory_enabled: bool):
+    """v1.4.2: explicit memory commands + retrieved memory block for one
+    turn. Returns (store_or_None, memory_block, command_reply_or_None).
+    A command reply means the turn is answered locally (no model call)
+    and works offline. Guests (memory_enabled=False, e.g. WhatsApp
+    non-owner senders) never touch the owner's memory."""
+    if not memory_enabled:
+        return None, "", None
+    store = get_memory_store()
+    if store is None:
+        return None, "", None
+    try:
+        cmd_reply = store.try_handle_command(user_text, lang)
+    except Exception:
+        cmd_reply = None
+    if cmd_reply is not None:
+        return store, "", cmd_reply
+    try:
+        block = store.relevant_block(user_text, lang)
+    except Exception:
+        block = ""
+    return store, block, None
+
+
 def _record_turn(user_text: str, reply: str, engine: str,
-                 history: list | None = None) -> None:
+                 history: list | None = None, learn: bool = True,
+                 language: str = "ar") -> None:
     # v1.4.0: `history` (None = the shared _history) - see ask_with_tools.
     # v1.4.1: engine is "" on failure (never "none") - failed turns
     # are not recorded, and only PLAIN text is recorded (see
     # ask_with_tools: the tool round-trip never enters the history).
+    # v1.4.2: `learn` gates ALL memory writes for this turn (learning
+    # from the turn + history rollover into the rolling summary).
+    # WhatsApp guests pass learn=False - their words must never enter
+    # the owner's memory or summary.
     hist = _history if history is None else history
     if engine:
         hist.append({"role": "user", "content": user_text})
         hist.append({"role": "assistant", "content": reply})
+        if learn:
+            try:
+                store = get_memory_store()
+                if store is not None:
+                    store.learn_from_turn(user_text, reply)
+                    store.rollover(hist, language)
+            except Exception as exc:
+                warn("brain", f"Memory learn/rollover failed: {exc}")
 
 
 def ask(user_text: str, ai_name: str, user_name: str, language: str,
-        history: list | None = None, owner_unlocked: bool = False) -> dict:
+        history: list | None = None, owner_unlocked: bool = False,
+        memory_enabled: bool = True) -> dict:
     """Ask the brain. Returns {"reply": str, "engine": "groq"|"ollama"|""}.
 
     v1.4.0: `history` lets another channel (WhatsApp guests) keep its own
     history instead of the shared in-app one. None = shared (unchanged).
     v1.4.1: `owner_unlocked` (WhatsApp owner phone) flips the
     source-code instruction in the system prompt, same as in-app.
-    Engine is "" when no engine answered - never "none"."""
+    Engine is "" when no engine answered - never "none".
+    v1.4.2: `memory_enabled=False` for WhatsApp guests - their words
+    must never enter the owner's memory (see _record_turn)."""
     lang = "ar" if any("\u0600" <= ch <= "\u06ff" for ch in user_text) \
         else language
     hist = _history if history is None else history
+    # v1.4.2: memory commands + retrieved memory block (same as tools path).
+    _mem, mem_block, cmd_reply = _memory_for_turn(
+        user_text, lang, memory_enabled)
+    if cmd_reply is not None:
+        _record_turn(user_text, cmd_reply, "memory", hist, learn=False,
+                     language=lang)
+        return {"reply": cmd_reply, "engine": "memory"}
     system = {"role": "system",
               "content": system_prompt(ai_name, user_name, lang,
-                                       owner_unlocked=owner_unlocked)}
-    messages = [system] + hist[-20:] + [{"role": "user", "content": user_text}]
+                                       owner_unlocked=owner_unlocked,
+                                       memory_block=mem_block)}
+    messages = [system] + hist[-memory_mod.HISTORY_KEEP:] + [{"role": "user", "content": user_text}]
 
     online = is_online()
     if online:
@@ -571,9 +680,8 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
         if not engine:
             reply = _groq_failure_note("offline", lang) + " " + reply
 
-    if engine:
-        hist.append({"role": "user", "content": user_text})
-        hist.append({"role": "assistant", "content": reply})
+    _record_turn(user_text, reply, engine, hist,
+                 learn=memory_enabled, language=lang)
     return {"reply": reply, "engine": engine}
 
 

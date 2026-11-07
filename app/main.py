@@ -100,6 +100,41 @@
 # (which also re-centers it on top); the texts
 # fade in as it grows. Old island_expand/island_shrink removed.
 #
+# v1.4.2 (2026-11-07) - ONE BATCHED VERSION ("version واحدة"):
+#   (1) WHATSAPP NO-REPLY FIX (field log v1.4.1): three messages from
+#       the owner's number were dropped as "unidentifiable sender" -
+#       WhatsApp now sends the sender as a LID (@lid) instead of a
+#       phone JID. Sender identification now resolves LIDs (persistent
+#       LID->phone cache, learned owner LID, chat remoteJid fallback)
+#       and logs the raw sender fields (masked) when it still fails.
+#   (2) SIDECAR UTF-8 READER: the stdout reader died on one non-UTF-8
+#       byte (0x81, Windows charmap) and no WhatsApp events arrived
+#       after that - it now reads UTF-8 with errors='replace' and can
+#       never die on a bad byte. Sidecar exits now log stderr + exit
+#       code, with real backoff (5 attempts, then DEAD - surfaced in
+#       Settings instead of a silent restart loop).
+#   (3) SEND_WHATSAPP_MESSAGE tool: the brain had NO WhatsApp send
+#       tool, so it could claim a send it never made - now a real tool
+#       (owner number by default), success only after Baileys
+#       confirms the send, same permission model as the other tools.
+#   (4) LONG MEMORY (app/data/memory.json, local only): facts, style,
+#       corrections (highest priority), routines; retrieved into the
+#       system prompt each turn; history window 20 -> 40 with rollover
+#       summaries; manageable in Settings (view / delete / wipe).
+#   (5) WEB_SEARCH tool (ddgs, free, no API key): the brain searches
+#       instead of guessing or saying "I don't know"; sources cited.
+#   (6) SYSTEM MONITOR (app/monitor.py, psutil): RAM/disk/CPU/battery
+#       + CPU temp when available (honestly "unavailable" otherwise);
+#       alerts in-app + Windows toast with cooldown; thresholds tuned
+#       to his 8GB machine (free RAM < 500MB or usage > 92%).
+#   (7) IMPORTANT-NOTIFICATION ALERTS (app/notifications.py, winrt
+#       UserNotificationListener): app list + keywords, configurable;
+#       honestly "unavailable" when the listener is denied/absent.
+#   (8) IN-CHAT PERMISSIONS: tool Allow/Deny is now a chat message
+#       with سماح/رفض buttons (120s timeout -> auto-deny), not a
+#       popup; destructive blocklist + trusted-owner auto-allow
+#       unchanged. (9) UPDATER manifest fetch retries 3x on timeout.
+#
 # v1.4.1 (2026-11-07) - ONE BATCHED VERSION ("version واحدة"):
 #   (1) PET + ISLAND REMOVED from the running app (user decision:
 #       "they still have problems" - the pet rendered black / could
@@ -290,7 +325,7 @@ try:
 except Exception:
     whatsapp_mod = None
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -780,12 +815,13 @@ class Api:
         info("app", f"Voice output {'ON' if new else 'OFF'} (speaker button)")
         return {"voice_output": new}
 
-    # -- tool permissions (v1.3.0) -----------------------------------------
+    # -- tool permissions (v1.3.0, in-chat cards since v1.4.2) --------------
     def get_pending_permission(self):
-        """Oldest unresolved Allow/Deny request, or None. Polled by the UI
-        while a tool chat is running."""
-        pending = tools.get_pending()
-        return pending if pending else {"pending": None}
+        """Permission state for the in-chat Allow/Deny cards: the oldest
+        unresolved request (if any) + recently resolved ones, so a card
+        can flip to its final state. Polled by the UI while a tool chat
+        runs. (v1.4.2: no modal anymore - the card lives in the chat.)"""
+        return tools.get_permission_state()
 
     def resolve_permission(self, req_id, allowed):
         ok = tools.resolve_permission(str(req_id or ""), bool(allowed))
@@ -964,6 +1000,170 @@ class Api:
     def get_log_text(self):
         return {"text": log_text(200)}
 
+    # -- long-term memory (v1.4.2) -----------------------------------------
+    def get_memory(self):
+        """Everything the brain remembers (for the Settings Memory
+        section): facts, learned rules, style profile, routines and the
+        rolling summary. Local only - this is the user's own data."""
+        try:
+            import memory as memory_mod
+            store = memory_mod.get_store()
+            return {"ok": True,
+                    "facts": list(store.data.get("facts", [])),
+                    "rules": list(store.data.get("rules", [])),
+                    "style": dict(store.data.get("style", {})),
+                    "routines": list(store.data.get("routines", [])),
+                    "summary": store.data.get("summary", "")}
+        except Exception as exc:
+            error("app", f"get_memory failed: {exc}")
+            return {"ok": False, "facts": [], "rules": [], "style": {},
+                    "routines": [], "summary": ""}
+
+    def delete_memory_item(self, kind, item_id):
+        """Delete one memory (kind: fact|rule|routine) from Settings."""
+        try:
+            import memory as memory_mod
+            store = memory_mod.get_store()
+            if kind == "fact":
+                ok = store.delete_fact(str(item_id or ""))
+            elif kind == "rule":
+                ok = store.delete_rule(str(item_id or ""))
+            elif kind == "routine":
+                ok = store.delete_routine(str(item_id or ""))
+            else:
+                return {"ok": False}
+            return {"ok": ok}
+        except Exception as exc:
+            error("app", f"delete_memory_item failed: {exc}")
+            return {"ok": False}
+
+    def clear_memory(self):
+        """Wipe ALL memories (Settings Memory section)."""
+        try:
+            import memory as memory_mod
+            memory_mod.get_store().clear_all()
+            return {"ok": True}
+        except Exception as exc:
+            error("app", f"clear_memory failed: {exc}")
+            return {"ok": False}
+
+    # -- system alerts (v1.4.2) --------------------------------------------
+    def get_alerts(self):
+        """Recent system/notification alerts for the in-app banner.
+        The UI polls this and renders unseen ids."""
+        with _APP._alerts_lock:
+            return {"alerts": [dict(a) for a in _APP._alerts]}
+
+    # -- system monitor (v1.4.2) -------------------------------------------
+    def get_monitor_status(self):
+        """Live system numbers + thresholds for the Settings System
+        section. temp_available says honestly whether the CPU
+        temperature can be read on this machine (never a guessed
+        number)."""
+        status = None
+        try:
+            if _APP._monitor is not None:
+                status = _APP._monitor.get_status()
+            else:
+                import monitor as monitor_mod
+                status = monitor_mod.SystemMonitor(
+                    _APP.settings).get_status()
+        except Exception as exc:
+            error("app", f"get_monitor_status failed: {exc}")
+        keys = ("monitor_enabled", "monitor_ram_free_mb",
+                "monitor_ram_percent", "monitor_disk_free_gb",
+                "monitor_disk_percent_free", "monitor_temp_warn_c",
+                "monitor_temp_critical_c", "monitor_cpu_sustained_percent",
+                "monitor_cpu_sustained_minutes",
+                "monitor_battery_warn_percent",
+                "monitor_battery_critical_percent", "monitor_cooldown_min",
+                "monitor_alert_in_app", "monitor_alert_toast")
+        return {"ok": status is not None, "status": status,
+                "temp_available": bool((status or {}).get("temp_available")),
+                "settings": {k: _APP.settings.get(k) for k in keys}}
+
+    def save_monitor_settings(self, payload):
+        """Save monitor thresholds/toggles from Settings; restart the
+        background monitor so the new thresholds apply at once."""
+        try:
+            data = json.loads(payload) if isinstance(payload, str) else payload
+        except Exception as exc:
+            error("app", f"Bad monitor settings payload: {exc}")
+            return {"ok": False}
+        keys = ("monitor_enabled", "monitor_ram_free_mb",
+                "monitor_ram_percent", "monitor_disk_free_gb",
+                "monitor_disk_percent_free", "monitor_temp_warn_c",
+                "monitor_temp_critical_c", "monitor_cpu_sustained_percent",
+                "monitor_cpu_sustained_minutes",
+                "monitor_battery_warn_percent",
+                "monitor_battery_critical_percent", "monitor_cooldown_min",
+                "monitor_alert_in_app", "monitor_alert_toast")
+        for key in keys:
+            if key in data:
+                _APP.settings[key] = data[key]
+        ok = save_settings(_APP.settings)
+        try:
+            if _APP._monitor is not None:
+                _APP._monitor.stop()
+                _APP._monitor = None
+            _APP._start_monitor()
+        except Exception as exc:
+            warn("app", f"Monitor restart after save failed: {exc}")
+        return {"ok": ok}
+
+    # -- important notifications (v1.4.2) -----------------------------------
+    def get_notification_status(self):
+        """Notification-listener state for the Settings section: whether
+        the listener is available, whether access was granted, and the
+        current filter lists. Honest when unavailable/denied."""
+        try:
+            import notifications as notif_mod
+            listener = notif_mod.get_listener_status()
+        except Exception as exc:
+            listener = {"available": False, "access": "unavailable",
+                        "detail": f"notifications module failed: {exc}"}
+        return {"ok": True, "listener": listener,
+                "enabled": bool(_APP.settings.get("notifications_enabled", True)),
+                "apps": list(_APP.settings.get("notifications_important_apps", [])),
+                "keywords": list(_APP.settings.get("notifications_keywords", []))}
+
+    def save_notification_settings(self, payload):
+        """Save the notification filter lists / toggle; restart the
+        watcher so the new filters apply at once."""
+        try:
+            data = json.loads(payload) if isinstance(payload, str) else payload
+        except Exception as exc:
+            error("app", f"Bad notification settings payload: {exc}")
+            return {"ok": False}
+        if "enabled" in data:
+            _APP.settings["notifications_enabled"] = bool(data["enabled"])
+        if isinstance(data.get("apps"), list):
+            _APP.settings["notifications_important_apps"] = [
+                str(a).strip() for a in data["apps"] if str(a).strip()]
+        if isinstance(data.get("keywords"), list):
+            _APP.settings["notifications_keywords"] = [
+                str(k).strip() for k in data["keywords"] if str(k).strip()]
+        ok = save_settings(_APP.settings)
+        try:
+            if _APP._notif_watcher is not None:
+                _APP._notif_watcher.stop()
+                _APP._notif_watcher = None
+            _APP._start_notifications()
+        except Exception as exc:
+            warn("app", f"Notification watcher restart failed: {exc}")
+        return {"ok": ok}
+
+    def request_notification_access(self):
+        """Ask Windows for notification-listener access (Settings
+        button). Starts the watcher flow in a background thread and
+        returns at once - the UI polls get_notification_status()."""
+        try:
+            _APP._start_notifications()
+            return {"ok": True, "started": True}
+        except Exception as exc:
+            error("app", f"request_notification_access failed: {exc}")
+            return {"ok": False, "started": False, "detail": str(exc)}
+
     # -- WhatsApp linking (v1.4.0) ----------------------------------------
     def get_whatsapp_status(self):
         """Link state for the Settings UI (status + QR + masked number).
@@ -1029,6 +1229,14 @@ class MemoApp:
         # v1.4.1: system tray manager (None until started; None also
         # means "no tray backend" - X then minimizes to the taskbar).
         self._tray = None
+        # v1.4.2: system monitor + important-notification watcher
+        # (created in run() - both are best-effort and must never block
+        # startup). _alerts is the in-app banner feed (Api.get_alerts).
+        self._monitor = None
+        self._notif_watcher = None
+        self._alerts: list = []
+        self._alerts_lock = threading.Lock()
+        self._alert_seq = 0
         self.api = Api()
         self.main_window = None
         self.island_window = None
@@ -1386,6 +1594,86 @@ class MemoApp:
                               "tools_used": result.get("tools_used", 0)})
         self.speak_async(result["reply"])
 
+    def _on_system_alert(self, alert: dict) -> None:
+        """Shared delivery for monitor + important-notification alerts:
+        keep it for the in-app banner (Api.get_alerts) AND try a Windows
+        toast. Never raises - an alert must never crash the app. The
+        two channel toggles (monitor_alert_in_app / monitor_alert_toast)
+        are honored; if both are off the alert is only logged."""
+        try:
+            with self._alerts_lock:
+                self._alert_seq += 1
+                item = {"id": f"alert-{self._alert_seq}",
+                        "kind": alert.get("kind", ""),
+                        "level": alert.get("level", "warn"),
+                        "title": alert.get("title_ar", ""),
+                        "message": alert.get("message_ar", ""),
+                        "app": alert.get("app", ""),
+                        "notification_title": alert.get("notification_title", ""),
+                        "at": alert.get("at", "")}
+                if self.settings.get("monitor_alert_in_app", True):
+                    self._alerts.append(item)
+                    if len(self._alerts) > 20:
+                        self._alerts = self._alerts[-20:]
+            if self.settings.get("monitor_alert_toast", True):
+                try:
+                    import notifications as notif_mod
+                    msg = item["message"]
+                    if item.get("notification_title"):
+                        msg = f"{item['notification_title']}\n{msg}"
+                    notif_mod.show_toast(item["title"] or "Memo AI", msg)
+                except Exception:
+                    pass
+        except Exception as exc:
+            warn("app", f"Alert delivery failed: {exc}")
+
+    def _start_monitor(self) -> None:
+        """Background system monitor (v1.4.2). Best effort."""
+        if not self.settings.get("monitor_enabled", True):
+            info("app", "System monitor disabled in settings")
+            return
+        try:
+            import monitor as monitor_mod
+        except Exception as exc:
+            warn("app", f"System monitor unavailable: {exc}")
+            return
+        self._monitor = monitor_mod.SystemMonitor(
+            self.settings, on_alert=self._on_system_alert)
+        if self._monitor.start():
+            info("app", "System monitor started")
+        else:
+            self._monitor = None
+
+    def _start_notifications(self) -> None:
+        """Important-notification watcher (v1.4.2). The access request
+        runs in a background thread - on first run Windows shows the
+        user a permission prompt; until he grants it, the watcher
+        simply does not start and Settings says so honestly."""
+        if not self.settings.get("notifications_enabled", True):
+            info("app", "Notification alerts disabled in settings")
+            return
+        try:
+            import notifications as notif_mod
+        except Exception as exc:
+            warn("app", f"Notification alerts unavailable: {exc}")
+            return
+
+        def _run():
+            try:
+                access = notif_mod.request_access()
+                if not access.get("ok"):
+                    warn("app", "Notification access not granted: "
+                                f"{access.get('detail', '')}")
+                    return
+                self._notif_watcher = notif_mod.NotificationWatcher(
+                    self.settings, on_important=self._on_system_alert)
+                self._notif_watcher.start()
+            except Exception as exc:
+                warn("app", f"Notification watcher failed: {exc}")
+
+        threading.Thread(target=_run, daemon=True,
+                         name="memo-notif-start").start()
+
     def _show_main_for_permission(self):
         """Permission hook (tools.on_permission_needed): a tool is waiting
         for Allow/Deny, so bring the main window forward - the dialog
@@ -1468,6 +1756,17 @@ class MemoApp:
         if whatsapp_mod is not None:
             try:
                 whatsapp_mod.stop_service()
+            except Exception:
+                pass
+        # v1.4.2: stop the system monitor + notification watcher.
+        if self._monitor is not None:
+            try:
+                self._monitor.stop()
+            except Exception:
+                pass
+        if self._notif_watcher is not None:
+            try:
+                self._notif_watcher.stop()
             except Exception:
                 pass
         speak.stop()
@@ -1627,6 +1926,16 @@ class MemoApp:
             warn("app", f"Could not start system tray: {exc}")
 
         threading.Thread(target=self.morning_briefing, daemon=True).start()
+        # v1.4.2: background system monitor + important-notification
+        # watcher (best effort - neither may block startup or crash it).
+        try:
+            self._start_monitor()
+        except Exception as exc:
+            warn("app", f"System monitor did not start: {exc}")
+        try:
+            self._start_notifications()
+        except Exception as exc:
+            warn("app", f"Notification watcher did not start: {exc}")
         # v1.3.2: bridge-ready watchdog - each page logs READY on
         # pywebviewready; after 20s the log names any page that never
         # became ready, with the exact reason. v1.4.1: only the enabled

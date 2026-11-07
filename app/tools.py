@@ -26,12 +26,13 @@
 # PERMISSION FLOW (no deadlock by design):
 #   The brain runs in a background thread (see Api.chat in main.py).
 #   request_permission() blocks THAT thread on a threading.Event while
-#   the UI (main window) polls get_pending_permission() and shows the
-#   Allow/Deny dialog. resolve_permission() is called from the JS
-#   bridge and wakes the waiting thread. A 120s timeout denies.
+#   the UI (main window) polls get_permission_state() and shows the
+#   request as an IN-CHAT message with Allow/Deny buttons (v1.4.2 -
+#   not a popup/modal anymore). resolve_permission() is called from the
+#   JS bridge and wakes the waiting thread. A 120s timeout denies.
 #   When a permission is requested, main.py brings the main window
-#   forward (via the on_permission_needed hook) so the dialog is seen
-#   even if the user was talking through the island only.
+#   forward (via the on_permission_needed hook) so the chat card is
+#   seen even if the user was talking through the island only.
 
 import json
 import os
@@ -129,12 +130,52 @@ def request_permission(kind: str, summary: str, detail: str = "") -> bool:
             _pending.remove(req)
     if not ok:
         req["status"] = "timeout"
+        # v1.4.2: a timeout is a resolution too - the in-chat card flips
+        # to "انتهت المهلة — تم الرفض" instead of hanging forever.
+        _note_resolved(req, "timeout")
         warn("tools", f"Permission TIMEOUT (120s, denied): {kind} - {summary}")
         return False
     allowed = req.get("allowed", False)
     req["status"] = "allowed" if allowed else "denied"
+    _note_resolved(req, req["status"])
     _log_request(req, req["status"])
     return allowed
+
+
+# v1.4.2: resolved-permission record. The in-chat permission UI
+# (app.js) polls get_permission_state(): the oldest pending request
+# plus recently resolved ones, so a chat card can flip to its final
+# state ("تم السماح" / "تم الرفض" / "انتهت المهلة") and never be
+# clickable twice. The 120s timeout resolves as "timeout" (denied).
+_resolved: dict = {}
+_resolved_lock = threading.Lock()
+
+
+def _note_resolved(req: dict, status: str) -> None:
+    with _resolved_lock:
+        _resolved[req["id"]] = {
+            "id": req["id"], "kind": req["kind"],
+            "summary": req["summary"], "status": status,
+            "decided_at": time.time(),
+        }
+        if len(_resolved) > 10:
+            for old_id in sorted(
+                    _resolved,
+                    key=lambda i: _resolved[i]["decided_at"])[:-10]:
+                _resolved.pop(old_id, None)
+        for rid in [r for r, v in _resolved.items()
+                    if time.time() - v["decided_at"] > 600]:
+            _resolved.pop(rid, None)
+
+
+def get_permission_state() -> dict:
+    """Oldest pending request (or None) + recently resolved ones.
+    Polled by the UI while a tool chat runs."""
+    pending = get_pending()
+    with _resolved_lock:
+        resolved = [dict(v) for v in sorted(
+            _resolved.values(), key=lambda v: v["decided_at"])]
+    return {"pending": pending, "resolved": resolved}
 
 
 def get_pending() -> dict | None:
@@ -530,6 +571,149 @@ def _tool_run_command(args: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# send_whatsapp_message (v1.4.2) + web_search (v1.4.2) + system_status (v1.4.2)
+# ---------------------------------------------------------------------------
+
+def _tool_send_whatsapp(args: dict) -> str:
+    """Send a WhatsApp TEXT message from the linked third number.
+    Default recipient = the owner's main number (Settings); an explicit
+    phone overrides it. Same permission model as every other action
+    (Allow/Deny in desktop chat, auto-allow in the trusted owner
+    thread; the destructive blocklist is N/A here). The result reflects
+    REALITY: success ONLY after Baileys confirms the send
+    (whatsapp.send_message waits for the sidecar's 'sent' event) -
+    never claim a send that did not happen. (Diagnosis: the original 7
+    tools had NO send tool at all, so the brain could only claim it
+    sent a message - it never did.)"""
+    text = str(args.get("text", "") or "").strip()
+    if not text:
+        return "قولي نص الرسالة اللي عايزني أبعتها."
+    if len(text) > 4000:
+        return "الرسالة طويلة أوي (أكتر من 4000 حرف)."
+    phone = str(args.get("phone", "") or "").strip()
+    try:
+        import whatsapp as whatsapp_mod
+    except Exception:
+        return "الواتساب مش متاح في النسخة دي."
+    if not phone:
+        try:
+            from settings_store import load_settings
+            phone = whatsapp_mod.normalize_number(
+                load_settings().get("whatsapp_owner_phone", ""))
+        except Exception:
+            phone = ""
+    if not phone:
+        return ("مفيش رقم مالك متسجل — اكتب رقمك الأساسي في إعدادات "
+                "الواتساب الأول، أو قولي الرقم اللي أبعت له.")
+    masked = whatsapp_mod.mask_number(phone)
+    state = whatsapp_mod.get_state()
+    if state.get("status") != "linked":
+        return (f"الواتساب مش مربوط دلوقتي (الحالة: {state.get('status')}) — "
+                "اربطه من الإعدادات الأول.")
+    summary = f"إرسال رسالة واتساب إلى {masked}"
+    detail = f"الرقم: {masked}\nالرسالة:\n{text[:500]}"
+    if not request_permission("send_whatsapp", summary, detail):
+        return "المستخدم رفض إرسال رسالة الواتساب."
+    try:
+        result = whatsapp_mod.send_message(phone, text)
+    except Exception as exc:
+        error("tools", f"send_whatsapp failed: {exc}")
+        return f"مقدرتش أبعت رسالة الواتساب — حصل خطأ: {exc}"
+    if isinstance(result, dict) and result.get("ok"):
+        info("tools", f"send_whatsapp OK to {masked}")
+        return f"بعت رسالة الواتساب إلى {masked} ✅"
+    detail_err = ""
+    if isinstance(result, dict):
+        detail_err = str(result.get("detail", "") or "")
+    error("tools", f"send_whatsapp failed to {masked}: {detail_err}")
+    return (f"مقدرتش أبعت رسالة الواتساب إلى {masked} — "
+            f"{detail_err or 'السبب في السجل'}.")
+
+
+def _tool_web_search(args: dict) -> str:
+    """Free web search (DuckDuckGo via the ddgs library - no API key, no
+    account; chosen because it is a maintained pure-Python client that
+    worked in a live sandbox test). Read-only: no permission dialog,
+    like read_file. Returns titles + snippets + source URLs so the
+    brain can answer from the results and name the source. On failure
+    it says so honestly - the brain must never present a failed search
+    as an answer."""
+    query = str(args.get("query", "") or "").strip()
+    if not query:
+        return "قولي اللي عايزني أدور عليه."
+    count = args.get("count", 5)
+    try:
+        count = max(1, min(10, int(count)))
+    except Exception:
+        count = 5
+    try:
+        from ddgs import DDGS
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=count))
+    except Exception as exc:
+        error("tools", f"web_search failed ({query[:80]}): {exc}")
+        return (f"مقدرتش أدور على النت دلوقتي ({exc}) — "
+                "قولها بصراحة للمستخدم ومتخمنش إجابة.")
+    if not results:
+        return (f"دورت على «{query}» وملقيتش نتايج — "
+                "قولها بصراحة ومتخمنش.")
+    lines = [f"نتايج البحث عن «{query}»:"]
+    for i, r in enumerate(results[:count], 1):
+        title = (r.get("title") or "").strip()
+        body = (r.get("body") or "").strip()
+        href = (r.get("href") or "").strip()
+        lines.append(f"{i}. {title}\n   {body[:300]}"
+                     + (f"\n   المصدر: {href}" if href else ""))
+    info("tools", f"web_search OK: '{query[:80]}' -> {len(results)} results")
+    return "\n".join(lines)
+
+
+def _tool_system_status(args: dict) -> str:
+    """Real laptop numbers (RAM, disk, CPU, battery, temp when
+    available) from the background monitor. Read-only, no permission
+    dialog. The brain calls this when the user asks "اللابتوب عامل
+    إيه؟" / "الرام قد إيه؟" / "الجهاز سخن؟" - and answers from these
+    numbers, never from memory. An unavailable temperature is stated
+    honestly, never guessed."""
+    try:
+        import monitor as monitor_mod
+    except Exception:
+        return "مراقبة النظام مش متاحة في النسخة دي."
+    try:
+        st = monitor_mod.get_status()
+    except Exception as exc:
+        error("tools", f"system_status failed: {exc}")
+        return f"مقدرتش أقرأ حالة اللابتوب — حصل خطأ: {exc}"
+    ram = st.get("ram") or {}
+    disk = st.get("disk") or {}
+    cpu = st.get("cpu") or {}
+    battery = st.get("battery")
+    temp = st.get("temp_c")
+    lines = ["حالة اللابتوب دلوقتي:"]
+    if ram:
+        lines.append(f"• الرام: {ram.get('used_mb', '?')}MB مستخدمة من "
+                     f"{ram.get('total_mb', '?')}MB "
+                     f"({ram.get('percent', '?')}% — فاضي {ram.get('free_mb', '?')}MB)")
+    if disk:
+        lines.append(f"• القرص: فاضي {disk.get('free_gb', '?')}GB من "
+                     f"{disk.get('total_gb', '?')}GB "
+                     f"({disk.get('percent_free', '?')}% فاضي)")
+    if cpu:
+        lines.append(f"• المعالج: {cpu.get('percent', '?')}% دلوقتي"
+                     + (" (حمل مرتفع مستمر ⚠️)" if cpu.get("sustained_high") else ""))
+    if temp is not None:
+        lines.append(f"• حرارة المعالج: {temp}°م")
+    else:
+        lines.append("• حرارة المعالج: مش متاحة على الجهاز ده "
+                     "(مفيش حساس مقروء) — متخمنش رقم.")
+    if battery:
+        lines.append(f"• البطارية: {battery.get('percent', '?')}%"
+                     + (" (بتشحن 🔌)" if battery.get("charging")
+                        else " (مش بتشحن)"))
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher + tool schemas (OpenAI function-calling format, for Groq)
 # ---------------------------------------------------------------------------
 
@@ -555,6 +739,12 @@ def execute_tool(name: str, arguments: dict) -> str:
             result = _tool_list_dir(arguments)
         elif name == "run_command":
             result = _tool_run_command(arguments)
+        elif name == "send_whatsapp_message":
+            result = _tool_send_whatsapp(arguments)
+        elif name == "web_search":
+            result = _tool_web_search(arguments)
+        elif name == "system_status":
+            result = _tool_system_status(arguments)
         else:
             warn("tools", f"Unknown tool requested: {name}")
             return f"الأداة '{name}' مش موجودة."
@@ -667,6 +857,47 @@ TOOL_SCHEMAS = [
                     "command": {"type": "string", "description": "The full PowerShell command."},
                 },
                 "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_whatsapp_message",
+            "description": "Send a WhatsApp TEXT message from the linked third number. Call this WHENEVER the user asks to send a WhatsApp message — do it with the tool instead of only saying you sent it. The recipient defaults to the owner's main number (from Settings) when 'phone' is omitted; pass 'phone' only when the user names a different number. The tool returns success ONLY after WhatsApp confirms the send — if it says it failed, tell the user honestly and never claim it was sent.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "phone": {"type": "string", "description": "Recipient phone number (digits, e.g. 01557887719). Omit to send to the owner's main number."},
+                    "text": {"type": "string", "description": "The message text (text only, max 4000 characters)."},
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web (DuckDuckGo, free, no API key) and return titles, snippets and source URLs. Call this WHENEVER the user asks about something you do not know (current events, prices, facts past your training) — search instead of guessing or saying 'I don't know'. Answer from the results and name the source. If the search fails, say so honestly and never guess.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query."},
+                    "count": {"type": "integer", "description": "How many results (1-10, default 5)."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "system_status",
+            "description": "Read the laptop's LIVE status: RAM use, disk free space, CPU load, battery, and CPU temperature when available. Call this WHENEVER the user asks how the laptop is doing ('how is the laptop?', 'how much RAM?', 'is it hot?') — answer with these real numbers, never from memory. If the temperature is unavailable, say so honestly and never guess a number.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
             },
         },
     },

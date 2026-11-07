@@ -71,6 +71,37 @@ DEFAULTS = {
     # The owner's MAIN number (digits, e.g. 01557887719) - owner mode
     # over WhatsApp. Empty = nobody is owner, everyone gets reply mode.
     "whatsapp_owner_phone": "",
+    # v1.4.2: system monitor (thresholds tuned to his 8GB laptop:
+    # normally 84-86% RAM used, ~1.1GB free - so the RAM alert only
+    # fires when free < 500MB or usage > 92%, never at 80%).
+    "monitor_enabled": True,
+    "monitor_interval_sec": 60,
+    "monitor_ram_free_mb": 500,
+    "monitor_ram_percent": 92,
+    "monitor_disk_free_gb": 10,
+    "monitor_disk_percent_free": 10,
+    "monitor_temp_warn_c": 85,
+    "monitor_temp_critical_c": 90,
+    "monitor_cpu_sustained_percent": 85,
+    "monitor_cpu_sustained_minutes": 5,
+    "monitor_battery_warn_percent": 20,
+    "monitor_battery_critical_percent": 10,
+    "monitor_cooldown_min": 30,
+    "monitor_alert_in_app": True,   # show alerts inside the app
+    "monitor_alert_toast": True,    # ... and as a Windows toast
+    # v1.4.2: important-notification alerts (Windows toast listener).
+    "notifications_enabled": True,
+    "notifications_important_apps": [
+        "WhatsApp",
+        "Outlook", "Microsoft Outlook",
+        "Mail", "Gmail",
+        "Windows Security", "Windows Update",
+    ],
+    "notifications_keywords": [
+        "urgent", "security", "update", "password",
+        "critical", "error", "alert",
+        "مهم", "عاجل", "تنبيه", "تحديث", "كلمة السر", "خطأ", "حرج", "أمن",
+    ],
 }
 
 

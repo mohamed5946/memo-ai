@@ -10,3 +10,6 @@ faster-whisper>=1.0
 numpy>=1.26
 Pillow>=10  # v1.3.1: pet window region from the cat PNG's alpha channel
 pystray>=0.19  # v1.4.1: system tray icon (the island is gone)
+psutil>=5.9  # v1.4.2: system monitor (RAM / disk / CPU / battery)
+ddgs>=9.0  # v1.4.2: free web search (DuckDuckGo, no API key)
+winrt>=2.0; sys_platform == "win32"  # v1.4.2: Windows toast notifications (listener + toast); import is guarded, feature degrades honestly without it

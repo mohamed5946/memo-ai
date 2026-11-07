@@ -12,12 +12,31 @@
 // diagnostic goes to stderr, so Python can parse stdout safely):
 //   Python -> sidecar (stdin, one JSON object per line):
 //     {"cmd":"send","to":"<jid>","text":"...","reply_to":"<msg-id>"}
+//         legacy fire-and-forget reply (v1.4.0): -> {"event":"sent",...}
+//         or {"event":"error","error":"..."} on failure.
+//     {"type":"send","req_id":"...","to":"<jid>","text":"...",
+//      "reply_to":"<msg-id>"}   v1.4.2 confirmed send:
+//         -> {"type":"sent","req_id":"...","to":"<jid>","id":"..."}
+//         or {"type":"send_error","req_id":"...","error":"..."}.
+//         Success is reported ONLY after sock.sendMessage resolves.
+//     {"cmd":"lookup","jids":["<jid>",...]}  /  {"type":"lookup",...}
+//         v1.4.2: sock.onWhatsApp(...jids) (phone -> LID):
+//         -> {"type":"lookup_result","req_id":"...",
+//             "results":[{"jid":"...","exists":bool,"lid":"...@lid"}]}
 //     {"cmd":"logout"}   {"cmd":"stop"}   {"cmd":"ping"}
 //   Sidecar -> Python (stdout, one JSON object per line):
 //     {"event":"qr","qr":"data:image/png;base64,..."}   (scan me)
-//     {"event":"ready","me":{"id":"<jid>","name":"..."}}
-//     {"event":"message","id":"...","from":"<jid>","pushName":"...",
-//      "text":"...","ts":123}
+//     {"event":"ready","me":{"id":"<jid>","name":"...","lid":"...@lid"}}
+//     {"event":"message","id":"...","from":"<jid>","from_alt":"<jid>",
+//      "participant":"<jid>","participant_alt":"<jid>",
+//       "participantLid":"...@lid","participantPn":"<digits>",
+//       "remoteJid":"<jid>","remoteJidAlt":"<jid>",
+//       "fromMe":bool,"pushName":"...","text":"...","ts":123}
+//       v1.4.2: ALL raw sender fields are passed through (never message
+//       content beyond the text itself) so Python can identify a sender
+//       that arrives as a LID (@lid) instead of a phone JID.
+//     {"event":"phone_share","lid":"...@lid","jid":"...@s.whatsapp.net"}
+//       v1.4.2: WhatsApp pairing a LID with its phone number.
 //     {"event":"sent","to":"<jid>","id":"..."}
 //     {"event":"disconnected","reason":"...","logged_out":bool}
 //     {"event":"logged_out"}   {"event":"pong"}   {"event":"error","error":"..."}
@@ -175,7 +194,8 @@ class Sidecar {
         if (connection === "open") {
           this.reconnectDelay = 2000; // reset backoff after a good connect
           const me = sock.user || {};
-          emit({ event: "ready", me: { id: me.id || "", name: me.name || "" } });
+          emit({ event: "ready", me: { id: me.id || "", name: me.name || "",
+                                        lid: me.lid || "" } });
           diag("info", "WhatsApp linked (connection open)");
         }
         if (connection === "close") {
@@ -212,6 +232,14 @@ class Sidecar {
       }
     });
 
+    // v1.4.2: WhatsApp itself pairs a LID with its phone number via a
+    // SHARE_PHONE_NUMBER protocol message (Baileys surfaces it as
+    // chats.phoneNumberShare). Forward it so Python can learn the
+    // LID -> phone mapping the moment WhatsApp volunteers it.
+    sock.ev.on("chats.phoneNumberShare", ({ lid, jid }) => {
+      if (lid && jid) emit({ event: "phone_share", lid, jid });
+    });
+
     await closed;
     try { sock.end(); } catch { /* already closed */ }
     this.sock = null;
@@ -244,10 +272,40 @@ class Sidecar {
       // Baileys may deliver a LID JID (@lid) as remoteJid; remoteJidAlt
       // carries the real phone-number JID (@s.whatsapp.net) when it does.
       from_alt: msg.key.remoteJidAlt || "",
+      // v1.4.2: pass through EVERY raw sender field Baileys gives us
+      // (never message content beyond the text itself). Python needs
+      // them all to identify a sender that arrives as a LID: the
+      // participant fields (group/1:1 sender), the top-level
+      // participantLid/participantPn pair, and the chat remoteJid.
+      // Baileys 6.7.24 has no public LID->phone API, so identification
+      // is done by combining these fields + a persistent cache in
+      // Python; the sidecar must not drop any of them.
+      participant: msg.key.participant || "",
+      participant_alt: msg.key.participantAlt || "",
+      participantLid: msg.participantLid || "",
+      participantPn: msg.participantPn || "",
+      remoteJid: msg.key.remoteJid || "",
+      remoteJidAlt: msg.key.remoteJidAlt || "",
+      fromMe: !!msg.key.fromMe,
       pushName: msg.pushName || "",
       text,
       ts: Number(msg.messageTimestamp) || 0,
     });
+  }
+
+  async lookup(jids) {
+    // v1.4.2: phone -> LID, the ONLY direction Baileys 6.7.24 exposes
+    // (onWhatsApp returns {jid, exists, lid}). Python calls this for
+    // the owner phone at link time to learn the owner's LID, and
+    // persists it so a LID-only message from the owner still routes
+    // to the owner path. Throws when there is no live socket.
+    if (!this.sock) throw new Error("not connected");
+    const results = await this.sock.onWhatsApp(...jids);
+    return (results || []).map((r) => ({
+      jid: r?.jid || "",
+      exists: !!r?.exists,
+      lid: r?.lid || "",
+    }));
   }
 
   async send(to, text, replyTo) {
@@ -288,17 +346,19 @@ class Sidecar {
 async function main() {
   if (SELF_TEST) {
     // Headless protocol check (no network, no WhatsApp): fake QR, ping,
-    // send-without-socket error, clean stop. Used by CI + local tests.
+    // send-without-socket error, lookup-without-socket error, clean stop.
+    // Used by CI + local tests.
     const fakeQr = await QRCode.toDataURL("memo-ai-self-test-qr", { width: 256, margin: 1 });
     emit({ event: "qr", qr: fakeQr });
     const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
     rl.on("line", (line) => {
       let cmd;
       try { cmd = JSON.parse(line); } catch { emit({ event: "error", error: "bad json" }); return; }
-      if (cmd.cmd === "ping") emit({ event: "pong" });
-      else if (cmd.cmd === "send") emit({ event: "error", error: "not connected (self-test)" });
+      if (cmd.cmd === "ping" || cmd.type === "ping") emit({ event: "pong" });
+      else if (cmd.cmd === "send" || cmd.type === "send") emit({ event: "send_error", type: "send_error", req_id: cmd.req_id || null, error: "not connected (self-test)" });
+      else if (cmd.cmd === "lookup" || cmd.type === "lookup") emit({ event: "lookup_result", type: "lookup_result", req_id: cmd.req_id || null, results: [], error: "not connected (self-test)" });
       else if (cmd.cmd === "stop") process.exit(0);
-      else emit({ event: "error", error: `unknown cmd: ${cmd.cmd}` });
+      else emit({ event: "error", error: `unknown cmd: ${cmd.cmd || cmd.type}` });
     });
     return;
   }
@@ -313,22 +373,45 @@ async function main() {
       emit({ event: "error", error: "bad json command" });
       return;
     }
+    const kind = cmd.cmd || cmd.type;
     try {
-      if (cmd.cmd === "ping") {
+      if (kind === "ping") {
         emit({ event: "pong" });
-      } else if (cmd.cmd === "send") {
+      } else if (kind === "lookup") {
+        // v1.4.2: phone -> LID lookup (see Sidecar.lookup).
+        const results = await sidecar.lookup(
+          (cmd.jids || []).map(String).filter(Boolean));
+        emit({ event: "lookup_result", type: "lookup_result",
+               req_id: cmd.req_id || null, results });
+      } else if (kind === "send") {
         const id = await sidecar.send(cmd.to, String(cmd.text || ""), cmd.reply_to);
-        emit({ event: "sent", to: cmd.to, id });
-      } else if (cmd.cmd === "logout") {
+        if (cmd.type === "send") {
+          // v1.4.2 confirmed send: success ONLY after sendMessage
+          // resolves (Baileys confirmed the send).
+          emit({ event: "sent", type: "sent", req_id: cmd.req_id || null,
+                 to: cmd.to, id });
+        } else {
+          emit({ event: "sent", to: cmd.to, id });
+        }
+      } else if (kind === "logout") {
         await sidecar.logout();
         process.exit(0);
-      } else if (cmd.cmd === "stop") {
+      } else if (kind === "stop") {
         sidecar.stop();
       } else {
-        emit({ event: "error", error: `unknown cmd: ${cmd.cmd}` });
+        emit({ event: "error", error: `unknown cmd: ${kind}` });
       }
     } catch (err) {
-      emit({ event: "error", error: err?.message || String(err) });
+      const msg = err?.message || String(err);
+      if (cmd.type === "send") {
+        emit({ event: "send_error", type: "send_error",
+               req_id: cmd.req_id || null, error: msg });
+      } else if (cmd.type === "lookup" || cmd.cmd === "lookup") {
+        emit({ event: "lookup_result", type: "lookup_result",
+               req_id: cmd.req_id || null, results: [], error: msg });
+      } else {
+        emit({ event: "error", error: msg });
+      }
     }
   });
 
