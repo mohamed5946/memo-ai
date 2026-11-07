@@ -41,6 +41,10 @@ const I18N = {
     wa_status_waiting: "امسح الـ QR من واتساب على الرقم التالت.",
     wa_status_linked: "مربوط ✅ — الرقم: ",
     wa_status_disconnected: "اتقطع الاتصال — بيحاول يرجع لوحده...",
+    // v1.4.3: linked but incoming messages do NOT decrypt (Bad MAC) —
+    // never shown as green "linked"; the re-link button appears below.
+    wa_status_decrypt: "مربوط ⚠️ بس رسايل الواتساب مش بتتفك (مشكلة تشفير) — الرسايل اللي بتوصل مش بتتقرأ ومش بتوصل للمخ. دوس إعادة الربط تحت وهيطلع QR جديد.",
+    wa_relink: "إعادة الربط (QR جديد)",
     wa_status_error: "فيه مشكلة في الواتساب — شوف السجل.",
     wa_scan_hint: "افتح واتساب على الرقم التالت ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز، وامسح الكود ده.",
     wa_disconnect: "فصل وإلغاء الربط",
@@ -170,6 +174,10 @@ const I18N = {
     wa_status_waiting: "Scan the QR from WhatsApp on the third number.",
     wa_status_linked: "Linked ✅ — Number: ",
     wa_status_disconnected: "Connection lost — reconnecting on its own...",
+    // v1.4.3: linked but incoming messages do NOT decrypt (Bad MAC) —
+    // never shown as green "linked"; the re-link button appears below.
+    wa_status_decrypt: "Linked ⚠️ but WhatsApp messages won't decrypt (encryption problem) — incoming messages can't be read and never reach the brain. Tap Re-link below for a fresh QR.",
+    wa_relink: "Re-link (new QR)",
     wa_status_error: "WhatsApp has a problem — see the log.",
     wa_scan_hint: "Open WhatsApp on the THIRD number → Settings → Linked devices → Link a device, and scan this code.",
     wa_disconnect: "Disconnect and unlink",
@@ -948,10 +956,21 @@ async function refreshWhatsApp() {
     else if (st.status === "connecting") text = t("wa_status_connecting");
     else if (st.status === "waiting_qr") text = t("wa_status_waiting");
     else if (st.status === "linked") text = t("wa_status_linked") + (st.linked_phone || "");
+    else if (st.status === "decrypt_failed") {
+      // v1.4.3: DEGRADED — linked, but messages are not decrypting.
+      // Show the failure count (when known) and the re-link button;
+      // never the green "linked" line while mail is being lost.
+      text = t("wa_status_decrypt");
+      if (st.decrypt_failures) text += " (" + st.decrypt_failures + ")";
+    }
     else if (st.status === "disconnected") text = t("wa_status_disconnected");
     else if (st.status === "error") text = t("wa_status_error") + (st.error ? " (" + st.error + ")" : "");
     if (st.status === "linked" && !st.owner_configured) text += "\n" + t("wa_owner_missing");
     el.textContent = text;
+    // v1.4.3: the re-link button (logout + fresh QR) is only visible
+    // while the link is degraded — that is when it is needed.
+    const relinkBtn = $("wa-relink-btn");
+    if (relinkBtn) relinkBtn.style.display = st.status === "decrypt_failed" ? "" : "none";
     if (st.qr) {
       if (st.qr !== lastWaQr) { img.src = st.qr; lastWaQr = st.qr; }
       wrap.style.display = "block";
@@ -1153,6 +1172,17 @@ function init() {
     const b = getApi();
     if (!b || !b.whatsapp_disconnect) return;
     await b.whatsapp_disconnect();
+    refreshWhatsApp();
+  });
+
+  // v1.4.3: clean re-link (logout + wipe broken keys + fresh QR) for
+  // the degraded decrypt state. Falls back to plain disconnect on
+  // builds whose bridge has no whatsapp_relink yet.
+  $("wa-relink-btn").addEventListener("click", async () => {
+    const b = getApi();
+    if (!b) return;
+    if (b.whatsapp_relink) await b.whatsapp_relink();
+    else if (b.whatsapp_disconnect) await b.whatsapp_disconnect();
     refreshWhatsApp();
   });
 

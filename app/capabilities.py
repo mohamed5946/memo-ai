@@ -67,6 +67,23 @@ def whatsapp_status_line(language: str = "ar") -> str:
     status = st.get("status")
     if status == "linked":
         return _linked_line(language, st.get("linked_phone"))
+    if status == "decrypt_failed":
+        # v1.4.3: the link is up but incoming messages are NOT
+        # decrypting (Bad MAC) — the brain must never claim WhatsApp
+        # messages are arriving, and must point at the re-link.
+        failures = st.get("decrypt_failures") or 0
+        if language == "ar":
+            return ("الواتساب مربوط بس رسايله مش بتتفك (مشكلة تشفير) — "
+                    f"وصلت {failures} رسايل مش مقروءة ومش بتوصلني، "
+                    "فمتقولش إنك استقبلتها؛ الحل إعادة الربط من "
+                    "الإعدادات ← واتساب ← إعادة الربط، وبعدها امسح "
+                    "الـ QR الجديد من واتساب على الرقم التالت.")
+        return (f"WhatsApp is linked but its messages are NOT decrypting "
+                f"(encryption failure) — {failures} messages arrived "
+                "unreadable and never reached me, so never claim I "
+                "received them; the fix is a clean re-link from "
+                "Settings > WhatsApp > Re-link, then scan the new QR "
+                "from WhatsApp on the third number.")
     if status == "waiting_qr":
         if language == "ar":
             return ("الواتساب مستني مسح الـ QR — الكود ظاهر في الإعدادات، "

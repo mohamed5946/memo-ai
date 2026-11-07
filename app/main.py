@@ -1242,6 +1242,26 @@ class Api:
             svc.logout()
         return {"ok": True}
 
+    def whatsapp_relink(self):
+        """v1.4.3: clean re-link in one click (used by the degraded
+        WhatsApp state): log out + wipe the broken session keys, then
+        start the sidecar again so a fresh QR appears. The old keys
+        are gone either way — even if the restart itself fails, the
+        next enable/start shows a fresh QR instead of reusing the
+        undecryptable session."""
+        if whatsapp_mod is None:
+            return {"ok": False, "error": "WhatsApp module not available"}
+        svc = whatsapp_mod.get_service()
+        if svc is not None:
+            svc.logout()
+        if _APP.settings.get("whatsapp_enabled", False):
+            svc = whatsapp_mod.ensure_started(_APP.settings)
+            if svc is None:
+                return {"ok": False,
+                        "error": "could not start WhatsApp sidecar (see log)",
+                        "state": whatsapp_mod.get_state()}
+        return {"ok": True, "state": whatsapp_mod.get_state()}
+
 
 class MemoApp:
     def __init__(self):
