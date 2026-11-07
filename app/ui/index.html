@@ -281,8 +281,13 @@
       <div class="field"><div class="hint" id="version-line"></div></div>
       <div class="row" style="margin-top:10px">
         <button class="ghost-btn btn-3d" id="check-updates-btn">↻ <span data-i18n="check_updates">التحقق من التحديثات</span></button>
-        <button class="gold-btn btn-3d" id="install-update-btn" style="display:none">⬇️ <span data-i18n="install_update">تثبيت التحديث</span></button>
+        <button class="gold-btn btn-3d" id="install-downloaded-btn" style="display:none">⬇️ <span data-i18n="install_downloaded">تثبيت التحديث المنزّل</span></button>
       </div>
+      <!-- v1.4.3: Apple-style "What's new" slide - rendered by JS
+           (renderUpdateSlide): hero icon + big version + one card per
+           feature + Install now / Install later in the same slide.
+           No plain-text status line, no confirm() dialog. -->
+      <div class="update-slide" id="update-slide" hidden></div>
       <div class="update-progress" id="update-progress" style="display:none">
         <div class="update-progress-track"><div class="update-progress-fill" id="update-progress-fill"></div></div>
         <div class="update-progress-label" id="update-progress-label"></div>

@@ -308,6 +308,59 @@ header .spacer { flex: 1; }
   transition: width 0.3s ease;
 }
 .update-progress-label { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+
+/* v1.4.3: Apple-style "What's new" slide - hero + big version + one
+   card per feature + Install now / Install later in the same slide.
+   Entrance is a soft fade + rise + settle (no sudden pop), feature
+   cards stagger in behind the hero. */
+@keyframes updateSlideIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes updateCardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.update-slide {
+  margin-top: 16px; border-radius: 24px; padding: 22px 20px 18px;
+  background: linear-gradient(180deg, rgba(232,201,122,0.10), rgba(255,255,255,0.03));
+  border: 1px solid rgba(232,201,122,0.35);
+  box-shadow: 0 18px 44px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.update-slide-in { animation: updateSlideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.update-slide-hero { text-align: center; margin-bottom: 16px; }
+.update-slide-icon {
+  width: 64px; height: 64px; margin: 0 auto 10px; border-radius: 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px;
+  background: linear-gradient(160deg, #f0d48a, #b98a2f);
+  box-shadow: 0 8px 20px rgba(217,164,65,0.35), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+.update-slide-title { font-size: 17px; font-weight: 700; color: var(--text); }
+.update-slide-version {
+  font-size: 40px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1;
+  background: linear-gradient(90deg, #f0d48a, #d4af6a);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.update-feature-list { display: flex; flex-direction: column; gap: 10px; }
+.update-feature-card {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: rgba(0,0,0,0.28); border: 1px solid var(--border);
+  border-radius: 16px; padding: 12px 14px;
+  animation: updateCardIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.update-feature-icon {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; font-size: 19px;
+  background: rgba(232,201,122,0.14); border: 1px solid rgba(232,201,122,0.3);
+}
+.update-feature-body { min-width: 0; }
+.update-feature-title { font-size: 14.5px; font-weight: 700; line-height: 1.5; }
+.update-feature-desc { font-size: 13px; color: var(--muted); line-height: 1.6; margin-top: 2px; }
+.update-slide-hint { font-size: 12.5px; color: var(--muted); text-align: center; margin: 14px 0 10px; }
+.update-slide-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+.update-slide-actions .update-progress-track { flex: 1 1 100%; }
+.update-slide-actions .update-progress-label { flex: 1 1 100%; text-align: center; }
 .about-box { background: var(--glass); border: 1px solid var(--border); border-radius: 16px; padding: 14px; font-size: 14.5px; line-height: 2; }
 .about-box b { color: var(--gold); }
 .todo-note { font-size: 12.5px; color: var(--muted); background: var(--gold-soft);

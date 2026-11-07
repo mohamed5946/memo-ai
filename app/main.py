@@ -952,26 +952,57 @@ class Api:
         (downloaded/total/percent/state) to render the progress bar."""
         return updater.get_progress()
 
+    def download_update(self):
+        """v1.4.3: download ONLY - the UI polls get_update_progress()
+        until state is "downloaded", then shows the Install-now /
+        Install-later choice slide. Nothing installs here, ever."""
+        info("update", "Download requested from Settings")
+        def _run():
+            updater.download_update()
+        threading.Thread(target=_run, daemon=True).start()
+        return {"ok": True, "downloading": True}
+
+    def get_downloaded_update(self):
+        """v1.4.3: the saved downloaded-but-not-installed update
+        (version/kind/path/valid/remind), or {"downloaded": False}."""
+        return updater.get_downloaded_update()
+
+    def dismiss_update_reminder(self):
+        """v1.4.3: "Install later" - record that the reminder was shown
+        today so it pops at most once a day (the UI also keeps a
+        per-session flag). The downloaded file itself is untouched."""
+        updater.mark_reminder_shown()
+        return {"ok": True}
+
     def install_update(self):
+        """v1.4.3: "Install now" - installs ONLY an already-downloaded
+        update (see updater.apply_downloaded). If the saved file is
+        gone or corrupt, a fresh download starts instead and the UI
+        shows the choice slide again once it finishes; a broken file
+        is never installed. After a successful install the app
+        restarts, like before."""
         info("update", "Install requested from Settings")
         def _run():
-            if getattr(sys, "frozen", False):
-                # Installed exe: a source zip cannot replace the frozen exe,
-                # so the update comes as the new setup.exe (silent install).
-                if updater.install_setup():
-                    info("update", "Setup update installed - restarting Memo AI")
-                    _APP.quit()
-                return
-            if updater.install_update():
+            result = updater.apply_downloaded()
+            if result.get("ok"):
                 info("update", "Update installed - restarting Memo AI")
                 time.sleep(0.5)
                 try:
-                    subprocess.Popen([sys.executable, str(APP_DIR / "main.py")],
-                                     cwd=str(BASE_DIR))
+                    if getattr(sys, "frozen", False):
+                        # Frozen: the setup was already launched by
+                        # apply_downloaded; just quit so it can run.
+                        pass
+                    else:
+                        subprocess.Popen([sys.executable, str(APP_DIR / "main.py")],
+                                         cwd=str(BASE_DIR))
                 except Exception as exc:
                     error("update", f"Could not restart after update: {exc}")
                     return
                 _APP.quit()
+                return
+            if result.get("redownload"):
+                info("update", "Saved update unusable - re-downloading it")
+                updater.download_update()
         threading.Thread(target=_run, daemon=True).start()
         return {"ok": True, "installing": True}
 
