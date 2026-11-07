@@ -303,8 +303,8 @@ if not getattr(sys, "frozen", False):
 
 import webview
 from logger import error, info, log_text, read_recent, warn
-from settings_store import (APP_DIR, BASE_DIR, keys_status, load_settings,
-                            save_settings)
+from settings_store import (APP_DIR, BASE_DIR, DATA_DIR, keys_status,
+                            load_settings, save_settings)
 
 import brain
 import hear
@@ -743,7 +743,8 @@ class Api:
         chat_id = uuid.uuid4().hex[:8]
         with _chats_lock:
             _chats[chat_id] = {"done": False, "reply": "", "engine": "groq",
-                               "tools_used": 0, "created": time.time()}
+                               "tools_used": 0, "images": [],
+                               "created": time.time()}
             if len(_chats) > 50:  # prune oldest finished entries
                 for old_id in sorted(
                         _chats, key=lambda i: _chats[i]["created"])[:10]:
@@ -778,7 +779,8 @@ class Api:
             return {"done": False}
         return {"done": bool(entry["done"]), "reply": entry.get("reply", ""),
                 "engine": entry.get("engine", "groq"),
-                "tools_used": entry.get("tools_used", 0)}
+                "tools_used": entry.get("tools_used", 0),
+                "images": entry.get("images", [])}
 
     def voice_chat(self):
         """Record 5s -> transcribe -> answer -> speak. Returns heard + reply.
@@ -826,6 +828,34 @@ class Api:
     def resolve_permission(self, req_id, allowed):
         ok = tools.resolve_permission(str(req_id or ""), bool(allowed))
         return {"ok": ok}
+
+    # -- generated images (v1.4.3) -----------------------------------------
+    def get_generated_image(self, filename):
+        """Return a generated image as a data URL for the chat UI.
+        The chat page is a local file, so a file:// path into
+        app/data/images/ would be blocked by the WebView - the bridge
+        hands the bytes over instead. Filename only (no paths, no
+        traversal): the file must live under app/data/images/."""
+        import base64
+        name = str(filename or "").strip()
+        if (not name or "/" in name or "\\" in name or ".." in name):
+            return {"ok": False}
+        path = DATA_DIR / "images" / name
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".png": "image/png", ".webp": "image/webp"}.get(
+                    path.suffix.lower())
+        if not mime or not path.exists():
+            return {"ok": False}
+        try:
+            data = path.read_bytes()
+        except Exception as exc:
+            error("app", f"get_generated_image failed ({name}): {exc}")
+            return {"ok": False}
+        if len(data) > 5 * 1024 * 1024:
+            return {"ok": False}
+        return {"ok": True,
+                "data_url": ("data:" + mime + ";base64,"
+                             + base64.b64encode(data).decode("ascii"))}
 
     # -- windows -----------------------------------------------------------
     def open_main(self):
@@ -1586,13 +1616,25 @@ class MemoApp:
             error("brain", f"Tool chat failed: {exc}")
             result = {"reply": "حصلت مشكلة وأنا بنفذ، جرّب تاني.",
                       "engine": "", "tools_used": 0}
+        # v1.4.3: [[IMAGE:...]] is a machine token, not text - strip it
+        # from the spoken/shown reply and attach the files as `images`
+        # instead, so the UI renders them as real pictures. The tracker
+        # is the safety net: even if the model forgot to echo the
+        # marker, the image the tool saved this turn still reaches
+        # the chat.
+        clean_reply, marker_images = tools.extract_image_markers(
+            result["reply"])
+        tracked = tools.take_generated_images()
+        images = marker_images + [n for n in tracked
+                                  if n not in marker_images]
         with _chats_lock:
             entry = _chats.get(chat_id)
             if entry is not None:
-                entry.update({"done": True, "reply": result["reply"],
+                entry.update({"done": True, "reply": clean_reply,
                               "engine": result["engine"],
-                              "tools_used": result.get("tools_used", 0)})
-        self.speak_async(result["reply"])
+                              "tools_used": result.get("tools_used", 0),
+                              "images": images})
+        self.speak_async(clean_reply)
 
     def _on_system_alert(self, alert: dict) -> None:
         """Shared delivery for monitor + important-notification alerts:

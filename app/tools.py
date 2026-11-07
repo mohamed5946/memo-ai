@@ -36,6 +36,7 @@
 
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -43,7 +44,9 @@ import sys
 import threading
 import time
 import uuid
+from io import BytesIO
 from pathlib import Path
+from urllib.parse import quote
 
 from logger import error, info, warn
 from settings_store import APP_DIR, BASE_DIR, KEYS_DIR
@@ -714,6 +717,181 @@ def _tool_system_status(args: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# generate_image (v1.4.3) - free image generation, no API key
+# ---------------------------------------------------------------------------
+
+# Pollinations.ai: free, no key, no account - a plain HTTP GET returns
+# the rendered image. Verified live 2026-11-07 (HTTP 200, real JPEG
+# bytes, 512x512 in ~6s). Model "flux" is the quality model; nologo
+# drops the watermark. The prompt is sent as-is (the brain translates
+# the user's Arabic description to English when calling the tool -
+# the image model understands English prompts far better).
+_IMAGE_GEN_URL = "https://image.pollinations.ai/prompt/{prompt}"
+_IMAGE_GEN_TIMEOUT = 90.0  # seconds; generation is slow, be patient
+_IMAGE_GEN_MAX_DIM = 1280
+_IMAGE_GEN_MIN_DIM = 256
+_IMAGE_GEN_MAX_PROMPT = 500
+_IMAGE_DIRNAME = "images"
+
+# Images generated during this process, in order (filenames only).
+# run_tool_chat() consumes them (take_generated_images) and attaches
+# them to the chat result, so the UI shows the image even if the model
+# forgets to echo the [[IMAGE:...]] marker in its reply text.
+_generated_images: list = []
+_generated_lock = threading.Lock()
+
+_IMAGE_MARKER_RE = re.compile(r"\[\[IMAGE:([A-Za-z0-9._-]+)\]\]")
+
+
+def extract_image_markers(text: str) -> tuple:
+    """Strip [[IMAGE:<filename>]] markers from a reply. Returns
+    (clean_text, [filenames]). The marker is a machine token for the
+    chat UI, never user-facing text (WhatsApp replies are stripped
+    with this too - WhatsApp gets text only)."""
+    names = _IMAGE_MARKER_RE.findall(text or "")
+    clean = _IMAGE_MARKER_RE.sub("", text or "")
+    clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
+    return clean, names
+
+
+def take_generated_images() -> list:
+    """Filenames generated since the last take (drains the list)."""
+    with _generated_lock:
+        names = list(_generated_images)
+        _generated_images.clear()
+    return names
+
+
+def _parse_image_size(raw: str) -> tuple:
+    """'1024x1024' -> (1024, 1024), clamped to 256-1280 per side.
+    Anything unparsable falls back to the 1024x1024 default."""
+    try:
+        w_s, h_s = str(raw or "").strip().lower().replace(" ", "").split("x")
+        w = max(_IMAGE_GEN_MIN_DIM,
+                min(_IMAGE_GEN_MAX_DIM, int(w_s)))
+        h = max(_IMAGE_GEN_MIN_DIM,
+                min(_IMAGE_GEN_MAX_DIM, int(h_s)))
+        return w, h
+    except Exception:
+        return 1024, 1024
+
+
+def _save_generated_image(data: bytes, out_dir: Path) -> tuple:
+    """Validate raw bytes as a real image and save them as a JPEG
+    (max 1024px per side, quality 85 - keeps chat data URLs small).
+    Returns (filename, path) or (None, None) when the bytes are not
+    a usable image. Falls back to saving the raw bytes when Pillow
+    cannot decode them but the magic bytes are PNG/JPEG."""
+    name = (f"img-{time.strftime('%Y%m%d-%H%M%S')}-"
+            f"{uuid.uuid4().hex[:8]}.jpg")
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        error("tools", f"generate_image: cannot create {out_dir}: {exc}")
+        return None, None
+    try:
+        from PIL import Image
+        im = Image.open(BytesIO(data))
+        im.verify()
+        im = Image.open(BytesIO(data))  # verify() closes the image
+        if im.format not in ("JPEG", "PNG", "WEBP"):
+            return None, None
+        im = im.convert("RGB")
+        im.thumbnail((1024, 1024), Image.LANCZOS)
+        path = out_dir / name
+        im.save(path, "JPEG", quality=85)
+        return name, path
+    except Exception:
+        # Pillow could not decode it - trust only PNG/JPEG magic bytes.
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            name = name[:-4] + ".png"
+        elif data[:3] == b"\xff\xd8\xff":
+            pass  # name already .jpg
+        else:
+            return None, None
+        try:
+            path = out_dir / name
+            path.write_bytes(data)
+            return name, path
+        except Exception as exc:
+            error("tools", f"generate_image: cannot save {path}: {exc}")
+            return None, None
+
+
+def _tool_generate_image(args: dict) -> str:
+    """Generate an image from a text prompt (free, no API key).
+    Read-only + network only: no permission dialog (same as
+    web_search/system_status). The image is downloaded, validated as
+    real image bytes, saved under app/data/images/, and the result
+    carries a [[IMAGE:<filename>]] marker line - the brain MUST echo
+    that line verbatim in its reply so the chat UI renders the image.
+    On ANY failure it says so honestly - the brain must never claim
+    an image was generated when it was not. The prompt is logged
+    truncated (first 80 chars, diagnosis only) - never phone numbers
+    or message contents."""
+    prompt = str(args.get("prompt", "") or "").strip()
+    if not prompt:
+        return "قولي أوصفي الصورة اللي عايزها — الوصف فاضي."
+    if len(prompt) > _IMAGE_GEN_MAX_PROMPT:
+        return (f"الوصف طويل أوي ({len(prompt)} حرف، الحد "
+                f"{_IMAGE_GEN_MAX_PROMPT}) — اختصره شوية.")
+    width, height = _parse_image_size(args.get("size", "1024x1024"))
+    seed = random.randint(0, 999999)
+    url = (_IMAGE_GEN_URL.format(prompt=quote(prompt, safe=""))
+           + f"?width={width}&height={height}&model=flux"
+           + f"&nologo=true&seed={seed}")
+    try:
+        import requests
+    except Exception:
+        return ("مكتبة الشبكة (requests) مش متاحة في النسخة دي — "
+                "مقدرتش أولّد الصورة.")
+    try:
+        resp = requests.get(url, timeout=_IMAGE_GEN_TIMEOUT)
+    except Exception as exc:
+        # requests.Timeout is a subclass - named separately in the log
+        # so a slow service reads differently from no network.
+        kind = ("TIMEOUT" if exc.__class__.__name__ == "Timeout"
+                else type(exc).__name__)
+        error("tools", f"generate_image {kind} ({_IMAGE_GEN_TIMEOUT}s): "
+                       f"prompt {prompt[:80]!r}: {exc}")
+        if kind == "TIMEOUT":
+            return ("مقدرتش أولّد الصورة — خدمة توليد الصور خدت أكتر من "
+                    "90 ثانية ومردتش. جرّب تاني كمان شوية.")
+        return (f"مقدرتش أولّد الصورة — مشكلة في الشبكة/الخدمة ({exc}). "
+                "قولها بصراحة للمستخدم ومتدّعيش إن الصورة اتولدت.")
+    if resp.status_code != 200:
+        error("tools", f"generate_image HTTP {resp.status_code}: "
+                       f"prompt {prompt[:80]!r}")
+        return (f"مقدرتش أولّد الصورة — خدمة توليد الصور رجّعت خطأ "
+                f"(HTTP {resp.status_code}). جرّب تاني كمان شوية.")
+    data = resp.content or b""
+    content_type = (resp.headers.get("content-type") or "").lower()
+    if not content_type.startswith("image/") or len(data) < 100:
+        # 100 bytes is only a trivial-body guard - Pillow below is
+        # the real validator (a tiny solid-colour PNG can be ~300B).
+        error("tools", f"generate_image: non-image reply "
+                       f"(content-type {content_type!r}, {len(data)} bytes): "
+                       f"prompt {prompt[:80]!r}")
+        return ("مقدرتش أولّد الصورة — خدمة توليد الصور رجّعت رد مش "
+                "صورة. جرّب تاني كمان شوية.")
+    # DATA_DIR is resolved per call (tests redirect it; same pattern
+    # as whatsapp.py) - never import-time, never under the install dir.
+    from settings_store import DATA_DIR
+    filename, path = _save_generated_image(data, DATA_DIR / _IMAGE_DIRNAME)
+    if not filename:
+        error("tools", "generate_image: downloaded bytes are not a "
+                       f"usable image ({len(data)} bytes, {content_type})")
+        return ("مقدرتش أولّد الصورة — الصورة اللي رجعت مش صالحة. "
+                "جرّب تاني كمان شوية.")
+    with _generated_lock:
+        _generated_images.append(filename)
+    info("tools", f"generate_image OK: '{prompt[:80]}' -> {filename} "
+                  f"({len(data)} bytes in, {path.stat().st_size} bytes saved)")
+    return (f"ولّدت الصورة ✅\n[[IMAGE:{filename}]]\n"
+            f"الوصف: {prompt[:200]}\nمحفوظة في: {path}")
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher + tool schemas (OpenAI function-calling format, for Groq)
 # ---------------------------------------------------------------------------
 
@@ -745,6 +923,8 @@ def execute_tool(name: str, arguments: dict) -> str:
             result = _tool_web_search(arguments)
         elif name == "system_status":
             result = _tool_system_status(arguments)
+        elif name == "generate_image":
+            result = _tool_generate_image(arguments)
         else:
             warn("tools", f"Unknown tool requested: {name}")
             return f"الأداة '{name}' مش موجودة."
@@ -898,6 +1078,21 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_image",
+            "description": "Generate an image from a text description (free service, no API key). Call this WHENEVER the user asks to draw or generate an image ('ارسم لي...', 'ولّد صورة...', 'draw/generate an image of...') — do it with the tool instead of saying you cannot generate images; you CAN, through this tool. Write the 'prompt' in ENGLISH (translate the user's Arabic description into English - the image model understands English far better). The tool returns a line [[IMAGE:<filename>]] — you MUST include that exact line verbatim in your reply so the image shows in the chat. If the tool says generation failed, tell the user honestly that no image was generated and never claim one was made.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "The image description IN ENGLISH, e.g. 'a small red cat sitting on a rug, soft daylight, photorealistic'."},
+                    "size": {"type": "string", "description": "Optional 'WIDTHxHEIGHT', e.g. '1024x1024' (default square), '768x1024' (portrait), '1024x768' (landscape). Each side 256-1280."},
+                },
+                "required": ["prompt"],
             },
         },
     },

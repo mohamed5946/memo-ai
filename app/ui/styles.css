@@ -163,6 +163,8 @@ header .spacer { flex: 1; }
   border: 1px solid var(--border); border-end-end-radius: 6px;
 }
 .msg .meta { display: block; font-size: 11px; color: var(--muted); margin-top: 6px; }
+.msg.gen-image { padding: 6px; }
+.msg.gen-image img { max-width: 100%; border-radius: 14px; display: block; }
 .msg.typing { display: flex; gap: 5px; align-items: center; padding: 14px 18px; }
 .msg.typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
   animation: blink 1.2s ease-in-out infinite; }

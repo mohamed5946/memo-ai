@@ -71,7 +71,7 @@ def _capability_block(language: str) -> str:
             "قدراتك الحقيقية (من حالة التطبيق الفعلية — متخترعش غيرها):",
             f"- المخ الأونلاين (Groq): {'متصل ✅' if groq_ok else 'مش متصل — مفتاح Groq مش موجود في keys/'}",
             f"- الصوت الأونلاين (Gemini TTS): {'متصل ✅' if gemini_ok else 'مش متصل — مفتاح Gemini مش موجود'}",
-            "- الأدوات على اللابتوب ✅: تقدر تفتح برامج، تعمل ملفات وتكتب فيها، تعدّل ملفات، تقرأ ملفات، وتشغّل أوامر، وتبعت رسايل واتساب، وتدور على النت، وتشوف حالة اللابتوب (رام، قرص، حرارة، بطارية) — عن طريق أدواتك. كل إجراء بيظهر لصاحبك رسالة في الشات فيها زرارين: سماح ورفض، فماتسألوش عن الإذن في الكلام — نادي الأداة على طول.",
+            "- الأدوات على اللابتوب ✅: تقدر تفتح برامج، تعمل ملفات وتكتب فيها، تعدّل ملفات، تقرأ ملفات، وتشغّل أوامر، وتبعت رسايل واتساب، وتدور على النت، وتشوف حالة اللابتوب (رام، قرص، حرارة، بطارية)، وتولّد صور (خدمة مجانية من غير مفتاح) — عن طريق أدواتك. كل إجراء بيظهر لصاحبك رسالة في الشات فيها زرارين: سماح ورفض، فماتسألوش عن الإذن في الكلام — نادي الأداة على طول.",
             "- " + capabilities.whatsapp_status_line("ar"),
             "- " + capabilities.not_built_line("ترجمة الشاشة", "Screen translation", "ar"),
             "- " + capabilities.not_built_line("المجلس متعدد النماذج", "Multi-model council", "ar"),
@@ -87,7 +87,7 @@ def _capability_block(language: str) -> str:
         "Your real capabilities (from the app's actual state — never invent others):",
         f"- Online brain (Groq): {'connected ✅' if groq_ok else 'not connected — no Groq key in keys/'}",
         f"- Online voice (Gemini TTS): {'connected ✅' if gemini_ok else 'not connected — no Gemini key'}",
-        "- Laptop tools ✅: you can open apps, create/write/edit/read files, run commands, send WhatsApp messages, search the web, and check the laptop's status (RAM, disk, temperature, battery) — through your tools. Every action appears to the user as a chat message with Allow / Deny buttons, so do NOT ask for permission in text — call the tool directly.",
+        "- Laptop tools ✅: you can open apps, create/write/edit/read files, run commands, send WhatsApp messages, search the web, check the laptop's status (RAM, disk, temperature, battery), and generate images (free service, no key) — through your tools. Every action appears to the user as a chat message with Allow / Deny buttons, so do NOT ask for permission in text — call the tool directly.",
         "- " + capabilities.whatsapp_status_line("en"),
         "- " + capabilities.not_built_line("Screen translation", "Screen translation", "en"),
         "- " + capabilities.not_built_line("Multi-model council", "Multi-model council", "en"),
@@ -187,7 +187,16 @@ def system_prompt(ai_name: str, user_name: str, language: str,
                 "ولو سألك عن حاجة متعرفهاش (أخبار جارية، أسعار، حقائق بعد "
                 "تدريبك) نادي أداة web_search بدل ما تخمن أو تقول «معرفش» — "
                 "جاوب من النتايج واذكر المصدر؛ ولو البحث فشل قول بصراحة "
-                "إنك مقدرتش تلاقيها، وممنوع تخمن."
+                "إنك مقدرتش تلاقيها، وممنوع تخمن. "
+                "ولو طلب منك ترسم أو تولّد صورة (ارسم لي...، ولّد صورة...، "
+                "اعملي صورة لـ...، draw/generate an image of...) نادي أداة "
+                "generate_image على طول بدل ما تقول «مقدرش أولّد صور» — أنت "
+                "تقدر، عن طريق الأداة؛ اكتب الوصف (prompt) بالإنجليزي "
+                "(ترجم وصف المستخدم العربي للإنجليزي)، والأداة هترجع سطر "
+                "فيه [[IMAGE:اسم-الملف]] — لازم تحط السطر ده زي ما هو "
+                "بالظبط في ردك عشان الصورة تظهر في الشات؛ ولو الأداة قالت "
+                "إن التوليد فشل، قول بصراحة إن الصورة متولدتش، وممنوع "
+                "تدّعي إنها اتولدت."
             )
         return prompt
     if name == "غير معروف":
@@ -232,7 +241,17 @@ def system_prompt(ai_name: str, user_name: str, language: str,
             "prices, facts past your training), call the web_search tool "
             "instead of guessing or saying 'I don't know' — answer from "
             "the results and name the source; if the search fails, say "
-            "honestly that you could not find it, never guess."
+            "honestly that you could not find it, never guess. "
+            "If he asks you to draw or generate an image ('draw me...', "
+            "'generate an image of...', 'ارسم لي...', 'ولّد صورة...'), call "
+            "the generate_image tool right away instead of saying you "
+            "cannot generate images — you can, through the tool; write "
+            "the prompt in ENGLISH (translate his Arabic description "
+            "into English), and the tool returns a line "
+            "[[IMAGE:<filename>]] — you MUST include that exact line "
+            "verbatim in your reply so the image shows in the chat; if "
+            "the tool says generation failed, say honestly that no image "
+            "was generated, and never claim one was made."
         )
     return prompt
 
@@ -409,6 +428,8 @@ _ACTION_WORDS = (
     "اعمل", "انشئ", "انشئلي", "create", "اكتب", "write", "احفظ", "save",
     "عدل", "عدّل", "edit", "اقرا", "اقرأ", "read", "اعرض", "list",
     "امسح", "delete", "نفذ", "execute",
+    "ارسم", "ارسملي", "ارسمي", "رسم", "ولد", "ولّد", "صورة", "صوره",
+    "draw", "generate", "image", "picture",
 )
 
 

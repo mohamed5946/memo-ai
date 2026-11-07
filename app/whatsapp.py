@@ -942,11 +942,25 @@ class WhatsAppService:
                                  "number in Settings to enable owner mode)")
 
         reply = (reply or "").strip()
+        # v1.4.3: an [[IMAGE:...]] marker is a desktop-chat token, not
+        # text - strip it before sending to WhatsApp (text only), and
+        # drain any image this turn generated so it never attaches to
+        # a later in-app chat. (The image itself stays saved under
+        # app/data/images/; the desktop chat is where it renders.)
+        raw_had_text = bool(reply)
+        reply, _img_names = tools.extract_image_markers(reply)
+        tools.take_generated_images()
         # v1.4.1: engine is "" when no engine answered (never "none").
-        if not engine or not reply:
+        if not engine or not raw_had_text:
             reply = ("مش قادر أفكر دلوقتي — المخ مش متاح، جرّب تاني كمان شوية."
                      if lang == "ar" else
                      "I can't think right now — the brain is unavailable, try again shortly.")
+        elif not reply:
+            # The reply was only an image marker: WhatsApp gets text
+            # only, so say where the picture is.
+            reply = ("ولّدت الصورة ✅ — هتلاقيها في شات التطبيق على اللابتوب."
+                     if lang == "ar" else
+                     "Image generated ✅ — you'll find it in the desktop app chat.")
         reply = reply[:MAX_REPLY_CHARS]
         info("whatsapp", f"Message from {mode} sender {mask_number(sender)}, "
                          f"{len(text)} chars -> reply {len(reply)} chars "

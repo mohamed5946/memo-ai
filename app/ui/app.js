@@ -453,6 +453,32 @@ function addMsg(text, who, meta) {
   return div;
 }
 
+// v1.4.3: render generated images as real pictures in the chat. The
+// filenames come from chat_result().images; the bytes come from the
+// bridge (get_generated_image) as a data URL, because a local file
+// page cannot load file:// images from app/data/images/ in WebView2.
+// A failed fetch leaves the text reply standing on its own - the text
+// already says the image was generated and where it is saved.
+async function addGeneratedImages(filenames) {
+  const chat = $("chat");
+  const bridge = getApi();
+  if (!bridge || !bridge.get_generated_image) return;
+  for (const name of filenames || []) {
+    try {
+      const res = await bridge.get_generated_image(name);
+      if (!res || !res.ok || !res.data_url) continue;
+      const div = document.createElement("div");
+      div.className = "msg ai gen-image";
+      const img = document.createElement("img");
+      img.src = res.data_url;
+      img.alt = "صورة مولّدة";
+      div.appendChild(img);
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    } catch (e) { /* text reply already covers it */ }
+  }
+}
+
 function showTyping() {
   const chat = $("chat");
   const div = document.createElement("div");
@@ -494,6 +520,7 @@ async function sendText(text) {
       const done = await waitForChatResult(res.chat_id);
       stopPermPolling();
       addMsg(safeReply(done.reply), "ai", "Memo AI" + metaEngine(done.engine));
+      await addGeneratedImages(done.images);
     } else {
       addMsg(safeReply(res.reply), "ai", "Memo AI" + metaEngine(res.engine));
     }
@@ -632,6 +659,7 @@ async function voiceChat() {
       const done = await waitForChatResult(res.chat_id);
       stopPermPolling();
       addMsg(safeReply(done.reply), "ai", "Memo AI" + metaEngine(done.engine));
+      await addGeneratedImages(done.images);
     } else {
       addMsg(safeReply(res.reply), "ai", "Memo AI" + metaEngine(res.engine));
     }
