@@ -325,7 +325,7 @@ try:
 except Exception:
     whatsapp_mod = None
 
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
