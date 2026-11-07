@@ -100,7 +100,68 @@
 # (which also re-centers it on top); the texts
 # fade in as it grows. Old island_expand/island_shrink removed.
 #
-# v1.3.2 (2026-11-07) - ONE BATCHED VERSION ("version واحدة"):
+# v1.4.1 (2026-11-07) - ONE BATCHED VERSION ("version واحدة"):
+#   (1) PET + ISLAND REMOVED from the running app (user decision:
+#       "they still have problems" - the pet rendered black / could
+#       not be grabbed, the island rendered gray / clicks died). Their
+#       windows are NEVER created and no pet/island code runs at
+#       startup - the code stays behind pet_enabled/island_enabled
+#       flags (settings_store, default False - NOT deleted) so they can
+#       come back once fixed. The app starts with the MAIN WINDOW
+#       directly (autostart too), and the chat is big from the start
+#       (the hero starts collapsed - see app.js).
+#   (2) CLOSE -> SYSTEM TRAY (app/tray.py, pystray): X hides the main
+#       window to the tray (menu: Open / Quit) instead of quitting -
+#       the standing rule holds (never fully close except explicit
+#       Quit, from the tray menu or Settings). If no tray backend
+#       exists, X minimizes to the taskbar instead (a hidden window
+#       with no tray would strand the user). Explicit Quit still exits
+#       fully (tray stopped first).
+#   (3) VOICE/AVATAR PERSISTENCE BUG (field report): picking a voice
+#       or avatar did not stick - after restart it reverted. Root
+#       causes in app.js: (a) a voice click only updated the in-memory
+#       variable - persistence happened ONLY via the Settings Save
+#       button; (b) an avatar click for dog/boy/girl did NOTHING
+#       (early return "v1: cat only"); (c) the save payload never
+#       included "avatar" at all; (d) the load path never restored the
+#       avatar selection (index.html hardcoded cat as selected); (e)
+#       the 15s refreshStatus poll reverted any unsaved pick to the
+#       saved value. Fixed: voice/avatar save IMMEDIATELY on click,
+#       all 4 avatars are selectable (real dog/boy/girl images now
+#       exist in ui/assets), the load path restores + applies them
+#       before the UI paints, and refreshStatus never overwrites the
+#       field the user is currently typing in / focused on.
+#   (4) WHATSAPP SETTINGS BUGS (v1.4.0 field report): (a) the owner
+#       number vanished after saving; (b) the QR never appeared.
+#       SAME root cause for both: Api.save_settings called
+#       apply_settings() -> evaluate_js("applySettingsFromPython()")
+#       -> refreshStatus() re-rendered the whole Settings form from
+#       server state WHILE the save handler was still running - it
+#       wiped the not-yet-read WhatsApp fields (owner number +
+#       enabled toggle) back to their old values, and the handler then
+#       read the wiped DOM values and saved THOSE (empty number,
+#       disabled) - so the sidecar never started and no QR ever
+#       appeared, while the UI still said "saved ✅". Fixed three ways:
+#       the save handler snapshots the WhatsApp fields BEFORE any
+#       bridge call; the WhatsApp section saves ONLY via whatsapp_save
+#       (no save_settings first); and save_settings no longer
+#       re-renders the form mid-save (the handler re-renders once at
+#       the end, after all saves). The whatsapp_save result is now
+#       checked and its error shown instead of swallowed.
+#   (5) SETTINGS REORGANIZED (DeliveryFlow-style): the Settings modal
+#       opens as a vertical menu of buttons (General / WhatsApp /
+#       Voices / Avatar / Diagnostics log / Updates), each opening its
+#       own section with a back button to the menu. General holds the
+#       name, language, speaker toggle, autostart, morning briefing,
+#       owner-code unlock, and About (public info only now - see (6)).
+#   (6) "WHO IS THE DEVELOPER?" - the brain answers with PUBLIC info
+#       only (name, CS student, Memo AI + DeliveryFlow, portfolio,
+#       GitHub) via a built-in rule (rules.py, deterministic) and a
+#       system-prompt block (brain.py, model fallback incl. WhatsApp).
+#       Phone numbers, student code, emails, addresses and keys are
+#       FORBIDDEN in the answer - even for the owner. About shows the
+#       same public info (email/phone lines removed).
+#   (7) WhatsApp linking is NOT in v1.3.2 (v1.4.0, separate build,
 #   (1) HANG FIX (field: v1.3.1 first launch "Not Responding" 09:55):
 #       the morph loop was already bounded (28 steps) - the real risks
 #       were cross-thread .NET touches: _window_hwnd() read
@@ -215,6 +276,7 @@ import hear
 import rules
 import speak
 import tools
+import tray as tray_mod
 import updater
 import weather
 import winshape
@@ -228,7 +290,7 @@ try:
 except Exception:
     whatsapp_mod = None
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -348,7 +410,7 @@ def _find_main_hwnd():
         return None
 
 
-def _check_bridge_files() -> bool:
+def _check_bridge_files(ui_files=None) -> bool:
     """Loud startup self-check: pywebview builds window.pywebview from its
     js/ files (util.load_js_files -> get_js_dir -> <webview>/js/api.js).
     If they are missing from the bundle, the bridge never exists and every
@@ -363,14 +425,18 @@ def _check_bridge_files() -> bool:
     their exact result, so a first-launch failure names its cause
     instead of the generic 'install WebView2' advice (WebView2 was
     FINE on the user's machine in v1.3.1 - the real causes were mixed
-    install files + a bridge that never became ready)."""
+    install files + a bridge that never became ready).
+    v1.4.1: the file list is a parameter (MemoApp._selftest_ui_files)
+    - island/pet files are only required when their flags are on."""
     global _BRIDGE_FILES_OK
     ok = True
     # 1. UI pages + assets (a missing file = a window that never paints).
     ui_dir = APP_DIR / "ui"
-    for rel in ("index.html", "island.html", "pet.html",
-                "assets/avatar-cat.png", "assets/cat-run.png",
-                "app.js", "styles.css"):
+    if ui_files is None:
+        ui_files = ("index.html", "island.html", "pet.html",
+                    "assets/avatar-cat.png", "assets/cat-run.png",
+                    "app.js", "styles.css")
+    for rel in ui_files:
         p = ui_dir / rel
         if p.is_file():
             info("selftest", f"UI file present: ui/{rel}")
@@ -468,11 +534,15 @@ def _note_bridge_ready(page: str) -> None:
         _READY_PAGES.add(page)
 
 
-def _bridge_ready_watchdog() -> None:
+def _bridge_ready_watchdog(want=None) -> None:
     """Wait up to 20s for all three pages to report READY, then log the
-    outcome. Runs on a daemon thread; never blocks startup."""
+    outcome. Runs on a daemon thread; never blocks startup.
+    v1.4.1: `want` is a parameter (MemoApp._watchdog_pages) - with the
+    pet + island disabled, only "main" is waited for."""
     deadline = time.time() + 20
-    want = {"main", "island", "pet"}
+    if want is None:
+        want = {"main", "island", "pet"}
+    want = set(want)
     while time.time() < deadline:
         with _READY_LOCK:
             if want <= _READY_PAGES:
@@ -482,7 +552,8 @@ def _bridge_ready_watchdog() -> None:
         got = set(_READY_PAGES)
     missing = want - got
     if not missing:
-        info("selftest", "Bridge READY on all pages: main + island + pet")
+        info("selftest",
+             "Bridge READY on all pages: " + " + ".join(sorted(want)))
     else:
         error("selftest", "Bridge NOT READY after 20s - pages missing: "
               f"{', '.join(sorted(missing))}. The page file may be missing "
@@ -554,7 +625,7 @@ class Api:
             "keys": keys_status(),
             "settings": {k: v for k, v in _APP.settings.items()
                          if k != "owner_unlocked"},
-            "owner_unlocked": _APP.settings.get("owner_unlocked", False),
+            "owner_unlocked": _APP.owner_unlocked,
         }
 
     def get_settings(self):
@@ -577,31 +648,51 @@ class Api:
         # v1.3.1: autostart applies immediately (HKCU Run key follows
         # the setting; the pet toggle takes effect at once too).
         autostart.set_enabled(bool(_APP.settings.get("autostart", True)))
-        _APP.apply_settings()
+        # v1.4.1: apply_settings() is NOT called here anymore. It used to
+        # re-render the whole Settings form mid-save (via evaluate_js ->
+        # refreshStatus), which wiped the not-yet-read WhatsApp fields
+        # back to their old values and the handler then saved THOSE -
+        # the v1.4.0 owner-number / missing-QR bug. The JS save handler
+        # re-renders once at the end, after all saves. apply_settings()
+        # itself stays for the flag-on path (pet visibility only).
         return {"ok": ok}
 
     # -- chat --------------------------------------------------------------
     def chat(self, text):
         text = (text or "").strip()
         if not text:
-            return {"reply": "", "engine": "none"}
+            return {"reply": "", "engine": ""}
         # Owner code unlocks owner mode (v1.3.0: compared as a SHA-256 hash
         # only - the plaintext code is nowhere in the repo, settings, or
         # logs, and the typed text is never echoed back). v1.3.2: owner
         # mode now only bypasses the source-code rule (tools are on for
         # every chat - see below); without it the app stays reply-only
         # for source-code questions.
+        # v1.4.1 OWNER-MODE FIX (field report: the unlock confirmed but
+        # did not work - "تواصل مع المطور" still came back): the flag
+        # is a PLAIN INSTANCE ATTRIBUTE now, the single source of truth,
+        # session-only (never in the settings dict, never persisted -
+        # save_settings used to write the whole dict, so a v1.4.0 unlock
+        # could leak owner_unlocked=true into settings.json and survive
+        # a restart). The REAL bug was (c) below, not the flag itself:
+        # rules.check DID honor it, but the question then went to the
+        # MODEL, whose system prompt had the blanket "say contact the
+        # developer" instruction with no idea owner mode was open (the
+        # code turn never enters brain history - this method returns
+        # directly). So the model refused. Fixed by passing the flag
+        # into brain.ask_with_tools -> system_prompt (owner_unlocked),
+        # which flips that instruction when owner mode is open.
         if hmac.compare_digest(
                 hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 OWNER_CODE_HASH):
-            _APP.settings["owner_unlocked"] = True
+            _APP.owner_unlocked = True
             info("app", "Owner mode unlocked via secret code")
             return {"reply": "تمام، وضع المالك اتفتح — تقدر تسألني عن أي حاجة، "
                              "وأقدر كمان أفتح برامج وأعمل ملفات وأنفذ أوامر "
                              "(كل إجراء هيطلب إذنك الأول).",
                     "engine": "owner"}
         lang = _APP.settings.get("language", "ar")
-        hit = rules.check(text, _APP.settings.get("owner_unlocked", False), lang)
+        hit = rules.check(text, _APP.owner_unlocked, lang)
         if hit:
             _APP.speak_async(hit["reply"])
             return {"reply": hit["reply"], "engine": hit["source"]}
@@ -628,6 +719,21 @@ class Api:
         return {"reply": "", "engine": "groq", "pending": True,
                 "chat_id": chat_id}
 
+    def unlock_owner(self, code):
+        """Owner-code unlock from the Settings General section (v1.4.1:
+        same hash compare as chat() - the typed code is never logged,
+        echoed, or stored; only the session flag is set)."""
+        try:
+            ok = hmac.compare_digest(
+                hashlib.sha256(str(code or "").strip().encode("utf-8")
+                               ).hexdigest(), OWNER_CODE_HASH)
+        except Exception:
+            ok = False
+        if ok:
+            _APP.owner_unlocked = True
+            info("app", "Owner mode unlocked from Settings")
+        return {"ok": ok, "owner_unlocked": bool(_APP.owner_unlocked)}
+
     def chat_result(self, chat_id):
         """Poll the result of an async (tool) chat. {"done": False} while
         the brain thread is still working (possibly waiting on permission)."""
@@ -648,7 +754,7 @@ class Api:
         heard = hear.listen(lang)
         if not heard["text"]:
             return {"heard": "", "reply": heard.get("error", "مقدرتش أسمعك."),
-                    "engine": "none"}
+                    "engine": ""}
         result = self.chat(heard["text"])
         if result.get("pending"):
             return {"heard": heard["text"], "reply": "", "engine": "groq",
@@ -706,10 +812,16 @@ class Api:
         return {"ok": True}
 
     def minimize_to_island(self):
+        # v1.4.1: the island is gone - this now hides the main window
+        # to the system tray (MemoApp.hide_main branches on the flag).
+        # Kept under its old bridge name for compatibility.
         _APP.hide_main()
         return {"ok": True}
 
     def toggle_pet(self, visible=None):
+        # v1.4.1: the pet is disabled - no pet window exists to show.
+        if not _APP.settings.get("pet_enabled", False):
+            return {"visible": False, "disabled": True}
         if visible is None:
             visible = not _APP.settings.get("pet_visible", False)
         _APP.settings["pet_visible"] = bool(visible)
@@ -720,10 +832,16 @@ class Api:
     def set_pet_bubble(self, on):
         """The pet page shows/hides the "مياو!" bubble: the window region
         must include the bubble zone only while it is visible (v1.3.1)."""
+        # v1.4.1: the pet is disabled - no-op.
+        if not _APP.settings.get("pet_enabled", False):
+            return {"ok": False, "disabled": True}
         _APP.set_pet_bubble(bool(on))
         return {"ok": True}
 
     def park_pet(self):
+        # v1.4.1: the pet is disabled - no-op.
+        if not _APP.settings.get("pet_enabled", False):
+            return {"ok": False, "disabled": True}
         _APP.settings["pet_parked"] = True
         save_settings(_APP.settings)
         _APP.park_pet()
@@ -731,6 +849,9 @@ class Api:
 
     def mark_parked(self):
         """Pet was dragged to a screen edge: save parked state (no move)."""
+        # v1.4.1: the pet is disabled - no-op.
+        if not _APP.settings.get("pet_enabled", False):
+            return {"ok": False, "disabled": True}
         _APP.settings["pet_parked"] = True
         save_settings(_APP.settings)
         _APP.refresh_pet_region()  # ball zone joins the region
@@ -739,6 +860,9 @@ class Api:
 
     def unpark_pet(self):
         """Pet dragged away (or double-clicked) while parked: resume roaming."""
+        # v1.4.1: the pet is disabled - no-op.
+        if not _APP.settings.get("pet_enabled", False):
+            return {"ok": False, "disabled": True}
         _APP.settings["pet_parked"] = False
         save_settings(_APP.settings)
         _APP.refresh_pet_region()  # ball zone leaves the region
@@ -746,6 +870,9 @@ class Api:
         return {"ok": True}
 
     def pet_interaction(self, kind):
+        # v1.4.1: the pet is disabled - no-op (nothing to log).
+        if not _APP.settings.get("pet_enabled", False):
+            return {"ok": True, "disabled": True}
         if kind == "click":
             info("pet", "Pet clicked - happy reaction (مياو!)")
         return {"ok": True}
@@ -783,6 +910,9 @@ class Api:
         return {"ok": True, "installing": True}
 
     def move_pet(self, x, y):
+        # v1.4.1: the pet is disabled - there is no pet window at all.
+        if not _APP.settings.get("pet_enabled", False):
+            return {"ok": False, "disabled": True}
         # v1.3.2 BLACK-BOX FIX: pywebview's window.move() uses
         # SetWindowPos(SW_SHOWWINDOW) - it SHOWS a hidden window. The
         # hidden pet used to get shown by its own roam moves (the black
@@ -798,6 +928,12 @@ class Api:
 
     def open_portfolio(self):
         webbrowser.open("https://mohamed5946.github.io/portfolio/")
+        return {"ok": True}
+
+    def open_github(self):
+        # v1.4.1: the About section's GitHub button (public info only,
+        # same as the "who is the developer?" answer).
+        webbrowser.open("https://github.com/mohamed5946")
         return {"ok": True}
 
     def quit_app(self):
@@ -882,6 +1018,17 @@ class MemoApp:
         global _APP
         _APP = self
         self.settings = load_settings()
+        # v1.4.1: scrub a stale owner_unlocked key (v1.4.0's
+        # save_settings could persist it into settings.json - the flag
+        # is session-only now and lives on self.owner_unlocked, never
+        # in the dict, so it can never survive a restart).
+        self.settings.pop("owner_unlocked", None)
+        # v1.4.1: owner mode is a SESSION-ONLY instance attribute, the
+        # single source of truth (see Api.chat for the full story).
+        self.owner_unlocked = False
+        # v1.4.1: system tray manager (None until started; None also
+        # means "no tray backend" - X then minimizes to the taskbar).
+        self._tray = None
         self.api = Api()
         self.main_window = None
         self.island_window = None
@@ -903,6 +1050,35 @@ class MemoApp:
         self._pet_bubble = False          # is the "مياو!" bubble showing?
         # v1.3.1 second-launch focus: named event handle + watcher.
         self._show_main_event = None
+
+    # -- v1.4.1 window set ---------------------------------------------------
+    def _enabled_windows(self):
+        """Window pages that exist in this build (v1.4.1: main only by
+        default - pet/island behind their flags, never created when
+        disabled)."""
+        wins = ["main"]
+        if self.settings.get("island_enabled", False):
+            wins.append("island")
+        if self.settings.get("pet_enabled", False):
+            wins.append("pet")
+        return wins
+
+    def _selftest_ui_files(self):
+        """UI files the startup self-test checks (v1.4.1: island/pet
+        files only when their flags are on - a disabled window's files
+        are never required)."""
+        files = ["index.html", "app.js", "styles.css",
+                 "assets/avatar-cat.png", "assets/avatar-dog.png",
+                 "assets/avatar-boy.png", "assets/avatar-girl.png"]
+        if self.settings.get("island_enabled", False):
+            files.append("island.html")
+        if self.settings.get("pet_enabled", False):
+            files += ["pet.html", "assets/cat-run.png"]
+        return files
+
+    def _watchdog_pages(self):
+        """Pages the bridge-ready watchdog waits for (v1.4.1)."""
+        return set(self._enabled_windows())
 
     # -- window management ---------------------------------------------------
     def _island_rect(self):
@@ -960,7 +1136,10 @@ class MemoApp:
     def show_main(self):
         """Open the main window out of the island pill (v1.3.1 morph:
         it grows from the pill to full size in ~0.45s). If it is already
-        open, just bring it forward."""
+        open, just bring it forward.
+        v1.4.1: the island is DISABLED by default - the main window
+        just shows (there is no pill to grow from). The morph path
+        below only runs when the island is re-enabled."""
         if not self.main_window:
             return
         if self._main_visible:
@@ -970,6 +1149,14 @@ class MemoApp:
                 pass
             return
         self._main_visible = True
+        if not self.settings.get("island_enabled", False):
+            try:
+                self.main_window.show()
+            except Exception:
+                pass
+            self._main_rect = self._main_full_rect()
+            info("ui", "Main window opened")
+            return
         island_rect = self._island_rect()
         full_rect = self._main_full_rect()
 
@@ -1019,7 +1206,14 @@ class MemoApp:
 
     def hide_main(self):
         """Close the main window back into the island pill (v1.3.1 morph:
-        it shrinks into the pill in ~0.45s, then the island appears)."""
+        it shrinks into the pill in ~0.45s, then the island appears).
+        v1.4.1: with the island DISABLED, X hides the main window to
+        the SYSTEM TRAY instead (the tray icon is the way back - the
+        standing rule holds: the app never fully closes except through
+        an explicit Quit). If no tray backend exists, it minimizes to
+        the taskbar instead - a hidden window with no tray would strand
+        the user. The morph path below only runs when the island is
+        re-enabled."""
         if not self.main_window or not self._main_visible:
             return
         self._main_visible = False
@@ -1027,6 +1221,20 @@ class MemoApp:
         rect = winshape.get_window_rect(_find_main_hwnd())
         if rect:
             self._main_rect = rect
+        if not self.settings.get("island_enabled", False):
+            try:
+                self.main_window.hide()
+            except Exception:
+                pass
+            if self._tray is not None and self._tray.running:
+                info("ui", "Main window hidden to system tray")
+            else:
+                try:
+                    self.main_window.minimize()
+                except Exception:
+                    pass
+                info("ui", "Main window minimized (no tray backend)")
+            return
         island_rect = self._island_rect()
         start_rect = self._main_rect
 
@@ -1066,14 +1274,18 @@ class MemoApp:
         info("ui", "Main window minimized back to island")
 
     def apply_settings(self):
+        # v1.4.1: NO evaluate_js("applySettingsFromPython()") here
+        # anymore - that re-rendered the Settings form mid-save and
+        # wiped unsaved WhatsApp fields (the v1.4.0 owner-number /
+        # missing-QR bug). Python-side effects only (pet visibility,
+        # behind its flag). The JS save handler re-renders once at the
+        # end, after all saves.
         self.apply_pet_visibility()
-        try:
-            if self.main_window:
-                self.main_window.evaluate_js("applySettingsFromPython()")
-        except Exception:
-            pass
 
     def apply_pet_visibility(self):
+        # v1.4.1: the pet is disabled - there is no pet window to show.
+        if not self.settings.get("pet_enabled", False):
+            return
         if not self.pet_window:
             return
         try:
@@ -1157,11 +1369,15 @@ class MemoApp:
             result = brain.ask_with_tools(
                 text, self.settings.get("ai_name", "Memo"),
                 self.settings.get("user_name", "Mohamed"),
-                self.settings.get("language", "ar"))
+                self.settings.get("language", "ar"),
+                # v1.4.1: the model MUST know when owner mode is open,
+                # or its system prompt refuses source-code questions
+                # with "تواصل مع المطور" even after a successful unlock.
+                owner_unlocked=self.owner_unlocked)
         except Exception as exc:
             error("brain", f"Tool chat failed: {exc}")
             result = {"reply": "حصلت مشكلة وأنا بنفذ، جرّب تاني.",
-                      "engine": "none", "tools_used": 0}
+                      "engine": "", "tools_used": 0}
         with _chats_lock:
             entry = _chats.get(chat_id)
             if entry is not None:
@@ -1242,6 +1458,12 @@ class MemoApp:
 
     def quit(self):
         self._quitting = True
+        # v1.4.1: stop the tray icon first (it holds a window handle).
+        if self._tray is not None:
+            try:
+                self._tray.stop()
+            except Exception:
+                pass
         # v1.4.0: stop the WhatsApp sidecar first (before the windows die).
         if whatsapp_mod is not None:
             try:
@@ -1284,7 +1506,8 @@ class MemoApp:
 
     # -- startup -------------------------------------------------------------
     def _on_main_closing(self):
-        # X button / taskbar close = minimize to island, NOT quit.
+        # X button / taskbar close = hide to the tray (v1.4.1; was
+        # "minimize to island" before the island was removed), NOT quit.
         if self._quitting:
             return True
         self.hide_main()
@@ -1311,10 +1534,14 @@ class MemoApp:
             pv = "unknown"
         info("app", f"pywebview version: {pv}")
         # Bridge-files self-check (v1.2.5): loud log if api.js is missing.
-        _check_bridge_files()
+        # v1.4.1: the file list follows the enabled windows.
+        _check_bridge_files(self._selftest_ui_files())
         # v1.3.1: pet hidden-by-default migration (one-time) + autostart
-        # registry follows the setting (default ON).
-        self._apply_pet_default_migration()
+        # registry follows the setting (default ON). v1.4.1: the
+        # migration only runs while the pet is enabled (otherwise it
+        # would log about a window that does not exist).
+        if self.settings.get("pet_enabled", False):
+            self._apply_pet_default_migration()
         autostart.apply_on_startup(self.settings.get("autostart", True))
         # v1.3.1 second-launch focus: create the named event FIRST, so a
         # second instance can signal the running one to show its window
@@ -1345,45 +1572,81 @@ class MemoApp:
                   lambda: self._quitting),
             daemon=True).start()
         sw, sh = screen_size()
-        # The island starts in its IDLE compact state (v1.2.3).
-        island_x = max(0, (sw - ISLAND_IDLE_W) // 2)
-
         ui_dir = APP_DIR / "ui"
-        self.island_window = webview.create_window(
-            "Memo AI", str(ui_dir / "island.html"),
-            width=ISLAND_IDLE_W, height=ISLAND_IDLE_H, x=island_x, y=12,
-            frameless=True, transparent=False, on_top=True,
-            resizable=False, background_color=ISLAND_BG, js_api=self.api)
+        # v1.4.1: the island window is NEVER created while island_enabled
+        # is False (default) - the code stays, behind the flag.
+        if self.settings.get("island_enabled", False):
+            # The island starts in its IDLE compact state (v1.2.3).
+            island_x = max(0, (sw - ISLAND_IDLE_W) // 2)
+            self.island_window = webview.create_window(
+                "Memo AI", str(ui_dir / "island.html"),
+                width=ISLAND_IDLE_W, height=ISLAND_IDLE_H, x=island_x, y=12,
+                frameless=True, transparent=False, on_top=True,
+                resizable=False, background_color=ISLAND_BG, js_api=self.api)
+        # v1.4.1: the main window opens DIRECTLY at startup (hidden only
+        # while the island is enabled - the old morph opened it from the
+        # pill). min_size=(640,520): the morph to a 190x52 pill is gone
+        # with the island, so the window keeps its full minimum.
         self.main_window = webview.create_window(
             "Memo AI", str(ui_dir / "index.html"),
-            width=MAIN_W, height=MAIN_H, hidden=True,
-            # v1.3.2: min_size=(190,52) so the morph can shrink the window
-            # into the island pill WITHOUT touching Form.MinimumSize from
-            # a background thread (v1.3.1 hang suspect). Trade-off: the
-            # user can resize the main window smaller than 640x520; the
-            # flex layout still works, just cramped.
-            min_size=(190, 52), js_api=self.api)
+            width=MAIN_W, height=MAIN_H,
+            hidden=self.settings.get("island_enabled", False),
+            min_size=(640, 520), js_api=self.api)
+        if not self.settings.get("island_enabled", False):
+            # The window starts visible: _main_visible must agree, or
+            # hide_main() would refuse to hide it on X (tray).
+            self._main_visible = True
         self.main_window.events.closing += self._on_main_closing
-        # v1.3.1: the pet starts HIDDEN unless the user left it visible
-        # (hidden= at creation avoids a flash of the cat at startup).
-        self.pet_window = webview.create_window(
-            "Memo AI Pet", str(ui_dir / "pet.html"),
-            width=PET_SIZE, height=PET_SIZE,
-            x=sw - PET_SIZE - 20, y=sh - PET_SIZE - 90,
-            frameless=True, transparent=False, on_top=True,
-            resizable=False, background_color=PET_BG, js_api=self.api,
-            hidden=not self.settings.get("pet_visible", False))
+        # v1.4.1: the pet window is NEVER created while pet_enabled is
+        # False (default) - no roaming window, no black rectangle.
+        if self.settings.get("pet_enabled", False):
+            # v1.3.1: the pet starts HIDDEN unless the user left it visible
+            # (hidden= at creation avoids a flash of the cat at startup).
+            self.pet_window = webview.create_window(
+                "Memo AI Pet", str(ui_dir / "pet.html"),
+                width=PET_SIZE, height=PET_SIZE,
+                x=sw - PET_SIZE - 20, y=sh - PET_SIZE - 90,
+                frameless=True, transparent=False, on_top=True,
+                resizable=False, background_color=PET_BG, js_api=self.api,
+                hidden=not self.settings.get("pet_visible", False))
+
+        # v1.4.1: system tray (the island is gone - the tray is the way
+        # back after closing the window). A missing tray backend never
+        # blocks startup; X then minimizes to the taskbar instead.
+        try:
+            self._tray = tray_mod.TrayManager(
+                on_open=self.show_main, on_quit=self.quit,
+                icon_path=APP_DIR / "ui" / "assets" / "avatar-cat.png")
+            if self._tray.start():
+                info("app", "System tray icon started")
+            else:
+                warn("app", "System tray not available - closing the "
+                            "window will minimize to the taskbar instead")
+        except Exception as exc:
+            self._tray = None
+            warn("app", f"Could not start system tray: {exc}")
 
         threading.Thread(target=self.morning_briefing, daemon=True).start()
         # v1.3.2: bridge-ready watchdog - each page logs READY on
         # pywebviewready; after 20s the log names any page that never
-        # became ready, with the exact reason.
-        threading.Thread(target=_bridge_ready_watchdog, daemon=True).start()
-        info("app", "Island started - full window opens only on tap")
+        # became ready, with the exact reason. v1.4.1: only the enabled
+        # pages are waited for (main only, by default).
+        threading.Thread(target=_bridge_ready_watchdog,
+                         args=(self._watchdog_pages(),),
+                         daemon=True).start()
+        info("app", "Memo AI started - main window only "
+                    "(pet + island disabled)")
         # v1.3.1: webview.start(func) runs func in a thread BEFORE any
         # window exists, so _apply_window_regions polls until the HWNDs
         # appear (up to 60s) and then shapes the windows with regions.
-        webview.start(self._apply_window_regions)
+        # v1.4.1: with no island/pet there is nothing to shape - plain
+        # webview.start() (the region thread only runs when at least
+        # one of them is enabled).
+        if self.settings.get("island_enabled", False) \
+                or self.settings.get("pet_enabled", False):
+            webview.start(self._apply_window_regions)
+        else:
+            webview.start()
         info("app", "Memo AI exited")
 
     def _apply_window_regions(self):
@@ -1394,23 +1657,35 @@ class MemoApp:
         region lives on the HWND so it survives hide/show. The island
         region is re-applied on every resize (Api.island_resize). Every
         outcome is logged, and success is only claimed after a read-back
-        verification (see winshape)."""
+        verification (see winshape).
+        v1.4.1: with the pet + island disabled there is nothing to
+        shape - the method returns immediately (run() only calls it
+        when at least one of them is enabled; this is belt and
+        braces)."""
         # The pet silhouette rects are built once from the bundled PNG.
-        try:
-            png = APP_DIR / "ui" / "assets" / "avatar-cat.png"
-            self._pet_region_rects = winshape.build_pet_region_rects(png)
-            if self._pet_region_rects:
-                info("app", f"Pet region rects built from avatar-cat.png "
-                            f"({len(self._pet_region_rects)} rects)")
-            else:
-                error("app", "Pet region rects NOT built - pet window "
-                             "will stay rectangular until this is fixed")
-        except Exception as exc:
-            error("app", f"Pet region build failed: {exc}")
-        pending = {"island": True, "pet": True}
+        # v1.4.1: only when the pet is enabled.
+        if self.settings.get("pet_enabled", False):
+            try:
+                png = APP_DIR / "ui" / "assets" / "avatar-cat.png"
+                self._pet_region_rects = winshape.build_pet_region_rects(png)
+                if self._pet_region_rects:
+                    info("app", f"Pet region rects built from avatar-cat.png "
+                                f"({len(self._pet_region_rects)} rects)")
+                else:
+                    error("app", "Pet region rects NOT built - pet window "
+                                 "will stay rectangular until this is fixed")
+            except Exception as exc:
+                error("app", f"Pet region build failed: {exc}")
+        pending = {}
+        if self.settings.get("island_enabled", False):
+            pending["island"] = True
+        if self.settings.get("pet_enabled", False):
+            pending["pet"] = True
+        if not pending:
+            return
         deadline = time.time() + 60
         while time.time() < deadline and any(pending.values()):
-            if pending["island"]:
+            if pending.get("island"):
                 # v1.3.2: EnumWindows ONLY - the old _window_hwnd() read
                 # window.native.Handle from THIS thread (WinForms creates
                 # a Form's handle on the calling thread -> frozen window).
@@ -1425,7 +1700,7 @@ class MemoApp:
                         hwnd, w, h, winshape.island_radius(w, h), "island")
                     winshape.log_window("island", hwnd, "after region")
                     pending["island"] = False
-            if pending["pet"]:
+            if pending.get("pet"):
                 hwnd = _find_hwnd_by_title("Memo AI Pet")
                 if hwnd:
                     self._pet_hwnd = hwnd

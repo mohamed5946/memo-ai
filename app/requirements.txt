@@ -9,3 +9,4 @@ sounddevice>=0.4.6
 faster-whisper>=1.0
 numpy>=1.26
 Pillow>=10  # v1.3.1: pet window region from the cat PNG's alpha channel
+pystray>=0.19  # v1.4.1: system tray icon (the island is gone)

@@ -106,11 +106,16 @@ hiddenimports = [
     "webview.platforms.edgechromium",
     "webview.platforms.winforms",
     "webview.platforms.mshtml",
+    # v1.4.1: pystray's Win32 backend is imported dynamically
+    # (pystray._base -> pystray._win32) - PyInstaller misses it
+    # unless named explicitly.
+    "pystray._win32",
+    "pystray._base",
 ]
 
 # Heavy binary deps: collect the whole package (modules + native libs).
 for _pkg in ("webview", "faster_whisper", "ctranslate2", "av",
-             "sounddevice", "groq", "clr_loader"):
+             "sounddevice", "groq", "clr_loader", "pystray", "PIL"):
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b

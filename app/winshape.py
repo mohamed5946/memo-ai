@@ -136,7 +136,12 @@ def get_window_rect(hwnd: int):
 # --- region application (verified, never a blind claim) --------------------
 def _verify_region(hwnd: int, expected_box):
     """Read the region back (GetWindowRgn + GetRgnBox) and compare its
-    bounding box with the expected one. Returns (ok, box-or-None)."""
+    bounding box with the expected one. Returns (ok, box-or-None).
+    v1.4.1: ±1px tolerance per coordinate. GetRgnBox reads back 1px
+    smaller on right/bottom for round-rect regions (the field log
+    shows a constant 1px difference, e.g. (0,0,300,150) vs
+    (0,0,301,151)) while the region IS applied - exact equality
+    spammed VERIFICATION FAILED errors for a correct region."""
     try:
         user32 = _user32()
         gdi32 = ctypes.windll.gdi32
@@ -148,7 +153,9 @@ def _verify_region(hwnd: int, expected_box):
             box = _RECT()
             gdi32.GetRgnBox(hrgn, ctypes.byref(box))
             got = (box.left, box.top, box.right, box.bottom)
-            return got == tuple(expected_box), got
+            ok = all(abs(g - e) <= 1
+                     for g, e in zip(got, tuple(expected_box)))
+            return ok, got
         finally:
             gdi32.DeleteObject(hrgn)
     except Exception:

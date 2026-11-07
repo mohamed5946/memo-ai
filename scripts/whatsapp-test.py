@@ -179,16 +179,19 @@ def test_service_with_fake_sidecar() -> None:
     auth_dir.mkdir()
 
     # Mock the brain (no Groq, no network): record which entry point ran.
-    calls = {"tools": [], "ask": []}
+    calls = {"tools": [], "ask": [], "owner_flags": []}
 
-    def fake_ask_with_tools(text, ai_name, user_name, lang, history=None):
+    def fake_ask_with_tools(text, ai_name, user_name, lang, history=None,
+                            owner_unlocked=False):
         calls["tools"].append(text)
+        calls["owner_flags"].append(owner_unlocked)
         (history if history is not None else []).append(
             {"role": "user", "content": text})
         return {"reply": "تمام، فتحت المفكرة.", "engine": "groq",
                 "tools_used": 1, "tools_disabled": False}
 
-    def fake_ask(text, ai_name, user_name, lang, history=None):
+    def fake_ask(text, ai_name, user_name, lang, history=None,
+                 owner_unlocked=False):
         calls["ask"].append(text)
         (history if history is not None else []).append(
             {"role": "user", "content": text})
@@ -227,6 +230,9 @@ def test_service_with_fake_sidecar() -> None:
               f"got {state['linked_phone']!r}")
         check("owner routed to tools",
               calls["tools"] == ["افتح المفكرة"], f"got {calls['tools']!r}")
+        check("owner routed with owner mode on (v1.4.1)",
+              calls["owner_flags"] == [True],
+              f"got {calls['owner_flags']!r}")
         check("guest routed to chat only",
               calls["ask"] == ["hello"], f"got {calls['ask']!r}")
         check("two replies sent", len(sends) == 2, f"got {len(sends)}")

@@ -535,28 +535,35 @@ def _tool_run_command(args: dict) -> str:
 
 def execute_tool(name: str, arguments: dict) -> str:
     """Run one tool call from the brain. Returns a result string for the model.
-    Unknown tools and bad arguments are reported, never crash."""
+    Unknown tools and bad arguments are reported, never crash.
+    v1.4.1: the result is GUARANTEED to be a string - a None result
+    used to become a tool message with content=None, and the NEXT
+    Groq/Ollama request 400d on it (the v1.4.0 field failure)."""
     info("tools", f"Tool requested: {name} {json.dumps(arguments, ensure_ascii=False)[:200]}")
     try:
         if name == "open_app":
-            return _tool_open_app(arguments)
-        if name == "create_file":
-            return _tool_create_file(arguments, overwrite=False)
-        if name == "write_file":
-            return _tool_create_file(arguments, overwrite=True)
-        if name == "edit_file":
-            return _tool_edit_file(arguments)
-        if name == "read_file":
-            return _tool_read_file(arguments)
-        if name == "list_dir":
-            return _tool_list_dir(arguments)
-        if name == "run_command":
-            return _tool_run_command(arguments)
+            result = _tool_open_app(arguments)
+        elif name == "create_file":
+            result = _tool_create_file(arguments, overwrite=False)
+        elif name == "write_file":
+            result = _tool_create_file(arguments, overwrite=True)
+        elif name == "edit_file":
+            result = _tool_edit_file(arguments)
+        elif name == "read_file":
+            result = _tool_read_file(arguments)
+        elif name == "list_dir":
+            result = _tool_list_dir(arguments)
+        elif name == "run_command":
+            result = _tool_run_command(arguments)
+        else:
+            warn("tools", f"Unknown tool requested: {name}")
+            return f"الأداة '{name}' مش موجودة."
     except Exception as exc:
         error("tools", f"Tool {name} crashed: {exc}")
         return f"حصل خطأ وأنا بنفذ {name}: {exc}"
-    warn("tools", f"Unknown tool requested: {name}")
-    return f"الأداة '{name}' مش موجودة."
+    if result is None:
+        return ""
+    return result if isinstance(result, str) else str(result)
 
 
 TOOL_SCHEMAS = [

@@ -424,12 +424,16 @@ class WhatsAppService:
             # the tool dialogs are auto-allowed in this thread (see
             # tools.trusted_caller); the destructive blocklist still
             # applies before any permission check.
+            # v1.4.1: the owner phone IS owner mode - the model's
+            # source-code instruction flips (it answers source-code
+            # questions instead of refusing), same as the in-app code
+            # unlock. Guests (below) keep the default False.
             with tools.trusted_caller():
                 result = brain.ask_with_tools(
                     text, ai_name, user_name, lang,
-                    history=self._owner_history)
+                    history=self._owner_history, owner_unlocked=True)
             reply = result.get("reply", "")
-            engine = result.get("engine", "none")
+            engine = result.get("engine", "")
             mode = "owner"
         else:
             # REPLY mode: chat only, no tools, private per-sender history
@@ -442,7 +446,7 @@ class WhatsAppService:
                 oldest = next(iter(self._guest_histories))
                 del self._guest_histories[oldest]
             reply = result.get("reply", "")
-            engine = result.get("engine", "none")
+            engine = result.get("engine", "")
             mode = "guest"
             if not owner:
                 warn("whatsapp", "Message arrived but no owner number is "
@@ -450,7 +454,8 @@ class WhatsAppService:
                                  "number in Settings to enable owner mode)")
 
         reply = (reply or "").strip()
-        if engine == "none" or not reply:
+        # v1.4.1: engine is "" when no engine answered (never "none").
+        if not engine or not reply:
             reply = ("مش قادر أفكر دلوقتي — المخ مش متاح، جرّب تاني كمان شوية."
                      if lang == "ar" else
                      "I can't think right now — the brain is unavailable, try again shortly.")

@@ -94,8 +94,11 @@ class TestPersonaAndCapabilities(unittest.TestCase):
         self.assertIn("الواتساب", p)
         self.assertIn("ترجمة الشاشة", p)
 
-    def test_whatsapp_state_is_building_not_linked(self):
-        self.assertEqual(capabilities.WHATSAPP, "building")
+    def test_whatsapp_state_is_ready_not_linked(self):
+        # v1.4.0: WhatsApp linking is BUILT (Baileys sidecar) - the
+        # v1.3.2 "building" state is gone. Unlinked = the brain must
+        # say it is NOT linked yet and point at the QR setup.
+        self.assertEqual(capabilities.WHATSAPP, "ready")
         self.assertFalse(capabilities.WHATSAPP_LINKED)
         line = capabilities.whatsapp_status_line("ar")
         self.assertIn("مش مربوط", line)
@@ -233,9 +236,15 @@ class TestHangFixes(unittest.TestCase):
         self.assertNotIn("clear_min_size(native)", src)
         self.assertNotIn("restore_min_size(native", src)
 
-    def test_main_window_min_size_allows_pill_morph(self):
+    def test_main_window_min_size_is_full(self):
+        # v1.4.1: the island (and its 190x52 pill morph) is disabled -
+        # the main window keeps its full minimum. The morph code stays
+        # behind the island flag for a future re-enable.
         src = _read("app/main.py")
-        self.assertIn("min_size=(190, 52)", src)
+        self.assertIn("min_size=(640, 520)", src)
+        self.assertNotIn("min_size=(190, 52)", src)
+        self.assertIn('if not self.settings.get("island_enabled", False):',
+                      src)
 
     def test_morph_math_endpoints(self):
         self.assertEqual(winshape.ease_in_out_cubic(0), 0)
@@ -265,6 +274,15 @@ class TestBlackBoxAndPet(unittest.TestCase):
 
             app.pet_window = FakeWindow()
             api = main.Api()
+            # v1.4.1: with the pet DISABLED, no move ever happens -
+            # even when the (stale) pet_visible setting says visible.
+            app.settings["pet_enabled"] = False
+            app.settings["pet_visible"] = True
+            self.assertEqual(api.move_pet(100, 200)["disabled"], True)
+            self.assertEqual(calls, [], "disabled pet must never be moved")
+            # With the pet re-enabled, the v1.3.2 black-box rule still
+            # holds: a hidden pet is never moved.
+            app.settings["pet_enabled"] = True
             app.settings["pet_visible"] = False
             api.move_pet(100, 200)
             self.assertEqual(calls, [], "hidden pet must never be moved")
@@ -347,15 +365,15 @@ class TestSelfTestAndInstaller(unittest.TestCase):
 
     def test_version_consistency(self):
         import main
-        self.assertEqual(main.VERSION, "1.3.2")
-        self.assertIn("v1.3.2", _read("app/ui/index.html"))
-        self.assertIn("1, 3, 2, 0",
+        self.assertEqual(main.VERSION, "1.4.1")
+        self.assertIn("v1.4.1", _read("app/ui/index.html"))
+        self.assertIn("1, 4, 1, 0",
                       _read("installer/file_version_info.txt"))
         # version.json is updated BY THE CI after the tag build (it
         # carries the real release hashes) - it must NOT be hand-edited
-        # here, so it still says 1.3.1 until the tag build lands.
+        # here, so it still says 1.4.0 until the tag build lands.
         manifest = json.loads(_read("version.json"))
-        self.assertEqual(manifest["version"], "1.3.1")
+        self.assertEqual(manifest["version"], "1.4.0")
 
 
 class TestLiveGroqToolCall(unittest.TestCase):

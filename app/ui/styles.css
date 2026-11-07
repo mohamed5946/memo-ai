@@ -251,8 +251,26 @@ header .spacer { flex: 1; }
 }
 .avatar-opt img { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; display: block; margin: 0 auto 6px; }
 .avatar-opt.selected { border-color: var(--gold); background: var(--gold-soft); }
-.avatar-opt.soon { opacity: 0.45; }
-.avatar-opt .soon-tag { font-size: 11px; color: var(--muted); }
+/* v1.4.1: Settings menu (DeliveryFlow-style) - a vertical stack of
+   clear buttons, each opening its own section with a back button. */
+.settings-view[hidden] { display: none; }
+.menu-btn {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  border: 1px solid var(--border); background: var(--glass);
+  border-radius: 16px; padding: 15px 16px; margin-bottom: 10px;
+  font-size: 16px; font-weight: 700; text-align: start; color: inherit;
+  transition: border-color 0.25s ease, background 0.25s ease, transform 0.18s var(--ease);
+}
+.menu-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--gold); }
+.menu-btn .menu-ico { font-size: 20px; }
+.menu-btn .menu-arrow { margin-inline-start: auto; color: var(--muted); font-size: 18px; }
+.back-btn {
+  background: var(--glass-2); border: 1px solid var(--border);
+  font-size: 14px; padding: 8px 16px; border-radius: 999px; margin-bottom: 4px;
+}
+.save-status { font-size: 13px; color: var(--gold); align-self: center; }
+.version-line { font-size: 13px; color: var(--muted); }
+
 .gold-btn {
   background: linear-gradient(160deg, #f0d48a, #d4af6a); color: #231a05;
   font-weight: 700; font-size: 15px; padding: 12px 22px; border-radius: 999px;

@@ -55,6 +55,13 @@ DEFAULTS = {
     # pet_visible=True, so the new hidden-by-default rule is applied
     # once on the first v1.3.1 run, then the user's own choice rules.
     "pet_default_v131": False,
+    # v1.4.1: the pet + island are DISABLED by the user's decision
+    # (2026-11-07: "they still have problems") - their windows are
+    # NEVER created and no pet/island code runs at startup. The code
+    # stays behind these flags (not deleted) so they can come back
+    # once fixed - flip them in settings.json to re-enable.
+    "pet_enabled": False,
+    "island_enabled": False,
     # v1.3.0: NO owner_code setting anymore. The owner code is stored
     # ONLY as a SHA-256 hash in main.py (OWNER_CODE_HASH) - never as
     # plaintext in settings.json, logs, or anywhere else.

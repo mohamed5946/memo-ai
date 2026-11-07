@@ -1,7 +1,7 @@
 ; Memo AI — Inno Setup 6 script
 ; Build (from the repo root, on Windows, after PyInstaller):
 ;   ISCC installer\memo-ai.iss
-;   or with a version override:  ISCC /DAppVersion=1.2.3 installer\memo-ai.iss
+;   or with a version override:  ISCC /DAppVersion=1.4.1 installer\memo-ai.iss
 ; Output: release\MemoAI-Setup-<version>.exe
 ;
 ; Per-user install to %LOCALAPPDATA%\Programs\Memo AI — no admin needed.
@@ -18,7 +18,7 @@
 ; without transparency until WebView2 is installed later.
 
 #ifndef AppVersion
-  #define AppVersion "1.2.3"
+  #define AppVersion "1.4.1"
 #endif
 
 #define AppName "Memo AI"
@@ -79,7 +79,7 @@ Name: "{group}\Memo AI"; Filename: "{app}\Memo AI.exe"
 Name: "{userdesktop}\Memo AI"; Filename: "{app}\Memo AI.exe"; Tasks: desktopicon
 
 [Run]
-; After install, offer to run the app (it starts as the Dynamic Island only).
+; After install, offer to run the app (v1.4.1: it starts with the main window directly - the island is gone).
 ; Skipped on silent installs (the updater relaunches the app itself).
 Filename: "{app}\Memo AI.exe"; Description: "{cm:LaunchProgram,Memo AI}"; Flags: nowait postinstall skipifsilent
 
@@ -163,7 +163,7 @@ begin
       Exit;
   end;
   MsgBox('Microsoft WebView2 Runtime مش متثبت على الجهاز ده (أو تعذّر تنزيله دلوقتي).' + #13#10#13#10 +
-         'هيكمل تثبيت Memo AI عادي، بس النوافذ الشفافة (الجزيرة والقطة) ممكن يظهر وراها مستطيل داكن لحد ما WebView2 يتثبّت.' + #13#10 +
+         'هيكمل تثبيت Memo AI عادي، بس بعض المميزات ممكن متظهرش صح لحد ما WebView2 يتثبّت.' + #13#10 +
          'ممكن تثبّته لاحقاً من الرابط الرسمي: https://go.microsoft.com/fwlink/p/?LinkId=2124703',
          mbInformation, MB_OK);
 end;

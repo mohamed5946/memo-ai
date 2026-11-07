@@ -21,6 +21,33 @@ SOURCE_CODE_PATTERNS = [
 SOURCE_CODE_REPLY_AR = "لو عايز الكود أو السورس، تواصل مع المطور."
 SOURCE_CODE_REPLY_EN = "If you need the source code, contact the developer."
 
+# v1.4.1: "who is the developer?" - answered with PUBLIC info only.
+# The developer is Mohamed El Sayed (CS student, built Memo AI +
+# DeliveryFlow). Phone numbers, student code, emails, addresses and
+# keys are FORBIDDEN in this answer - even for the owner. Same facts
+# as the Settings About section (name + portfolio button) and the
+# system-prompt block in brain.py.
+DEVELOPER_PATTERNS = [
+    "مين المطور", "من المطور", "مين اللي عمل البرنامج",
+    "مين اللي عملك", "مين عملك", "مين صممك", "من صمم البرنامج",
+    "المطور مين", "مين صاحب البرنامج", "مين اللي برمجك",
+    "من برمجك", "مين مطور البرنامج", "مين اللي عمل memo",
+    "who is the developer", "who made you", "who created you",
+    "who developed you", "who is your developer", "who built you",
+    "who is the developer of memo ai", "who made memo ai",
+]
+DEVELOPER_REPLY_AR = (
+    "المطوّر هو محمد السيد (Mohamed El Sayed) — طالب علوم حاسب "
+    "(Computer Science)، وهو اللي طوّر Memo AI (وكمان DeliveryFlow "
+    "وتطبيقات تانية). البورتفوليو بتاعه: "
+    "https://mohamed5946.github.io/portfolio/ — وGitHub بتاعه: "
+    "https://github.com/mohamed5946")
+DEVELOPER_REPLY_EN = (
+    "The developer is Mohamed El Sayed — a Computer Science student "
+    "who built Memo AI (and DeliveryFlow and other apps). "
+    "His portfolio: https://mohamed5946.github.io/portfolio/ — "
+    "and his GitHub: https://github.com/mohamed5946")
+
 
 def _normalize(text: str) -> str:
     text = unicodedata.normalize("NFKD", text)
@@ -53,7 +80,14 @@ def check(text: str, owner_unlocked: bool, language: str = "ar") -> dict | None:
             return {"reply": item.get("reply", "مش هقدر أساعد في ده."),
                     "source": "blocked"}
 
-    # 2. Source-code rule (owner mode bypasses it).
+    # 2. Developer question (v1.4.1: public info only, deterministic).
+    for pat in DEVELOPER_PATTERNS:
+        if _normalize(pat) in norm:
+            info("rules", "Developer question - public info only")
+            return {"reply": DEVELOPER_REPLY_AR if language == "ar"
+                    else DEVELOPER_REPLY_EN, "source": "rule"}
+
+    # 3. Source-code rule (owner mode bypasses it).
     if not owner_unlocked:
         for pat in SOURCE_CODE_PATTERNS:
             if _normalize(pat) in norm:
