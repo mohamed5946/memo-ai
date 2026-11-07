@@ -1,8 +1,8 @@
 {
   "notes": "v1.3.1: إصلاح دوسة الجزيرة والقطة + شفافية حقيقية من غير أي مستطيل (window regions) + شريط تقدّم التحميل + التشغيل التلقائي مع ويندوز + أنيميشن تصغير/تكبير بين النافذة والجزيرة + التشغيل التاني بيركّز النافذة + القطة بتجري برجليها + القطة مخفية افتراضياً.",
-  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.3.1/MemoAI-Setup-1.3.1.exe",
-  "sha256": "3a8265289a1ef3b26ab35dc21702e51ee4cb1a5346ff8a53b9794fb46d6b2f3c",
-  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.3.1/memo-ai-v1.3.1.zip",
-  "version": "1.3.1",
-  "setup_sha256": "f20e49f60dd208d8caf8ba9b176874f9e990f26d3714ef462d0673a36750e77e"
+  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.3.2/MemoAI-Setup-1.3.2.exe",
+  "sha256": "6bb463905ce7336153eaf02c8c0e6fe59e7ec8d874b95f545e068cad36eea051",
+  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.3.2/memo-ai-v1.3.2.zip",
+  "version": "1.3.2",
+  "setup_sha256": "ed1280fdb66902fe745e70720428185fa3d95aea978cc2012cf47bfe653d070b"
 }
