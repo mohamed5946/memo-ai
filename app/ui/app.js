@@ -63,6 +63,8 @@ const I18N = {
     perm_allowed: "تم السماح ✅",
     perm_denied: "تم الرفض ❌",
     perm_timeout: "انتهت المهلة — تم الرفض ⏱️",
+    perm_more: "عرض المزيد ▾",
+    perm_less: "عرض أقل ▴",
     menu_memory: "الذاكرة",
     sec_memory: "الذاكرة الطويلة",
     mem_hint: "دي الحاجات اللي Memo AI فاكرها عنك من المحادثات — محفوظة على جهازك بس، ومبتترفعش لأي مكان. تقدر تمسح أي حاجة منها، أو تمسح الكل.",
@@ -190,6 +192,8 @@ const I18N = {
     perm_allowed: "Allowed ✅",
     perm_denied: "Denied ❌",
     perm_timeout: "Timed out — denied ⏱️",
+    perm_more: "Show more ▾",
+    perm_less: "Show less ▴",
     menu_memory: "Memory",
     sec_memory: "Long-term memory",
     mem_hint: "Things Memo AI remembers about you from conversations — stored on your laptop only, never uploaded. You can delete any of them, or wipe everything.",
@@ -542,7 +546,20 @@ function addPermCard(p) {
     const detail = document.createElement("pre");
     detail.className = "perm-detail";
     detail.textContent = p.detail;
+    // v1.4.3: detail is clamped to 2 lines by CSS; tap it (or the
+    // toggle below) to expand to the full scrollable block.
+    const more = document.createElement("button");
+    more.className = "perm-more";
+    more.type = "button";
+    more.textContent = t("perm_more");
+    const toggleDetail = () => {
+      const open = detail.classList.toggle("expanded");
+      more.textContent = open ? t("perm_less") : t("perm_more");
+    };
+    more.addEventListener("click", toggleDetail);
+    detail.addEventListener("click", toggleDetail);
     div.appendChild(detail);
+    div.appendChild(more);
   }
   const btns = document.createElement("div");
   btns.className = "perm-btns";

@@ -317,24 +317,64 @@ header .spacer { flex: 1; }
   border-radius: 16px; padding: 10px; box-shadow: 0 8px 22px rgba(0,0,0,.45); }
 .wa-qr-wrap .hint { margin-top: 8px; }
 
-/* v1.4.2: in-chat permission card (replaces the old Allow/Deny modal).
-   Lives in the chat flow like any message; gold border while pending,
-   green/red/grey tint once resolved. Buttons die after the choice. */
+/* v1.4.3: in-chat permission card (replaces the old Allow/Deny modal).
+   Compact by design — sized like a normal chat message, NOT a
+   full-width panel: capped at 320px wide, tight padding, small type,
+   detail clamped to 2 lines with a tap-to-expand toggle. Entrance is
+   a gentle scale-up + fade (0.22s ease-out); buttons squash to 0.96
+   on press; the resolved state fades in. Nothing pops suddenly.
+   Gold border while pending, green/red/grey tint once resolved.
+   Buttons die after the choice. */
 .msg.perm {
+  max-width: 320px;
+  align-self: flex-end;
+  padding: 7px 10px;
+  font-size: 13px;
+  line-height: 1.4;
   background: linear-gradient(180deg, rgba(232,201,122,0.10), rgba(232,201,122,0.04));
   border: 1px solid rgba(232,201,122,0.55);
-  border-radius: 16px;
+  border-radius: 14px;
+  animation: perm-in 0.22s var(--ease) both;
 }
+@keyframes perm-in {
+  from { opacity: 0; transform: scale(0.9) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.msg.perm .perm-kind { font-size: 11px; margin: 0 0 1px; }
+.msg.perm .perm-summary { font-size: 13px; margin: 1px 0 5px; line-height: 1.4; }
 .msg.perm .perm-detail {
   background: rgba(0,0,0,0.25); border: 1px solid var(--border);
-  border-radius: 10px; padding: 8px 10px; font-size: 12.5px;
-  white-space: pre-wrap; word-break: break-word; margin: 8px 0;
-  max-height: 140px; overflow-y: auto; direction: rtl; text-align: right;
+  border-radius: 8px; padding: 4px 8px; font-size: 12px; line-height: 1.45;
+  white-space: pre-wrap; word-break: break-word; margin: 5px 0 0;
+  direction: rtl; text-align: right; cursor: pointer;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.msg.perm .perm-btns { display: flex; gap: 10px; margin-top: 10px; }
-.msg.perm .perm-btns button { flex: 1; }
+.msg.perm .perm-detail.expanded {
+  display: block; max-height: 140px; overflow-y: auto;
+}
+.msg.perm .perm-more {
+  display: block; margin: 1px 0 0; padding: 0;
+  font-size: 11px; line-height: 1.2; color: var(--gold);
+  background: none; border: none; cursor: pointer; text-align: start;
+}
+.msg.perm .perm-btns { display: flex; gap: 8px; margin-top: 6px; }
+.msg.perm .perm-btns button {
+  flex: 1; min-height: 30px; padding: 6px 12px; font-size: 13px;
+  transition: transform 0.15s var(--ease), box-shadow 0.18s var(--ease),
+    background 0.25s ease, opacity 0.2s ease;
+}
+.msg.perm .perm-btns button:not(:disabled):active { transform: scale(0.96); }
 .msg.perm .perm-btns button:disabled { opacity: 0.45; cursor: default; }
-.msg.perm .perm-state { font-weight: 700; font-size: 13.5px; margin-top: 10px; }
+.msg.perm .meta { font-size: 10px; margin-top: 2px; }
+.msg.perm .perm-state {
+  font-weight: 700; font-size: 12.5px; margin-top: 8px;
+  animation: perm-state-in 0.2s var(--ease) both;
+}
+@keyframes perm-state-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
 .msg.perm.resolved-allowed { border-color: rgba(74,222,128,0.55); }
 .msg.perm.resolved-allowed .perm-state { color: #4ade80; }
 .msg.perm.resolved-denied { border-color: rgba(248,113,113,0.45); opacity: 0.85; }
