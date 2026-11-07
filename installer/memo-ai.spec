@@ -27,6 +27,60 @@ datas = [
     (os.path.join(APP, "data"), "app/data"),
 ]
 
+# v1.4.0: WhatsApp sidecar (Baileys) + bundled Node runtime.
+# The sidecar is REQUIRED for WhatsApp linking: fail loudly if its
+# entry point is missing. The Node runtime is downloaded by CI
+# (portable Node 20 LTS -> app/whatsapp_sidecar/node/node.exe); a local
+# build without it fails with instructions, never silently ships a
+# WhatsApp-less installer.
+_wa_dir = os.path.join(APP, "whatsapp_sidecar")
+if not os.path.isfile(os.path.join(_wa_dir, "sidecar.js")):
+    raise RuntimeError(
+        "WhatsApp sidecar.js missing — cannot build an installer "
+        "without it: " + os.path.join(_wa_dir, "sidecar.js"))
+if not os.path.isfile(os.path.join(_wa_dir, "node", "node.exe")):
+    raise RuntimeError(
+        "Bundled node.exe missing — the WhatsApp sidecar needs the "
+        "Node 20 LTS runtime at app/whatsapp_sidecar/node/node.exe "
+        "(CI downloads it; for a local build, download the portable "
+        "Node 20 win-x64 zip from nodejs.org/dist and copy node.exe there)")
+
+# node_modules pruning: bundle only what the sidecar can load on
+# Windows. Skipped (never required at runtime): .bin symlinks, *.map /
+# *.md / *.d.ts / *.ts, @types, test/tests/example dirs, the npm
+# package-lock, and sharp's non-Windows native binaries (@img/sharp-*
+# without 'win32' in the name - npm installs per-platform, so on the
+# Windows CI runner only the win32 ones exist at all).
+_WA_SKIP_DIRS = {"test", "tests", "example", "examples", ".bin", "@types"}
+_WA_SKIP_SUFFIXES = (".map", ".md", ".d.ts", ".ts")
+_WA_SKIP_FILES = {"package-lock.json", ".package-lock.json"}
+
+
+def _wa_datas():
+    out = []
+    for root, dirs, files in os.walk(_wa_dir):
+        rel_root = os.path.relpath(root, _wa_dir)
+        # Prune sharp's platform binaries: keep win32 + colour only.
+        if rel_root.startswith(os.path.join("node_modules", "@img")):
+            parts = rel_root.split(os.sep)
+            if len(parts) >= 3 and parts[2] != "colour" \
+                    and "win32" not in parts[2]:
+                dirs[:] = []
+                continue
+        dirs[:] = [d for d in dirs if d not in _WA_SKIP_DIRS]
+        for name in files:
+            if name in _WA_SKIP_FILES or name.endswith(_WA_SKIP_SUFFIXES):
+                continue
+            src = os.path.join(root, name)
+            dest = os.path.join(
+                "app", "whatsapp_sidecar",
+                rel_root if rel_root != "." else "")
+            out.append((src, dest))
+    return out
+
+
+datas += _wa_datas()
+
 # v1.2.5: EXPLICIT webview/js bridge files. collect_all("webview") SHOULD
 # include them, but the whole window.pywebview bridge (and therefore every
 # button in the app) silently never exists if they are missing from the

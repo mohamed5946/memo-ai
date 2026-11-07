@@ -31,7 +31,16 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXED_DATE = (2026, 1, 1, 0, 0, 0)
 
 EXCLUDE_DIRS = {".git", ".github", "installer", "__pycache__",
-                "release", "dist", "build"}
+                "release", "dist", "build", "node_modules"}
+# v1.4.0: the bundled Node runtime + the WhatsApp session are NEVER in
+# the source zip. node.exe is a binary runtime (the installer bundles
+# it; zip users run with node on PATH). whatsapp_auth/ holds Signal
+# session keys - shipping them would hand over the linked WhatsApp
+# account to anyone with the zip.
+EXCLUDE_PREFIXES = (
+    ("app", "whatsapp_sidecar", "node"),
+    ("app", "data", "whatsapp_auth"),
+)
 # version.json is excluded on purpose: it carries the zip's own SHA-256,
 # so including it would make the hash self-referential (chicken-and-egg).
 EXCLUDE_FILES = {".gitignore", "version.json", "app/data/settings.json"}
@@ -40,6 +49,8 @@ EXCLUDE_FILES = {".gitignore", "version.json", "app/data/settings.json"}
 def _include(path: Path) -> bool:
     rel = path.relative_to(ROOT)
     if any(part in EXCLUDE_DIRS for part in rel.parts):
+        return False
+    if rel.parts[:3] in EXCLUDE_PREFIXES:
         return False
     if rel.as_posix() in EXCLUDE_FILES:
         return False
@@ -90,6 +101,12 @@ def main() -> int:
     assert not any("__pycache__" in n or "/.git/" in n
                    or n.startswith("memo-ai/.git") for n in names), \
         "excluded files leaked into the zip"
+    assert not any("node_modules" in n for n in names), \
+        "node_modules leaked into the zip"
+    assert not any(n.endswith("node.exe") for n in names), \
+        "bundled node.exe leaked into the zip"
+    assert not any("whatsapp_auth" in n for n in names), \
+        "WhatsApp session leaked into the zip"
     print(f"zip: {zip_path} ({len(names)} entries, "
           f"{zip_path.stat().st_size / 1024:.0f} KB)")
     print(f"sha256: {sha}")
