@@ -526,7 +526,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "open_app",
-            "description": "Open a desktop application (VS Code, Notepad, File Explorer, Terminal, Chrome, Edge). Use 'app' for a known app, or 'path' for a specific exe path.",
+            "description": "Open a desktop application on this laptop (VS Code, Notepad, File Explorer, Terminal, Chrome, Edge). Call this tool WHENEVER the user asks to open, run, or launch an app — never answer in text that you cannot open apps; you CAN, through this tool. Use 'app' for a known app, or 'path' for a specific exe path.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -542,7 +542,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "create_file",
-            "description": "Create a NEW text file at the given path with the given content. Fails if the file already exists (use edit_file or write_file then).",
+            "description": "Create a NEW text file at the given path with the given content. Call this WHENEVER the user asks to create/make/write a file — do it with the tool instead of only explaining how. Fails if the file already exists (use edit_file or write_file then).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -615,7 +615,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Run a PowerShell command on Windows and return its output. Destructive commands are blocked. Every run asks the user first.",
+            "description": "Run a PowerShell command on Windows and return its output. Call this WHENEVER the user asks to run/execute a command — do it with the tool instead of only explaining how. Destructive commands are blocked. Every run asks the user first.",
             "parameters": {
                 "type": "object",
                 "properties": {

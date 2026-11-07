@@ -166,6 +166,56 @@ function logEngine() {
   try { bridge.log_js("UA: " + navigator.userAgent); } catch (e) {}
 }
 
+// v1.3.2 bridge-ready marker: Python's watchdog waits for this, so
+// the log proves the main page's bridge came up (or names it missing).
+let _readyLogged = false;
+function logReady() {
+  if (_readyLogged) return;
+  const bridge = getApi();
+  if (!bridge || !bridge.log_js) return;
+  _readyLogged = true;
+  try { bridge.log_js("READY main"); } catch (e) {}
+}
+
+// v1.3.2 HERO CAT FLIES TO THE HEADER (user request): the big hero cat
+// (190px, center) and the small header avatar (44px, top-right) are the
+// same cat. When the conversation starts (first message), the hero
+// flies to the header with an eased FLIP animation - shrink + travel,
+// never a sudden disappearance - then the hero collapses and the chat
+// takes the freed space (only ~2 messages were visible before).
+// Runs once per launch; a reload brings the hero back.
+let heroFlown = false;
+function flyHeroToHeader() {
+  if (heroFlown) return;
+  heroFlown = true;
+  const frame = $("avatar-frame");
+  const logo = document.querySelector("header .logo");
+  const wrap = frame ? frame.closest(".avatar-wrap") : null;
+  if (!frame || !logo || !wrap) {
+    if (wrap) wrap.classList.add("flown");
+    return;
+  }
+  frame.classList.remove("speaking");   // the breathe/speaking animations own `transform`
+  const fr = frame.getBoundingClientRect();
+  const lr = logo.getBoundingClientRect();
+  const dx = (lr.left + lr.width / 2) - (fr.left + fr.width / 2);
+  const dy = (lr.top + lr.height / 2) - (fr.top + fr.height / 2);
+  frame.style.setProperty("--fly-dx", dx + "px");
+  frame.style.setProperty("--fly-dy", dy + "px");
+  frame.classList.add("flying");
+  logo.classList.add("fly-target");     // brief landing pulse on the header avatar
+  setTimeout(() => logo.classList.remove("fly-target"), 800);
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    frame.removeEventListener("transitionend", finish);
+    wrap.classList.add("flown");   // hero collapses -> the chat grows into the freed space
+  };
+  frame.addEventListener("transitionend", finish);
+  setTimeout(finish, 900);   // safety: never leave the hero mid-flight
+}
+
 function applyLang() {
   document.documentElement.lang = LANG;
   document.documentElement.dir = LANG === "ar" ? "rtl" : "ltr";
@@ -222,6 +272,7 @@ async function sendText(text) {
   if (!text || busy) return;
   busy = true;
   addMsg(text, "user");
+  flyHeroToHeader();   // v1.3.2: first message -> the hero cat flies to the header, chat grows
   $("text-input").value = "";
   const bridge = getApi();
   if (!bridge) {
@@ -235,9 +286,9 @@ async function sendText(text) {
     const res = await bridge.chat(text);
     hideTyping();
     if (res && res.pending) {
-      // v1.3.0 owner-mode tool chat: runs in a background thread (the
-      // bridge must never block on a permission). Poll for the result;
-      // the permission poller shows any Allow/Deny dialog meanwhile.
+      // v1.3.2: tool chat runs in a background thread (the bridge must
+      // never block on a permission). Poll for the result; the
+      // permission poller shows any Allow/Deny dialog meanwhile.
       startPermPolling();
       const done = await waitForChatResult(res.chat_id);
       stopPermPolling();
@@ -253,7 +304,7 @@ async function sendText(text) {
   busy = false;
 }
 
-// v1.3.0: poll chat_result() until the background tool chat finishes.
+// v1.3.2: poll chat_result() until the background tool chat finishes.
 function waitForChatResult(chatId) {
   return new Promise((resolve) => {
     const timer = setInterval(async () => {
@@ -303,9 +354,9 @@ async function voiceChat() {
   $("status").classList.add("listening");
   try {
     const res = await bridge.voice_chat();
-    if (res.heard) addMsg(res.heard, "user", t("heard_prefix").trim());
+    if (res.heard) { addMsg(res.heard, "user", t("heard_prefix").trim()); flyHeroToHeader(); }
     if (res && res.pending) {
-      // v1.3.0: owner-mode tool chat - poll for the reply.
+      // v1.3.2: tool chat - poll for the reply.
       startPermPolling();
       const done = await waitForChatResult(res.chat_id);
       stopPermPolling();
@@ -398,9 +449,10 @@ async function refreshLogs() {
 
 function init() {
   logEngine();
+  logReady();
   // The bridge may arrive late (MSHTML injects it after DOMContentLoaded):
   // re-probe then, and populate the UI as soon as it is available.
-  window.addEventListener("pywebviewready", () => { logEngine(); refreshStatus(); });
+  window.addEventListener("pywebviewready", () => { logEngine(); logReady(); refreshStatus(); });
   // If the bridge still hasn't arrived a few seconds in, say so visibly
   // in the status line instead of leaving dead buttons with no explanation.
   setTimeout(() => { if (!getApi()) $("status").textContent = t("no_bridge"); }, 3000);

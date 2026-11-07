@@ -89,8 +89,20 @@
     _uaLogged = true;
     try { a.log_js("UA: " + navigator.userAgent); } catch (e) {}
   }
+  // v1.3.2 bridge-ready marker: Python's watchdog waits for this, so
+  // the log proves the island page's bridge came up (or names it missing).
+  let _readyLogged = false;
+  function logReady() {
+    if (_readyLogged) return;
+    const a = (window.pywebview && window.pywebview.api) || null;
+    if (!a || !a.log_js) return;
+    _readyLogged = true;
+    try { a.log_js("READY island"); } catch (e) {}
+  }
   logEngine();
+  logReady();
   window.addEventListener("pywebviewready", logEngine);
+  window.addEventListener("pywebviewready", logReady);
 
   const $ = id => document.getElementById(id);
 
@@ -187,9 +199,9 @@
       const res = await window.pywebview.api.voice_chat();
       $("greet").textContent = res.heard ? "سمعتك: " + res.heard : "Memo AI";
       if (res && res.pending) {
-        // v1.3.0: owner-mode tool chat runs in the background - the
-        // Allow/Deny dialog appears in the main window (Python brings
-        // it forward). Poll chat_result() here until the reply arrives.
+        // v1.3.2: tool chat runs in the background - the Allow/Deny
+        // dialog appears in the main window (Python brings it forward).
+        // Poll chat_result() here until the reply arrives.
         $("sub").textContent = "🤔 بفكّر وبنفّذ...";
         const done = await new Promise((resolve) => {
           const timer = setInterval(async () => {

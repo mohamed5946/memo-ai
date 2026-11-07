@@ -25,6 +25,14 @@
 #define AppPublisher "Mohamed El Sayed"
 #define AppURL "https://github.com/mohamed5946/memo-ai"
 
+; v1.3.2: NEVER install over a running Memo AI again. v1.3.1 was
+; installed over a running v1.3.0 and the install mixed old/new files
+; (first launch hung: "Not Responding"). AppMutex + CloseApplications
+; make Setup stop and ask the user to close Memo AI first (the app's
+; own Quit lives in Settings). The in-app updater is unaffected: it
+; quits the app itself and waits 3s before running the silent setup
+; (see app/updater.py install_setup), so the mutex is gone by then.
+
 [Setup]
 AppId={{7BBF7DD9-42C6-41D0-BB76-99A5E19569A1}
 AppName={#AppName}
@@ -33,6 +41,9 @@ AppPublisher={#AppPublisher}
 AppPublisherURL={#AppURL}
 AppSupportURL={#AppURL}
 AppUpdatesURL={#AppURL}
+AppMutex=Local\MemoAI-SingleInstance
+CloseApplications=yes
+CloseApplicationsFilter=*.exe,*.dll
 DefaultDirName={localappdata}\Programs\Memo AI
 DefaultGroupName=Memo AI
 DisableProgramGroupPage=yes

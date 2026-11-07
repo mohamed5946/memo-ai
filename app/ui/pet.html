@@ -113,8 +113,20 @@
     _uaLogged = true;
     try { a.log_js("UA: " + navigator.userAgent); } catch (e) {}
   }
+  // v1.3.2 bridge-ready marker: Python's watchdog waits for this, so
+  // the log proves the pet page's bridge came up (or names it missing).
+  let _readyLogged = false;
+  function logReady() {
+    if (_readyLogged) return;
+    const a = (window.pywebview && window.pywebview.api) || null;
+    if (!a || !a.log_js) return;
+    _readyLogged = true;
+    try { a.log_js("READY pet"); } catch (e) {}
+  }
   logEngine();
+  logReady();
   window.addEventListener("pywebviewready", logEngine);
+  window.addEventListener("pywebviewready", logReady);
 
   const PET = 150, EDGE = 80;   // window size / park-detection distance (px)
   const pet = document.getElementById("pet");
@@ -127,6 +139,14 @@
   let parked = false, hopRAF = null, clickTimer = null;
   let roamTimer = null, pawTimer = null, lastMoveSent = 0;
   let roaming = false;   // a roam move is in progress right now
+  // v1.3.2: roaming is ONLY allowed while the pet is actually visible.
+  // The v1.3.1 bug: the page roamed unconditionally at startup (the
+  // bridge-not-ready fallbacks), and every roam move called
+  // api().move_pet() - pywebview's move() SHOWS a hidden window - so
+  // the hidden pet got shown and roamed as a black rectangle.
+  // roamingAllowed starts FALSE and is set true only when Settings
+  // confirm pet_visible (or Python calls resumeRoaming() on show).
+  let roamingAllowed = false, _dragLogged = false;
 
   function api() { return (window.pywebview && window.pywebview.api) || null; }
   function logJs(msg) {
@@ -189,13 +209,25 @@
 
   // ---------- roaming: run around the screen by itself ----------
   function scheduleRoam() {
+    // v1.3.2: NEVER roam while hidden - a roam move would SHOW the
+    // hidden window (pywebview move() = SetWindowPos SW_SHOWWINDOW).
+    if (!roamingAllowed) return;
     clearTimeout(roamTimer);
     roamTimer = setTimeout(roamStep, 2000 + Math.random() * 2000);
   }
   // Called from Python when the pet is shown again (v1.3.1: the pet
   // starts hidden and roaming is skipped until the user shows it).
   window.resumeRoaming = function () {
+    roamingAllowed = true;
     if (!parked && !dragging) scheduleRoam();
+  };
+  // v1.3.2: called from Python when the pet is hidden - stop every
+  // timer NOW, so no roam move can ever wake the hidden window.
+  window.suspendRoaming = function () {
+    roamingAllowed = false;
+    clearTimeout(roamTimer);
+    roamTimer = null;
+    cancelHop();
   };
   function roamStep() {
     if (!dragging && !parked) {
@@ -267,6 +299,7 @@
     // that never reached the page at all. Log the pointerdown so the
     // diagnostics log proves the pet receives input - or proves not.
     logJs("Pet pointerdown");
+    e.preventDefault();   // v1.3.2: no image-drag / text-selection while grabbing
     clearTimeout(clickTimer);          // a 2nd tap cancels the pending click
     dragging = true; moved = false;
     downX = e.clientX; downY = e.clientY; downT = Date.now();
@@ -277,6 +310,10 @@
     if (!dragging || !api()) return;
     if (Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5) {
       if (!moved && parked) exitParked();   // drag away -> leave parked mode
+      // v1.3.2 DRAG INSTRUMENTATION: the user could not grab the cat at
+      // all in v1.3.1 - log the first drag move so the log proves drag
+      // works (or proves the pointermove never arrives).
+      if (!moved && !_dragLogged) { _dragLogged = true; logJs("Pet drag move"); }
       moved = true;
       api().move_pet(window.screenX + e.clientX - downX,
                      window.screenY + e.clientY - downY);
@@ -290,6 +327,8 @@
       const x = window.screenX, y = window.screenY;
       const maxX = (window.screen.availWidth || 1920) - PET;
       const maxY = (window.screen.availHeight || 1080) - PET;
+      // v1.3.2: log where the drag parked the cat (park = stays put).
+      logJs("Pet drag ended at " + x + "," + y);
       if (x <= EDGE || y <= EDGE || x >= maxX - EDGE || y >= maxY - EDGE) {
         enterParked("edge");
       }
@@ -308,15 +347,24 @@
   // Restore the parked state saved in Settings (pet starts in the corner).
   // v1.3.1: the pet starts HIDDEN by default - roaming only starts when
   // it is actually visible (Python calls resumeRoaming() when shown).
+  // v1.3.2: the old fallbacks roamed UNCONDITIONALLY when the bridge
+  // was not ready yet (.catch() + the no-bridge else branch) - that is
+  // exactly how the hidden pet got shown and roamed as a black box.
+  // Now: roam ONLY when Settings explicitly say pet_visible=true.
+  // If the bridge is not ready, roam NOTHING - Python calls
+  // resumeRoaming() when the user shows the pet.
   const a0 = api();
   if (a0 && a0.get_settings) {
     a0.get_settings().then(s => {
       if (s && s.pet_parked) setParked(true, true);
-      if (s && s.pet_visible !== false) setTimeout(scheduleRoam, 1500);
-    }).catch(() => { setTimeout(scheduleRoam, 1500); });
-  } else {
-    setTimeout(scheduleRoam, 1500);      // let the window settle, then start roaming
+      if (s && s.pet_visible === true) {
+        roamingAllowed = true;
+        setTimeout(scheduleRoam, 1500);
+      }
+    }).catch(() => { /* bridge not ready: do NOT roam (v1.3.2) */ });
   }
+  // No else branch: without the bridge we cannot know if the pet is
+  // visible, so we never roam on our own (v1.3.2 black-box fix).
 </script>
 </body>
 </html>

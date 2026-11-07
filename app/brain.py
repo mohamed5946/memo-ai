@@ -12,8 +12,9 @@ import socket
 
 import requests
 from logger import error, info, warn
-from settings_store import read_key
+from settings_store import keys_status, read_key
 
+import capabilities
 import tools
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -33,42 +34,113 @@ def is_online(timeout: float = 2.0) -> bool:
         return False
 
 
+def _capability_block(language: str) -> str:
+    """Truthful capability state, built from the REAL app state
+    (v1.3.2). The brain must never guess what it can do and never
+    refuse blindly: for anything not connected/not built, it explains
+    WHAT is missing and HOW to connect it, and offers an alternative.
+    A flat refusal ("مش هقدر أساعدك") with no reason is forbidden.
+    """
+    keys = keys_status()
+    groq_ok = bool(keys.get("groq"))
+    gemini_ok = bool(keys.get("gemini"))
+    if language == "ar":
+        lines = [
+            "قدراتك الحقيقية (من حالة التطبيق الفعلية — متخترعش غيرها):",
+            f"- المخ الأونلاين (Groq): {'متصل ✅' if groq_ok else 'مش متصل — مفتاح Groq مش موجود في keys/'}",
+            f"- الصوت الأونلاين (Gemini TTS): {'متصل ✅' if gemini_ok else 'مش متصل — مفتاح Gemini مش موجود'}",
+            "- الأدوات على اللابتوب ✅: تقدر تفتح برامج، تعمل ملفات وتكتب فيها، تعدّل ملفات، تقرأ ملفات، وتشغّل أوامر — عن طريق أدواتك. كل إجراء بيظهر لصاحبك نافذة سماح/رفض لوحدها، فماتسألوش عن الإذن في الكلام — نادي الأداة على طول.",
+            "- " + capabilities.whatsapp_status_line("ar"),
+            "- " + capabilities.not_built_line("ترجمة الشاشة", "Screen translation", "ar"),
+            "- " + capabilities.not_built_line("المجلس متعدد النماذج", "Multi-model council", "ar"),
+            "- " + capabilities.not_built_line("تنبيهات الجيميل والتقويم في التحية الصباحية", "Gmail/calendar in the morning briefing", "ar"),
+            "قواعد الرفض (مهمة — اتبعها دايماً):",
+            "1) ممنوع ترفض رفض جاف من غير سبب ('مش هقدر، آسف مش هقدر أساعدك') — دي جملة ممنوعة.",
+            "2) لو مش قادر تعمل حاجة، قول السبب الحقيقي المقنع بأسلوب ودود زي صاحب بيشرح، وقول إيه اللي ناقص وإزاي يتوصل، وقدّم بديل.",
+            "3) ممنوع تكرر نفس جملة الرفض مرتين — لو سألك 'ليه؟' اشرح السبب نفسه بالتفصيل مش تعيد الجملة.",
+            "4) متدّعيش قدرة مش موجودة، ومتقولش إن حاجة مربوطة وهي مش مربوطة.",
+        ]
+        return " ".join(lines)
+    lines = [
+        "Your real capabilities (from the app's actual state — never invent others):",
+        f"- Online brain (Groq): {'connected ✅' if groq_ok else 'not connected — no Groq key in keys/'}",
+        f"- Online voice (Gemini TTS): {'connected ✅' if gemini_ok else 'not connected — no Gemini key'}",
+        "- Laptop tools ✅: you can open apps, create/write/edit/read files, and run commands — through your tools. Every action shows the user an Allow/Deny dialog by itself, so do NOT ask for permission in text — call the tool directly.",
+        "- " + capabilities.whatsapp_status_line("en"),
+        "- " + capabilities.not_built_line("Screen translation", "Screen translation", "en"),
+        "- " + capabilities.not_built_line("Multi-model council", "Multi-model council", "en"),
+        "- " + capabilities.not_built_line("Gmail/calendar in the morning briefing", "Gmail/calendar in the morning briefing", "en"),
+        "Refusal rules (important — always follow them):",
+        "1) Never refuse flatly with no reason ('I can't, sorry I can't help with that') — that phrasing is forbidden.",
+        "2) If you cannot do something, give the real, convincing reason in a warm, human, friend-like way, say what is missing and how to connect it, and offer an alternative.",
+        "3) Never repeat the same refusal twice — if asked 'why?', explain the same reason in detail instead of repeating the sentence.",
+        "4) Never claim a capability you do not have, and never say something is connected when it is not.",
+    ]
+    return " ".join(lines)
+
+
 def system_prompt(ai_name: str, user_name: str, language: str,
                   tools_available: bool = False) -> str:
+    """v1.3.2: the user's name is stated EXPLICITLY (the v1.3.1 prompt
+    only said 'on {user_name}'s laptop', so the brain answered 'I don't
+    know your name'). The capability block is always included, so the
+    brain knows what is really connected vs not built."""
+    name = (user_name or "").strip() or "غير معروف"
     if language == "ar":
+        if name == "غير معروف":
+            name_sentence = ("اسم صاحبك لسه مش متسجل عندك — اسأله مرة واحدة "
+                             "'اسمك إيه؟' واستخدمه بعد كده في الترحيب والردود.")
+        else:
+            name_sentence = (
+                f"اسم صاحبك هو {name} — لو سألك 'اسمي إيه؟' قوله {name} "
+                f"على طول، واستخدم اسمه في الترحيب والردود.")
         prompt = (
-            f"أنت {ai_name}، مساعد ذكي محلي على لابتوب {user_name}. "
-            "رد بالعربي المصري البسيط والودود، واختصر على قد ما تقدر. "
+            f"أنت {ai_name}، مساعد ذكي محلي على لابتوب صاحبك. "
+            + name_sentence + " "
+            + "رد بالعربي المصري البسيط والودود، واختصر على قد ما تقدر، "
+            "واتكلم زي إنسان وصاحب مش زي آلة — طبيعي ودود، مش رسمي ومش آلي. "
             "لو المستخدم كتب بالإنجليزي رد بالإنجليزي. "
             "لو سألك عن الكود أو السورس بتاع البرنامج، قوله: "
             "«تواصل مع المطور» — إلا لو هو المطور نفسه (هيقولك الكود السري). "
-            "ممنوع تذكر أي تفاصيل تقنية عن النماذج اللي بتشغلك."
+            "ممنوع تذكر أي تفاصيل تقنية عن النماذج اللي بتشغلك. "
+            + _capability_block("ar")
         )
         if tools_available:
             prompt += (
-                " تقدر كمان تنفذ حاجات على اللابتوب بالأدوات: افتح برامج "
-                "(VS Code وغيره)، اعمل ملفات واكتب فيها، عدّل ملفات، اقرأ "
-                "ملفات، وشغّل أوامر. استخدم الأدوات لما المستخدم يطلب منك "
-                "تعمل حاجة — مش بس تشرحها. كل إجراء بيطلب إذن المستخدم "
-                "الأول (سماح/رفض) قبل ما يتنفذ، فوضّحله اللي هتعمله باختصار "
-                "واستنى الإذن. لو المستخدم رفض، متكررش الطلب من غير ما يسألك."
+                " عندك أدوات حقيقية على اللابتوب — استخدمها: لما المستخدم "
+                "يطلب منك تعمل حاجة (افتح برنامج، اعمل ملف، عدّل ملف، شغّل "
+                "أمر) نادي الأداة المناسبة على طول بدل ما تشرحله إزاي يعملها "
+                "بنفسه، وممنوع تقول 'مش قادر أفتح البرامج من هنا' — أنت تقدر، "
+                "عن طريق الأدوات. نافذة السماح/الرفض هتظهر لصاحبك لوحدها "
+                "قبل التنفيذ، فماتسألوش عن الإذن في الكلام."
             )
         return prompt
+    if name == "غير معروف":
+        name_sentence_en = ("Your friend's name is not saved yet — ask once "
+                            "'what is your name?' and use it after that in "
+                            "greetings and replies.")
+    else:
+        name_sentence_en = (
+            f"Your friend's name is {name} — if he asks 'what is my name?', "
+            f"answer {name} right away, and use his name in greetings and replies.")
     prompt = (
-        f"You are {ai_name}, a local AI assistant on {user_name}'s laptop. "
-        "Reply in short, friendly English. "
+        f"You are {ai_name}, a local AI assistant on your friend's laptop. "
+        + name_sentence_en + " "
+        + "Reply in short, friendly English, and talk like a human friend, not a machine — natural and warm, not formal or robotic. "
         "If asked about the program's source code, say: "
         "«Contact the developer» — unless he is the developer himself "
-        "(he will tell you the secret code)."
+        "(he will tell you the secret code). "
+        + _capability_block("en")
     )
     if tools_available:
         prompt += (
-            " You can also do things on the laptop with tools: open apps "
-            "(VS Code and others), create and edit files, read files, and "
-            "run commands. Use the tools when the user asks you to DO "
-            "something, not just explain it. Every action asks the user "
-            "for permission first (Allow/Deny) — explain briefly what you "
-            "will do and wait for approval."
+            " You have real tools on the laptop — use them: when the user "
+            "asks you to DO something (open an app, create a file, edit a "
+            "file, run a command), call the right tool right away instead "
+            "of explaining how he can do it himself, and never say 'I "
+            "cannot open apps from here' — you can, through the tools. "
+            "The Allow/Deny dialog appears to the user by itself before "
+            "execution, so do not ask for permission in text."
         )
     return prompt
 
@@ -139,7 +211,11 @@ def _looks_like_action(text: str) -> bool:
 
 def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                    language: str) -> dict:
-    """Owner-mode brain: Groq with real tool-calling (function calling).
+    """Brain WITH tools (v1.3.2: this is the NORMAL chat path now, not
+    owner-only — v1.3.0 gated tools behind the secret code, so in normal
+    chat Groq had no tools at all and refused 'open VS Code' in text.
+    The user IS the owner of his own laptop; Allow/Deny still gates
+    every single action). Groq with real tool-calling (function calling).
     Runs the agentic loop (max 5 tool rounds): model -> tool call ->
     permission dialog -> execute -> result back to the model -> reply.
     Returns {"reply": str, "engine": "groq"|"ollama"|"none",

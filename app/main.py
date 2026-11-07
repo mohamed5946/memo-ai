@@ -100,7 +100,63 @@
 # (which also re-centers it on top); the texts
 # fade in as it grows. Old island_expand/island_shrink removed.
 #
-# v1.3.1 (2026-11-07) - ONE BATCHED VERSION ("version واحدة"):
+# v1.3.2 (2026-11-07) - ONE BATCHED VERSION ("version واحدة"):
+#   (1) HANG FIX (field: v1.3.1 first launch "Not Responding" 09:55):
+#       the morph loop was already bounded (28 steps) - the real risks
+#       were cross-thread .NET touches: _window_hwnd() read
+#       window.native.Handle from the region-polling thread (WinForms
+#       creates a Form's handle ON THE CALLING THREAD if it does not
+#       exist yet - the GUI thread then owns a handle it did not create
+#       -> frozen window), and _animate_window_rect touched
+#       Form.MinimumSize from the morph thread. BOTH ARE DELETED:
+#       HWND lookup is EnumWindows-only now (never .native/.Handle),
+#       and the morph never touches .NET properties - the main window is
+#       created with min_size=(190,52) so it can shrink into the pill
+#       without any MinimumSize juggling (trade-off: the user can
+#       resize the main window smaller than 640x520; the flex layout
+#       still works, just cramped). The other hang vector was the
+#       install itself: v1.3.1 was installed OVER a running v1.3.0
+#       (mixed old/new files) - the installer now refuses while the app
+#       runs (AppMutex + CloseApplications in memo-ai.iss).
+#   (2) TOOLS FOR EVERYONE: v1.3.0 gated the tool loop behind the
+#       secret owner code, so in NORMAL chat Groq got no tools at all
+#       and refused "open VS Code" in text. The user IS the owner of his
+#       own laptop - Api.chat now ALWAYS runs brain.ask_with_tools in a
+#       background thread (Allow/Deny still gates every action). The
+#       owner code now only bypasses the source-code rule. The tools
+#       prompt also stopped telling the model to "explain and wait for
+#       permission" (that taught it to ASK instead of calling the tool).
+#   (3) NAME BUG: the system prompt only said "on {user_name}'s
+#       laptop" - the brain answered "I don't know your name". The name
+#       is now stated explicitly, and the prompt carries the real
+#       capability state (see capabilities.py) so the brain explains
+#       WHAT is missing and HOW to connect it instead of refusing
+#       flatly ("مش هقدر أساعدك" is forbidden phrasing now).
+#   (4) BLACK BOX = PET WINDOW: pet.html roamed unconditionally when
+#       the bridge was not ready yet, and pywebview's window.move()
+#       uses SetWindowPos(SW_SHOWWINDOW) - it SHOWS a hidden window.
+#       So the hidden pet got shown and roamed while rendering black
+#       (region never applied / page not painting). Fixed three ways:
+#       Api.move_pet ignores moves while the pet is hidden; pet.html
+#       only roams when settings confirm it is visible (unconditional
+#       fallbacks deleted) and suspends roaming when hidden; hiding the
+#       pet now also calls suspendRoaming() from Python.
+#   (5) PET DRAG: same root causes as (4) - a non-painting page has no
+#       working drag handlers. With the page actually painting + the
+#       region verified, drag works; the drag path is now instrumented
+#       (pointerdown/move logs) so the diagnostics log proves it.
+#   (6) STARTUP SELF-TEST: page/asset/api.js/WebView2-version checks
+#       at startup + a bridge-ready watchdog (each page logs READY on
+#       pywebviewready; after 20s the log names any page that never
+#       became ready, with the exact reason - no more generic "install
+#       WebView2" advice when WebView2 is fine).
+#   (7) CAT FLIES TO HEADER + BIGGER CHAT (app.js/styles.css): on the
+#       first message the hero cat flies (eased) to the small header
+#       avatar and the hero collapses, so the chat takes the freed space.
+#   (8) WhatsApp linking is NOT in v1.3.2 (v1.4.0, separate build,
+#       branch feat/whatsapp) - but the brain now answers truthfully
+#       about it ("being built, links via QR with a 3rd number") instead
+#       of a flat refusal; see app/capabilities.py.
 #   (1) ISLAND CLICK FIX (critical regression): in v1.3.0 the island
 #       click stopped opening the main window - and the pet click died
 #       too. Cause: the chroma-key (see above) made both windows fully
@@ -164,7 +220,7 @@ import weather
 import winshape
 import autostart
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -192,9 +248,9 @@ _mutex_handle = None
 # untouched (voice INPUT is separate).
 # Owner code: stored ONLY as a SHA-256 hash below (OWNER_CODE_HASH).
 # The plaintext value is never in this file, in settings, in logs, or
-# in any comment. Typing it in chat unlocks owner mode (tools on);
-# without it the app stays reply-only (chat, no tools). Allow/Deny
-# dialogs still apply in owner mode.
+# in any comment. Typing it in chat unlocks owner mode (v1.3.2: owner
+# mode now only bypasses the source-code rule - tools are on for every
+# chat, see Api.chat; the Allow/Deny dialogs still apply in owner mode).
 
 # Owner-mode code, SHA-256 hash ONLY (see note above). Compared with
 # hmac.compare_digest; the plaintext value exists nowhere in the repo.
@@ -215,23 +271,18 @@ ISLAND_BG = "#0D121C"
 PET_BG = "#0A0A0A"
 
 
-def _window_hwnd(window):
-    """HWND of a pywebview window, or None if it is not created yet.
-    WinForms backend sets window.native to the Form (pywebview 6.2
-    winforms.py:194); Form.Handle is the HWND."""
-    try:
-        native = getattr(window, "native", None)
-        if native is not None:
-            return int(native.Handle.ToInt32())
-    except Exception:
-        pass
-    return None
-
-
 def _find_hwnd_by_title(title: str, max_width: int | None = None):
     """Fallback HWND lookup (EnumWindows): first top-level window whose
     title matches exactly. max_width distinguishes the small island
-    ("Memo AI", <=400px) from the big main window (same title)."""
+    ("Memo AI", <=400px) from the big main window (same title).
+
+    v1.3.2: this is the ONLY HWND lookup now. The old _window_hwnd()
+    read window.native.Handle from background threads - WinForms creates
+    a Form's handle ON THE CALLING THREAD when it does not exist yet,
+    so a polling thread could steal handle creation from the GUI thread
+    and freeze the whole window ("Not Responding", v1.3.1 first launch).
+    EnumWindows only ever reads HWNDs the GUI thread already created,
+    so it can never do that. Never bring .native/.Handle back here."""
     try:
         user32 = ctypes.windll.user32
         found = []
@@ -258,6 +309,37 @@ def _find_hwnd_by_title(title: str, max_width: int | None = None):
         return None
 
 
+def _find_main_hwnd():
+    """HWND of the MAIN window: title "Memo AI" (shared with the
+    island), picked as the WIDEST match (main is 960px, island <=400px).
+    EnumWindows-only (v1.3.2 hang fix - never .native/.Handle)."""
+    try:
+        user32 = ctypes.windll.user32
+        found = []
+
+        class RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                        ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def _enum(hwnd, _lparam):
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(hwnd, buf, 256)
+            if buf.value == "Memo AI":
+                rect = RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                found.append((rect.right - rect.left, hwnd))
+            return True
+
+        user32.EnumWindows(_enum, None)
+        if not found:
+            return None
+        found.sort(reverse=True)
+        return found[0][1]
+    except Exception:
+        return None
+
+
 def _check_bridge_files() -> bool:
     """Loud startup self-check: pywebview builds window.pywebview from its
     js/ files (util.load_js_files -> get_js_dir -> <webview>/js/api.js).
@@ -266,8 +348,56 @@ def _check_bridge_files() -> bool:
     preview mode + dead buttons. Never fail silently: log a LOUD error.
     Returns True when api.js is present. A failure here never blocks
     startup (the app still runs; the log + the UI message say why the
-    buttons are dead)."""
+    buttons are dead).
+
+    v1.3.2: extended into the full STARTUP SELF-TEST - page files,
+    assets, settings, WebView2 version are all checked and logged with
+    their exact result, so a first-launch failure names its cause
+    instead of the generic 'install WebView2' advice (WebView2 was
+    FINE on the user's machine in v1.3.1 - the real causes were mixed
+    install files + a bridge that never became ready)."""
     global _BRIDGE_FILES_OK
+    ok = True
+    # 1. UI pages + assets (a missing file = a window that never paints).
+    ui_dir = APP_DIR / "ui"
+    for rel in ("index.html", "island.html", "pet.html",
+                "assets/avatar-cat.png", "assets/cat-run.png",
+                "app.js", "styles.css"):
+        p = ui_dir / rel
+        if p.is_file():
+            info("selftest", f"UI file present: ui/{rel}")
+        else:
+            error("selftest", f"UI file MISSING: ui/{rel} - the window "
+                              "that needs it will not paint")
+            ok = False
+    # 2. Settings load.
+    try:
+        from settings_store import load_settings as _ls
+        _ls()
+        info("selftest", "settings.json loads OK")
+    except Exception as exc:
+        error("selftest", f"settings.json FAILED to load: {exc}")
+        ok = False
+    # 3. Keys (presence only - never values).
+    ks = keys_status()
+    info("selftest", f"Keys present: groq={ks['groq']} "
+                     f"gemini={ks['gemini']} azure={ks['azure']}")
+    if not ks["groq"]:
+        warn("selftest", "No Groq key in keys/groq-key.txt - online brain "
+                         "unavailable, local Qwen 3B only")
+    # 4. WebView2 runtime version (Windows registry; informational -
+    #    pywebview falls back to MSHTML without it, which cannot do
+    #    transparency and paints rectangles).
+    if sys.platform == "win32":
+        ver = _webview2_version()
+        if ver:
+            info("selftest", f"WebView2 runtime version: {ver}")
+        else:
+            warn("selftest", "WebView2 runtime NOT FOUND in the registry - "
+                             "pywebview will fall back to MSHTML; install "
+                             "WebView2 from https://go.microsoft.com/fwlink/"
+                             "p/?LinkId=2124703")
+    # 5. pywebview JS bridge files.
     js_dir = ""
     try:
         from webview import util as _wv_util
@@ -287,8 +417,71 @@ def _check_bridge_files() -> bool:
         _BRIDGE_FILES_OK = False
         return False
     info("bridge", f"pywebview JS bridge files present ({js_dir})")
-    _BRIDGE_FILES_OK = True
-    return True
+    _BRIDGE_FILES_OK = ok
+    if ok:
+        info("selftest", "Startup self-test PASSED (files + keys + WebView2)")
+    else:
+        warn("selftest", "Startup self-test found problems above - see the "
+                         "error lines for the exact cause")
+    return ok
+
+
+def _webview2_version() -> str:
+    """WebView2 Evergreen runtime version from the registry, or ''."""
+    if sys.platform != "win32":
+        return ""
+    try:
+        import winreg
+        guid = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+        path = f"SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{guid}"
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                with winreg.OpenKey(root, path) as key:
+                    val, _ = winreg.QueryValueEx(key, "pv")
+                    if val:
+                        return str(val)
+            except OSError:
+                continue
+    except Exception:
+        pass
+    return ""
+
+
+# v1.3.2 bridge-ready watchdog: each UI page logs "READY <page>" on
+# pywebviewready (see app.js / island.html / pet.html). If a page never
+# reports ready within 20s of startup, the log names it loudly with the
+# exact cause instead of the generic WebView2 advice.
+_READY_PAGES: set = set()
+_READY_LOCK = threading.Lock()
+
+
+def _note_bridge_ready(page: str) -> None:
+    with _READY_LOCK:
+        _READY_PAGES.add(page)
+
+
+def _bridge_ready_watchdog() -> None:
+    """Wait up to 20s for all three pages to report READY, then log the
+    outcome. Runs on a daemon thread; never blocks startup."""
+    deadline = time.time() + 20
+    want = {"main", "island", "pet"}
+    while time.time() < deadline:
+        with _READY_LOCK:
+            if want <= _READY_PAGES:
+                break
+        time.sleep(0.5)
+    with _READY_LOCK:
+        got = set(_READY_PAGES)
+    missing = want - got
+    if not missing:
+        info("selftest", "Bridge READY on all pages: main + island + pet")
+    else:
+        error("selftest", "Bridge NOT READY after 20s - pages missing: "
+              f"{', '.join(sorted(missing))}. The page file may be missing "
+              "from the bundle (see the self-test lines above), the "
+              "WebView2 control may have failed to start, or the install "
+              "may have mixed old/new files - reinstall cleanly (close "
+              "Memo AI first) and check the log.")
 
 
 def _acquire_single_instance_lock() -> bool:
@@ -343,10 +536,13 @@ class Api:
     # -- status ------------------------------------------------------------
     def get_status(self):
         online = brain.is_online()
+        with _READY_LOCK:
+            ready = sorted(_READY_PAGES)
         return {
             "online": online,
             "version": VERSION,
             "bridge_files_missing": _BRIDGE_FILES_OK is False,
+            "bridge_ready": ready,
             "keys": keys_status(),
             "settings": {k: v for k, v in _APP.settings.items()
                          if k != "owner_unlocked"},
@@ -383,7 +579,10 @@ class Api:
             return {"reply": "", "engine": "none"}
         # Owner code unlocks owner mode (v1.3.0: compared as a SHA-256 hash
         # only - the plaintext code is nowhere in the repo, settings, or
-        # logs, and the typed text is never echoed back).
+        # logs, and the typed text is never echoed back). v1.3.2: owner
+        # mode now only bypasses the source-code rule (tools are on for
+        # every chat - see below); without it the app stays reply-only
+        # for source-code questions.
         if hmac.compare_digest(
                 hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 OWNER_CODE_HASH):
@@ -398,28 +597,28 @@ class Api:
         if hit:
             _APP.speak_async(hit["reply"])
             return {"reply": hit["reply"], "engine": hit["source"]}
-        if _APP.settings.get("owner_unlocked", False):
-            # Owner mode: the brain gets tools, in a BACKGROUND thread.
-            # The JS bridge must never block waiting for a permission, or
-            # the Allow/Deny dialog could never answer (deadlock). The UI
-            # polls chat_result() + get_pending_permission() meanwhile.
-            chat_id = uuid.uuid4().hex[:8]
-            with _chats_lock:
-                _chats[chat_id] = {"done": False, "reply": "", "engine": "groq",
-                                   "tools_used": 0, "created": time.time()}
-                if len(_chats) > 50:  # prune oldest finished entries
-                    for old_id in sorted(
-                            _chats, key=lambda i: _chats[i]["created"])[:10]:
-                        if _chats[old_id]["done"]:
-                            _chats.pop(old_id, None)
-            threading.Thread(target=_APP.run_tool_chat,
-                             args=(chat_id, text), daemon=True).start()
-            return {"reply": "", "engine": "groq", "pending": True,
-                    "chat_id": chat_id}
-        result = brain.ask(text, _APP.settings.get("ai_name", "Memo"),
-                           _APP.settings.get("user_name", "Mohamed"), lang)
-        _APP.speak_async(result["reply"])
-        return {"reply": result["reply"], "engine": result["engine"]}
+        # v1.3.2: EVERY chat runs the tool loop, in a BACKGROUND thread.
+        # v1.3.0 gated tools behind the owner code, so normal chat had no
+        # tools at all and Groq refused "open VS Code" in text. The user
+        # IS the owner of his own laptop; Allow/Deny still gates every
+        # action. The JS bridge must never block waiting for a permission,
+        # or the Allow/Deny dialog could never answer (deadlock) - and a
+        # synchronous Groq call on the bridge thread would freeze the UI
+        # ("Not Responding") for the whole reply. The UI polls
+        # chat_result() + get_pending_permission() meanwhile.
+        chat_id = uuid.uuid4().hex[:8]
+        with _chats_lock:
+            _chats[chat_id] = {"done": False, "reply": "", "engine": "groq",
+                               "tools_used": 0, "created": time.time()}
+            if len(_chats) > 50:  # prune oldest finished entries
+                for old_id in sorted(
+                        _chats, key=lambda i: _chats[i]["created"])[:10]:
+                    if _chats[old_id]["done"]:
+                        _chats.pop(old_id, None)
+        threading.Thread(target=_APP.run_tool_chat,
+                         args=(chat_id, text), daemon=True).start()
+        return {"reply": "", "engine": "groq", "pending": True,
+                "chat_id": chat_id}
 
     def chat_result(self, chat_id):
         """Poll the result of an async (tool) chat. {"done": False} while
@@ -576,6 +775,13 @@ class Api:
         return {"ok": True, "installing": True}
 
     def move_pet(self, x, y):
+        # v1.3.2 BLACK-BOX FIX: pywebview's window.move() uses
+        # SetWindowPos(SW_SHOWWINDOW) - it SHOWS a hidden window. The
+        # hidden pet used to get shown by its own roam moves (the black
+        # rectangle roaming the screen in v1.3.1). A hidden pet is NEVER
+        # moved - the move is dropped and logged.
+        if not _APP.settings.get("pet_visible", False):
+            return {"ok": False, "hidden": True}
         try:
             _APP.pet_window.move(int(x), int(y))
         except Exception as exc:
@@ -598,7 +804,12 @@ class Api:
         # UA has "Edg/" + "Chrome/"; MSHTML UA has "MSIE"/"Trident/").
         # A user-agent string carries no secrets.
         try:
-            info("ui", f"JS: {str(message)[:500]}")
+            msg = str(message)[:500]
+            # v1.3.2 bridge-ready watchdog: pages log "READY <page>" on
+            # pywebviewready so the log proves which bridges came up.
+            if msg.startswith("READY "):
+                _note_bridge_ready(msg.split(None, 1)[1].strip())
+            info("ui", f"JS: {msg}")
         except Exception:
             pass
         return {"ok": True}
@@ -663,17 +874,17 @@ class MemoApp:
         animation. Runs on the calling thread (callers use a daemon
         thread). Any failure aborts the animation quietly - the caller
         always finishes with an explicit show/hide, so the window can
-        never be left in a broken state. The main window's MinimumSize
-        is cleared for the duration (it would otherwise clamp the shrink
-        into the 190x52 pill) and restored afterwards."""
+        never be left in a broken state. The loop is BOUNDED (fixed
+        step count, ~28 frames) - it always terminates.
+        v1.3.2: NO .NET property touches here anymore. The old code
+        cleared/restored the Form's MinimumSize from this thread
+        (cross-thread .NET access - one of the v1.3.1 hang suspects);
+        the main window is now created with min_size=(190,52) so the
+        morph can shrink into the pill without any juggling. The
+        move/resize calls go through pywebview (SetWindowPos - safe
+        from any thread once the handle exists)."""
         if not window or self._quitting:
             return
-        old_min = None
-        try:
-            native = getattr(window, "native", None)
-            old_min = winshape.clear_min_size(native)
-        except Exception:
-            old_min = None
         try:
             steps = max(1, int(duration_ms / 16))
             for i in range(1, steps + 1):
@@ -687,12 +898,8 @@ class MemoApp:
                 except Exception:
                     return
                 time.sleep(0.016)
-        finally:
-            try:
-                native = getattr(window, "native", None)
-                winshape.restore_min_size(native, old_min)
-            except Exception:
-                pass
+        except Exception:
+            return
 
     def show_main(self):
         """Open the main window out of the island pill (v1.3.1 morph:
@@ -761,8 +968,7 @@ class MemoApp:
             return
         self._main_visible = False
         # Remember the rect to restore to (exact, from the OS).
-        rect = winshape.get_window_rect(
-            _window_hwnd(self.main_window))
+        rect = winshape.get_window_rect(_find_main_hwnd())
         if rect:
             self._main_rect = rect
         island_rect = self._island_rect()
@@ -824,6 +1030,13 @@ class MemoApp:
                 except Exception:
                     pass
             else:
+                # v1.3.2: stop the roam timers too - a hidden page keeps
+                # running JS, and its roam moves used to SHOW the hidden
+                # window (black box). suspendRoaming() cancels everything.
+                try:
+                    self.pet_window.evaluate_js("suspendRoaming()")
+                except Exception:
+                    pass
                 self.pet_window.hide()
         except Exception as exc:
             error("ui", f"Could not toggle pet window: {exc}")
@@ -1074,7 +1287,12 @@ class MemoApp:
         self.main_window = webview.create_window(
             "Memo AI", str(ui_dir / "index.html"),
             width=MAIN_W, height=MAIN_H, hidden=True,
-            min_size=(640, 520), js_api=self.api)
+            # v1.3.2: min_size=(190,52) so the morph can shrink the window
+            # into the island pill WITHOUT touching Form.MinimumSize from
+            # a background thread (v1.3.1 hang suspect). Trade-off: the
+            # user can resize the main window smaller than 640x520; the
+            # flex layout still works, just cramped.
+            min_size=(190, 52), js_api=self.api)
         self.main_window.events.closing += self._on_main_closing
         # v1.3.1: the pet starts HIDDEN unless the user left it visible
         # (hidden= at creation avoids a flash of the cat at startup).
@@ -1087,6 +1305,10 @@ class MemoApp:
             hidden=not self.settings.get("pet_visible", False))
 
         threading.Thread(target=self.morning_briefing, daemon=True).start()
+        # v1.3.2: bridge-ready watchdog - each page logs READY on
+        # pywebviewready; after 20s the log names any page that never
+        # became ready, with the exact reason.
+        threading.Thread(target=_bridge_ready_watchdog, daemon=True).start()
         info("app", "Island started - full window opens only on tap")
         # v1.3.1: webview.start(func) runs func in a thread BEFORE any
         # window exists, so _apply_window_regions polls until the HWNDs
@@ -1119,8 +1341,10 @@ class MemoApp:
         deadline = time.time() + 60
         while time.time() < deadline and any(pending.values()):
             if pending["island"]:
-                hwnd = _window_hwnd(self.island_window) or \
-                    _find_hwnd_by_title("Memo AI", max_width=400)
+                # v1.3.2: EnumWindows ONLY - the old _window_hwnd() read
+                # window.native.Handle from THIS thread (WinForms creates
+                # a Form's handle on the calling thread -> frozen window).
+                hwnd = _find_hwnd_by_title("Memo AI", max_width=400)
                 if hwnd:
                     self._island_hwnd = hwnd
                     winshape.log_window("island", hwnd, "before region")
@@ -1132,8 +1356,7 @@ class MemoApp:
                     winshape.log_window("island", hwnd, "after region")
                     pending["island"] = False
             if pending["pet"]:
-                hwnd = _window_hwnd(self.pet_window) or \
-                    _find_hwnd_by_title("Memo AI Pet")
+                hwnd = _find_hwnd_by_title("Memo AI Pet")
                 if hwnd:
                     self._pet_hwnd = hwnd
                     winshape.log_window("pet", hwnd, "before region")

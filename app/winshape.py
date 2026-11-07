@@ -414,32 +414,10 @@ def watch_show_main_event(event_handle, on_signal, stop_flag,
 
 
 # --- main-window MinimumSize (morph needs to go below it) -------------------
-# The main window's min_size (640x520) would clamp the morph that shrinks
-# it into the island pill (190x52). Temporarily clearing the Form's
-# MinimumSize during the animation lets it shrink fully; it is restored
-# afterwards. Fully guarded: any failure just means a less dramatic
-# (clamped) morph, never a crash.
-def clear_min_size(native_form):
-    """Set a WinForms Form's MinimumSize to 0. Returns the previous
-    (width, height) so it can be restored, or None if it could not be
-    changed (non-Windows / no .NET access)."""
-    if not IS_WINDOWS or native_form is None:
-        return None
-    try:
-        from System.Drawing import Size  # pythonnet, in the frozen bundle
-        old = native_form.MinimumSize
-        prev = (int(old.Width), int(old.Height))
-        native_form.MinimumSize = Size(0, 0)
-        return prev
-    except Exception:
-        return None
-
-
-def restore_min_size(native_form, prev):
-    if not IS_WINDOWS or native_form is None or prev is None:
-        return
-    try:
-        from System.Drawing import Size  # pythonnet, in the frozen bundle
-        native_form.MinimumSize = Size(int(prev[0]), int(prev[1]))
-    except Exception:
-        pass
+# v1.3.2: DELETED. clear_min_size()/restore_min_size() touched the
+# Form's MinimumSize .NET property from the morph thread (cross-thread
+# .NET access - one of the v1.3.1 hang suspects). The main window is now
+# created with min_size=(190,52) in main.py, so the morph can shrink
+# into the pill without any MinimumSize juggling. Do NOT bring these
+# helpers back: any future minimum-size work must happen on the GUI
+# thread or not at all.
