@@ -210,7 +210,7 @@ def _looks_like_action(text: str) -> bool:
 
 
 def ask_with_tools(user_text: str, ai_name: str, user_name: str,
-                   language: str) -> dict:
+                   language: str, history: list | None = None) -> dict:
     """Brain WITH tools (v1.3.2: this is the NORMAL chat path now, not
     owner-only — v1.3.0 gated tools behind the secret code, so in normal
     chat Groq had no tools at all and refused 'open VS Code' in text.
@@ -225,15 +225,19 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
     is too weak for reliable tool calls (it hallucinates tool names and
     arguments). If Groq is unavailable, tools are disabled with a clear
     note and the chat continues on the local model.
-    """
+
+    v1.4.0: `history` lets another channel (WhatsApp owner) keep its own
+    history instead of the shared in-app one. None = the shared history
+    (existing behaviour, unchanged)."""
     lang = "ar" if any("\u0600" <= ch <= "\u06ff" for ch in user_text) \
         else language
+    hist = _history if history is None else history
     system = {"role": "system",
               "content": system_prompt(ai_name, user_name, lang, True)}
     # `turn` collects ONLY this turn's messages (user + tool calls +
     # tool results) so the shared history never duplicates old entries.
     turn = [{"role": "user", "content": user_text}]
-    messages = [system] + _history[-20:] + turn
+    messages = [system] + hist[-20:] + turn
 
     if not is_online():
         info("brain", "Offline - tools disabled, local Qwen 3B (chat only)")
@@ -242,7 +246,7 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                 "دلوقتي مفيش نت فأقدر أجاوب بس.")
         if _looks_like_action(user_text):
             reply = reply + "\n\n" + note
-        _record_turn(user_text, reply, engine)
+        _record_turn(user_text, reply, engine, hist)
         return {"reply": reply, "engine": engine, "tools_used": 0,
                 "tools_disabled": True}
 
@@ -257,8 +261,8 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                     reply = "تمام."
                 info("brain", f"Answered via Groq gpt-oss-120b "
                               f"({tools_used} tool calls)")
-                _history.extend(turn)
-                _history.append({"role": "assistant", "content": reply})
+                hist.extend(turn)
+                hist.append({"role": "assistant", "content": reply})
                 return {"reply": reply, "engine": "groq",
                         "tools_used": tools_used, "tools_disabled": False}
             # Feed the assistant's tool-call message back, then execute.
@@ -286,7 +290,7 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         # 5 rounds and the model still wants more tools: stop politely.
         reply = ("عملت اللي أقدر عليه في الخطوات دي — لو لسه ناقص حاجة "
                  "قولي أكمل إيه بالظبط.")
-        _record_turn(user_text, reply, "groq")
+        _record_turn(user_text, reply, "groq", hist)
         return {"reply": reply, "engine": "groq", "tools_used": tools_used,
                 "tools_disabled": False}
     except RuntimeError as exc:
@@ -300,30 +304,38 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         if _looks_like_action(user_text):
             reply += ("\n\nالأدوات (فتح برامج، ملفات، أوامر) محتاجة Groq "
                       "أونلاين — دلوقتي شغال على المخ المحلي فأقدر أجاوب بس.")
-        _record_turn(user_text, reply, engine)
+        _record_turn(user_text, reply, engine, hist)
         return {"reply": reply, "engine": engine, "tools_used": 0,
                 "tools_disabled": True}
     except Exception as exc:
         warn("brain", f"Groq tool loop failed ({exc}) - falling back to local Qwen 3B")
         reply, engine = _ask_local(messages)
-        _record_turn(user_text, reply, engine)
+        _record_turn(user_text, reply, engine, hist)
         return {"reply": reply, "engine": engine, "tools_used": 0,
                 "tools_disabled": True}
 
 
-def _record_turn(user_text: str, reply: str, engine: str) -> None:
+def _record_turn(user_text: str, reply: str, engine: str,
+                 history: list | None = None) -> None:
+    # v1.4.0: `history` (None = the shared _history) - see ask_with_tools.
+    hist = _history if history is None else history
     if engine != "none":
-        _history.append({"role": "user", "content": user_text})
-        _history.append({"role": "assistant", "content": reply})
+        hist.append({"role": "user", "content": user_text})
+        hist.append({"role": "assistant", "content": reply})
 
 
-def ask(user_text: str, ai_name: str, user_name: str, language: str) -> dict:
-    """Ask the brain. Returns {"reply": str, "engine": "groq"|"ollama"|"none"}."""
+def ask(user_text: str, ai_name: str, user_name: str, language: str,
+        history: list | None = None) -> dict:
+    """Ask the brain. Returns {"reply": str, "engine": "groq"|"ollama"|"none"}.
+
+    v1.4.0: `history` lets another channel (WhatsApp guests) keep its own
+    history instead of the shared in-app one. None = shared (unchanged)."""
     lang = "ar" if any("\u0600" <= ch <= "\u06ff" for ch in user_text) \
         else language
+    hist = _history if history is None else history
     system = {"role": "system",
               "content": system_prompt(ai_name, user_name, lang)}
-    messages = [system] + _history[-20:] + [{"role": "user", "content": user_text}]
+    messages = [system] + hist[-20:] + [{"role": "user", "content": user_text}]
 
     online = is_online()
     if online:
@@ -347,8 +359,8 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str) -> dict:
         reply, engine = _ask_local(messages)
 
     if engine != "none":
-        _history.append({"role": "user", "content": user_text})
-        _history.append({"role": "assistant", "content": reply})
+        hist.append({"role": "user", "content": user_text})
+        hist.append({"role": "assistant", "content": reply})
     return {"reply": reply, "engine": engine}
 
 
