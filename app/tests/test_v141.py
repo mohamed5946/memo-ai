@@ -770,8 +770,8 @@ class TestNoneAnd400Fix(unittest.TestCase):
         self.assertIn("function metaEngine", js)
         self.assertIn('low === "none"', js)
         self.assertIn('engine === "groq" || engine === "ollama"', js)
-        # All four chat display sites go through the guards.
-        self.assertEqual(js.count("safeReply("), 5)  # def + 4 call sites
+        # All five chat display sites go through the guards.
+        self.assertEqual(js.count("safeReply("), 6)  # def + 5 call sites
         self.assertEqual(js.count("metaEngine("), 5)  # def + 4 call sites
 
     def test_multi_turn_replies_stay_clean(self):
