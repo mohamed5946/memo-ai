@@ -140,6 +140,7 @@ import uuid
 from pathlib import Path
 
 import brain
+import hidden_spawn  # v1.4.3: sidecar node.exe must not pop a console
 import tools
 from logger import error, info, warn
 from settings_store import APP_DIR, DATA_DIR
@@ -477,7 +478,11 @@ class WhatsAppService:
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, text=True, bufsize=1,
                     encoding="utf-8", errors="replace",
-                    cwd=str(SIDECAR_DIR))
+                    cwd=str(SIDECAR_DIR),
+                    # v1.4.3: node.exe gets NO console window - the
+                    # user saw a Terminal that stayed open and popped
+                    # back whenever the watchdog restarted the sidecar.
+                    **hidden_spawn.popen_kwargs())
             except Exception as exc:
                 self._status = STATUS_ERROR
                 self._last_error = f"could not start sidecar: {exc}"

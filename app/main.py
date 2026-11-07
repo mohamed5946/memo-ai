@@ -1701,6 +1701,9 @@ class MemoApp:
             return
         self._monitor = monitor_mod.SystemMonitor(
             self.settings, on_alert=self._on_system_alert)
+        # v1.4.3: the system_status tool reads through this live
+        # monitor (warm CPU history, shared temperature cache).
+        tools.set_monitor_provider(lambda: _APP._monitor)
         if self._monitor.start():
             info("app", "System monitor started")
         else:

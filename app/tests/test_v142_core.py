@@ -492,7 +492,12 @@ class TestSystemStatus(unittest.TestCase):
             "battery": {"percent": 87, "charging": True},
             "temp_c": None, "temp_available": False,
         }
-        with mock.patch.dict(sys.modules, {"monitor": fake_monitor}):
+        # v1.4.3: the tool calls SystemMonitor().get_status() (an
+        # instance method) - the old module-level monitor.get_status()
+        # never existed and made every call fail.
+        fake_module = mock.Mock()
+        fake_module.SystemMonitor.return_value = fake_monitor
+        with mock.patch.dict(sys.modules, {"monitor": fake_module}):
             out = tools.execute_tool("system_status", {})
         self.assertIn("6800", out)
         self.assertIn("1200", out)
@@ -511,7 +516,10 @@ class TestSystemStatus(unittest.TestCase):
             "battery": None,
             "temp_c": 61, "temp_available": True,
         }
-        with mock.patch.dict(sys.modules, {"monitor": fake_monitor}):
+        # v1.4.3: instance method, see test_status_reports_real_numbers.
+        fake_module = mock.Mock()
+        fake_module.SystemMonitor.return_value = fake_monitor
+        with mock.patch.dict(sys.modules, {"monitor": fake_module}):
             out = tools.execute_tool("system_status", {})
         self.assertIn("61", out)
         self.assertNotIn("مش متاحة", out)

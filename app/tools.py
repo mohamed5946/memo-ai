@@ -48,6 +48,8 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
 
+import hidden_spawn  # v1.4.3: run_command must not pop a console window
+
 from logger import error, info, warn
 from settings_store import APP_DIR, BASE_DIR, KEYS_DIR
 
@@ -555,6 +557,7 @@ def _tool_run_command(args: dict) -> str:
         proc = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
             capture_output=True, text=True, timeout=60,
+            **hidden_spawn.run_kwargs(),
         )
         out = (proc.stdout or "") + (proc.stderr or "")
         out = out.strip()
@@ -671,22 +674,61 @@ def _tool_web_search(args: dict) -> str:
     return "\n".join(lines)
 
 
+# v1.4.3: the live SystemMonitor instance, registered by main.py
+# (set_monitor_provider). The tool prefers it - warm CPU history,
+# shared temperature cache - and falls back to a fresh SystemMonitor
+# when the app has none (tests, standalone calls).
+_monitor_provider = None
+
+
+def set_monitor_provider(fn) -> None:
+    """Register a callable returning the live SystemMonitor (or None)."""
+    global _monitor_provider
+    _monitor_provider = fn
+
+
 def _tool_system_status(args: dict) -> str:
     """Real laptop numbers (RAM, disk, CPU, battery, temp when
     available) from the background monitor. Read-only, no permission
     dialog. The brain calls this when the user asks "اللابتوب عامل
     إيه؟" / "الرام قد إيه؟" / "الجهاز سخن؟" - and answers from these
     numbers, never from memory. An unavailable temperature is stated
-    honestly, never guessed."""
+    honestly, never guessed.
+
+    v1.4.3 ROOT-CAUSE FIX: this used to call
+    ``monitor_mod.get_status()`` - a module-level function that does
+    NOT exist (get_status is a SystemMonitor *method*). Every call
+    raised AttributeError, so the tool failed as a whole and the
+    brain told the user it "couldn't fetch" RAM too. The call now
+    goes through a live monitor instance (or a fresh one), and every
+    section is rendered on its own - a missing temperature can never
+    take the RAM/disk/CPU numbers down with it.
+    """
     try:
         import monitor as monitor_mod
     except Exception:
         return "مراقبة النظام مش متاحة في النسخة دي."
-    try:
-        st = monitor_mod.get_status()
-    except Exception as exc:
-        error("tools", f"system_status failed: {exc}")
-        return f"مقدرتش أقرأ حالة اللابتوب — حصل خطأ: {exc}"
+    st = None
+    provider = _monitor_provider
+    if provider is not None:
+        try:
+            mon = provider()
+        except Exception:
+            mon = None
+        if mon is not None:
+            try:
+                st = mon.get_status()
+            except Exception as exc:
+                error("tools", f"system_status (live monitor) failed: {exc}")
+    if st is None:
+        try:
+            st = monitor_mod.SystemMonitor().get_status()
+        except Exception as exc:
+            error("tools", f"system_status failed: {exc}")
+            return f"مقدرتش أقرأ حالة اللابتوب — حصل خطأ: {exc}"
+    if not st.get("available", True):
+        return ("مراقبة النظام مش متاحة على الجهاز ده دلوقتي "
+                "(مكتبة قراءة حالة الجهاز مش موجودة).")
     ram = st.get("ram") or {}
     disk = st.get("disk") or {}
     cpu = st.get("cpu") or {}
@@ -697,13 +739,20 @@ def _tool_system_status(args: dict) -> str:
         lines.append(f"• الرام: {ram.get('used_mb', '?')}MB مستخدمة من "
                      f"{ram.get('total_mb', '?')}MB "
                      f"({ram.get('percent', '?')}% — فاضي {ram.get('free_mb', '?')}MB)")
+    else:
+        lines.append("• الرام: مش متاحة دلوقتي (تعذر قراءتها).")
     if disk:
         lines.append(f"• القرص: فاضي {disk.get('free_gb', '?')}GB من "
                      f"{disk.get('total_gb', '?')}GB "
                      f"({disk.get('percent_free', '?')}% فاضي)")
-    if cpu:
-        lines.append(f"• المعالج: {cpu.get('percent', '?')}% دلوقتي"
+    else:
+        lines.append("• القرص: مش متاح دلوقتي (تعذر قراءته).")
+    cpu_pct = cpu.get("percent")
+    if cpu_pct is not None:
+        lines.append(f"• المعالج: {cpu_pct}% دلوقتي"
                      + (" (حمل مرتفع مستمر ⚠️)" if cpu.get("sustained_high") else ""))
+    else:
+        lines.append("• المعالج: مش متاح دلوقتي (تعذر قراءته).")
     if temp is not None:
         lines.append(f"• حرارة المعالج: {temp}°م")
     else:

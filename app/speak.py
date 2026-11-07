@@ -9,6 +9,7 @@
 # Playback on Windows uses the built-in winsound module (WAV only).
 
 import base64
+import hidden_spawn  # v1.4.3: piper must not pop a console window
 import os
 import shutil
 import subprocess
@@ -154,6 +155,8 @@ def _piper_tts(text: str) -> Path:
         [binary, "--model", str(model), "--output_file", str(out)],
         input=text.encode("utf-8"),
         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=120,
+        # v1.4.3: piper is a console binary - never show its window.
+        **hidden_spawn.run_kwargs(),
     )
     if proc.returncode != 0 or not out.exists():
         raise RuntimeError(f"piper failed: {proc.stderr.decode('utf-8', 'ignore')[:200]}")

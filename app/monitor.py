@@ -20,6 +20,8 @@ import threading
 import time
 from datetime import datetime
 
+import hidden_spawn  # v1.4.3: PowerShell temp probe must not pop a console
+
 try:
     import psutil
 except Exception:  # psutil is a required dependency (see requirements.txt)
@@ -122,7 +124,8 @@ def _powershell_temps() -> list:
             proc = subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive",
                  "-Command", script],
-                capture_output=True, text=True, timeout=10)
+                capture_output=True, text=True, timeout=10,
+                **hidden_spawn.run_kwargs())
             return proc.stdout or ""
         except Exception:
             return ""
@@ -214,7 +217,13 @@ class SystemMonitor:
         if now - self._temp_cache["at"] < _TEMP_PROBE_INTERVAL_SEC:
             return (self._temp_cache["temp_c"],
                     self._temp_cache["available"])
-        temp_c, available = read_cpu_temp()
+        # v1.4.3: the probe must never raise - a failed probe is
+        # "unavailable", not a dead monitor.
+        try:
+            temp_c, available = read_cpu_temp()
+        except Exception as exc:
+            warn("monitor", f"CPU temperature probe failed: {exc}")
+            temp_c, available = None, False
         self._temp_cache.update({"at": now, "temp_c": temp_c,
                                  "available": available})
         if not available:
@@ -232,19 +241,38 @@ class SystemMonitor:
              "battery": {"percent", "charging"} | None,
              "temp_c": float | None, "temp_available": bool}
         """
+        # v1.4.3: each source is read on its own - one failing source
+        # must NEVER kill the whole sample (v1.4.2 field report: the
+        # brain said it "couldn't fetch" RAM too, because a single
+        # failure took the entire system_status tool down). A failed
+        # source is None (never a fake 0), and the reason is logged.
         if psutil is None:
-            return {"ram": {"total_mb": 0, "used_mb": 0, "free_mb": 0,
-                            "percent": 0.0},
-                    "disk": {"free_gb": 0.0, "total_gb": 0.0,
-                             "percent_free": 0.0},
-                    "cpu_percent": 0.0, "battery": None,
+            return {"ram": None, "disk": None, "cpu_percent": None,
+                    "battery": None,
                     "temp_c": None, "temp_available": False}
-        vm = psutil.virtual_memory()
-        du = psutil.disk_usage(_system_drive())
+        ram = None
+        try:
+            vm = psutil.virtual_memory()
+            ram = {"total_mb": int(vm.total // (1024 * 1024)),
+                   "used_mb": int(vm.used // (1024 * 1024)),
+                   "free_mb": int(vm.available // (1024 * 1024)),
+                   "percent": float(vm.percent)}
+        except Exception as exc:
+            warn("monitor", f"RAM reading failed: {exc}")
+        disk = None
+        try:
+            du = psutil.disk_usage(_system_drive())
+            disk = {"free_gb": round(du.free / (1024 ** 3), 2),
+                    "total_gb": round(du.total / (1024 ** 3), 2),
+                    "percent_free": round(100.0 * du.free / du.total, 1)
+                    if du.total else 0.0}
+        except Exception as exc:
+            warn("monitor", f"Disk reading failed: {exc}")
+        cpu_pct = None
         try:
             cpu_pct = float(psutil.cpu_percent(interval=None))
-        except Exception:
-            cpu_pct = 0.0
+        except Exception as exc:
+            warn("monitor", f"CPU reading failed: {exc}")
         battery = None
         try:
             raw = psutil.sensors_battery()
@@ -255,14 +283,8 @@ class SystemMonitor:
                        "charging": bool(raw.power_plugged)}
         temp_c, temp_available = self._read_temp_cached()
         return {
-            "ram": {"total_mb": int(vm.total // (1024 * 1024)),
-                    "used_mb": int(vm.used // (1024 * 1024)),
-                    "free_mb": int(vm.available // (1024 * 1024)),
-                    "percent": float(vm.percent)},
-            "disk": {"free_gb": round(du.free / (1024 ** 3), 2),
-                     "total_gb": round(du.total / (1024 ** 3), 2),
-                     "percent_free": round(100.0 * du.free / du.total, 1)
-                     if du.total else 0.0},
+            "ram": ram,
+            "disk": disk,
             "cpu_percent": cpu_pct,
             "battery": battery,
             "temp_c": temp_c,
@@ -275,19 +297,32 @@ class SystemMonitor:
         """Current status with REAL numbers, for the brain's system_status
         tool ("اللابتوب عامل إيه؟") and the Settings screen:
 
-            {"ram": {"total_mb", "used_mb", "free_mb", "percent"},
-             "disk": {"free_gb", "total_gb", "percent_free"},
-             "cpu": {"percent", "sustained_high": bool},
+            {"ram": {"total_mb", "used_mb", "free_mb", "percent"} | None,
+             "disk": {"free_gb", "total_gb", "percent_free"} | None,
+             "cpu": {"percent": float | None, "sustained_high": bool},
              "battery": {"percent", "charging"} | None,
              "temp_c": float | None, "temp_available": bool,
              "available": bool}   # False only when psutil is missing
+        Any field may be None when its source failed to read (v1.4.3:
+        partial data, never a crash, never fake zeros).
         """
-        reading = self.sample_fn()
-        self._record_cpu(reading.get("cpu_percent", 0.0))
+        # v1.4.3: a failing sample_fn must not raise out of get_status -
+        # the caller gets a degraded (all-None) reading instead, and
+        # reports it honestly.
+        try:
+            reading = self.sample_fn()
+        except Exception as exc:
+            warn("monitor", f"Sampling failed: {exc}")
+            reading = {"ram": None, "disk": None, "cpu_percent": None,
+                       "battery": None, "temp_c": None,
+                       "temp_available": False}
+        cpu_pct = reading.get("cpu_percent")
+        self._record_cpu(cpu_pct if cpu_pct is not None else 0.0)
         return {
-            "ram": reading["ram"],
-            "disk": reading["disk"],
-            "cpu": {"percent": float(reading.get("cpu_percent", 0.0)),
+            "ram": reading.get("ram"),
+            "disk": reading.get("disk"),
+            "cpu": {"percent": (float(cpu_pct) if cpu_pct is not None
+                                else None),
                     "sustained_high": self._sustained_high()},
             "battery": reading.get("battery"),
             "temp_c": reading.get("temp_c"),
@@ -463,7 +498,7 @@ class SystemMonitor:
             except Exception as exc:
                 warn("monitor", f"Sampling failed: {exc}")
                 return []
-        self._record_cpu(reading.get("cpu_percent", 0.0), now=now)
+        self._record_cpu(reading.get("cpu_percent") or 0.0, now=now)
         return self._evaluate(reading, now)
 
     # -- background thread -----------------------------------------------------
