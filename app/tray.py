@@ -40,7 +40,7 @@ def _default_icon_factory(name, image, title, menu):
 def _default_menu(on_open, on_quit):
     """Tray menu: Open (default action on left-click) + Quit."""
     return pystray.Menu(
-        pystray.MenuItem("فتح Memo AI", lambda icon, item: on_open(),
+        pystray.MenuItem("فتح LONA", lambda icon, item: on_open(),
                          default=True),
         pystray.MenuItem("إنهاء", lambda icon, item: on_quit()),
     )
@@ -98,7 +98,7 @@ class TrayManager:
                 menu = None  # the fake factory records callbacks itself
                 image = None
                 self._icon = self._factory(
-                    "Memo AI", image, "Memo AI", menu,
+                    "LONA", image, "LONA", menu,
                     on_open=self._on_open, on_quit=self._on_quit)
             else:
                 image = self._load_image()
@@ -106,7 +106,7 @@ class TrayManager:
                     return False
                 menu = _default_menu(self._on_open, self._on_quit)
                 self._icon = _default_icon_factory(
-                    "Memo AI", image, "Memo AI", menu)
+                    "LONA", image, "LONA", menu)
             self._thread = threading.Thread(
                 target=self._icon.run, daemon=True, name="memo-tray")
             self._thread.start()

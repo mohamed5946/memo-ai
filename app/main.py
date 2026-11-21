@@ -317,6 +317,38 @@ import weather
 import winshape
 import autostart
 
+# v1.6.0: backend workstream modules. All guarded like WhatsApp: a
+# missing/broken module never blocks startup - the feature just
+# reports "unavailable" and the rest of the app runs.
+try:
+    import invite as invite_mod
+except Exception:
+    invite_mod = None
+try:
+    import apikeys as apikeys_mod
+except Exception:
+    apikeys_mod = None
+try:
+    import browser_control as browser_mod
+except Exception:
+    browser_mod = None
+try:
+    import companion as companion_mod
+except Exception:
+    companion_mod = None
+try:
+    import fixer as fixer_mod
+except Exception:
+    fixer_mod = None
+try:
+    import selfview as selfview_mod
+except Exception:
+    selfview_mod = None
+try:
+    import tempwatch as tempwatch_mod
+except Exception:
+    tempwatch_mod = None
+
 # v1.4.0: WhatsApp linking (Baileys sidecar, app/whatsapp.py). Guarded:
 # if the module fails to import (missing sidecar files), the app runs
 # fine without WhatsApp - nothing else in main.py depends on it.
@@ -325,7 +357,7 @@ try:
 except Exception:
     whatsapp_mod = None
 
-# v1.5: wake word "يا ميمو" (app/wakeword.py). Guarded the same way:
+# v1.5: wake word "يا لونا" (app/wakeword.py). Guarded the same way:
 # a broken/missing wake-word module never blocks startup - the
 # feature just reports "unavailable" in Settings.
 try:
@@ -387,7 +419,7 @@ PET_BG = "#0A0A0A"
 def _find_hwnd_by_title(title: str, max_width: int | None = None):
     """Fallback HWND lookup (EnumWindows): first top-level window whose
     title matches exactly. max_width distinguishes the small island
-    ("Memo AI", <=400px) from the big main window (same title).
+    ("LONA", <=400px) from the big main window (same title).
 
     v1.3.2: this is the ONLY HWND lookup now. The old _window_hwnd()
     read window.native.Handle from background threads - WinForms creates
@@ -423,7 +455,7 @@ def _find_hwnd_by_title(title: str, max_width: int | None = None):
 
 
 def _find_main_hwnd():
-    """HWND of the MAIN window: title "Memo AI" (shared with the
+    """HWND of the MAIN window: title "LONA" (shared with the
     island), picked as the WIDEST match (main is 960px, island <=400px).
     EnumWindows-only (v1.3.2 hang fix - never .native/.Handle)."""
     try:
@@ -438,7 +470,7 @@ def _find_main_hwnd():
         def _enum(hwnd, _lparam):
             buf = ctypes.create_unicode_buffer(256)
             user32.GetWindowTextW(hwnd, buf, 256)
-            if buf.value == "Memo AI":
+            if buf.value == "LONA":
                 rect = RECT()
                 user32.GetWindowRect(hwnd, ctypes.byref(rect))
                 found.append((rect.right - rect.left, hwnd))
@@ -603,11 +635,11 @@ def _bridge_ready_watchdog(want=None) -> None:
               "from the bundle (see the self-test lines above), the "
               "WebView2 control may have failed to start, or the install "
               "may have mixed old/new files - reinstall cleanly (close "
-              "Memo AI first) and check the log.")
+              "LONA first) and check the log.")
 
 
 def _acquire_single_instance_lock() -> bool:
-    """Only one Memo AI may run at a time.
+    """Only one LONA may run at a time.
 
     The zip install and the setup.exe install are the same app, so a
     second launch (from either location) must exit quietly instead of
@@ -684,7 +716,11 @@ class Api:
         for key in ("ai_name", "user_name", "language", "voice",
                     "greeting_enabled", "voice_output", "avatar",
                     "pet_visible", "pet_parked", "autostart",
-                    "wakeword_enabled"):
+                    "wakeword_enabled", "wakeword_phrase", "theme",
+                    "deep_think_enabled", "focus_mode",
+                    "quiet_hours_enabled", "companion_enabled",
+                    "tempwatch_enabled", "morning_brief_enabled",
+                    "routine_learning_enabled", "privacy_mode", "exams"):
             if key in data:
                 _APP.settings[key] = data[key]
         ok = save_settings(_APP.settings)
@@ -834,7 +870,7 @@ class Api:
         info("app", f"Voice output {'ON' if new else 'OFF'} (speaker button)")
         return {"voice_output": new}
 
-    # -- wake word "يا ميمو" (v1.5) ---------------------------------------
+    # -- wake word "يا لونا" (v1.5) ---------------------------------------
     def get_wakeword_status(self):
         """Wake-word listener state for the Settings UI (enabled,
         state, model readiness, wake count). Honest when the module
@@ -844,7 +880,7 @@ class Api:
                     "detail": "wake-word module not available in "
                               "this build",
                     "model_ready": False,
-                    "phrase": "يا ميمو", "wake_count": 0,
+                    "phrase": "يا لونا", "wake_count": 0,
                     "last_wake_at": "", "bursts_checked": 0,
                     "bursts_discarded_noise": 0}
         return _APP.get_wakeword_status()
@@ -904,6 +940,336 @@ class Api:
         return {"ok": True,
                 "data_url": ("data:" + mime + ";base64,"
                              + base64.b64encode(data).decode("ascii"))}
+
+    # -- v1.6.0: themes / device overview / self-view / API keys /
+    # invite / deep think / proactive feed / fixing / browser / focus /
+    # AI name / backup / undo ---------------------------------------
+    def get_themes(self):
+        """Themes picker: the OLD theme is never deleted - it stays as
+        "old" beside the new ones. Python only persists the id; the UI
+        applies it (smooth morph)."""
+        themes = [
+            {"id": "old", "name": "القديم"},
+            {"id": "night-glass", "name": "زجاج الليل الداكن"},
+            {"id": "calm-light", "name": "المساحة الهادية الفاتحة"},
+            {"id": "graphite", "name": "لوحة القيادة الجرافيتية"},
+        ]
+        return {"themes": themes,
+                "current": _APP.settings.get("theme", "old")}
+
+    def set_theme(self, theme_id):
+        theme_id = str(theme_id or "").strip()
+        known = {"old", "night-glass", "calm-light", "graphite"}
+        if theme_id not in known:
+            return {"ok": False, "error": "unknown_theme"}
+        _APP.settings["theme"] = theme_id
+        ok = save_settings(_APP.settings)
+        info("app", f"Theme set to {theme_id}")
+        return {"ok": ok, "theme": theme_id}
+
+    def get_device_overview(self):
+        """Live device overview (RAM/CPU/battery/temp/storage/processes/
+        mood) - sampled FRESH on every call, never cached (live cards)."""
+        try:
+            if _APP._monitor is not None:
+                overview = _APP._monitor.get_device_overview()
+            else:
+                import monitor as monitor_mod
+                overview = monitor_mod.SystemMonitor(
+                    _APP.settings).get_device_overview()
+            return {"ok": True, "overview": overview}
+        except Exception as exc:
+            error("app", f"get_device_overview failed: {exc}")
+            return {"ok": False, "overview": None}
+
+    def get_mood(self):
+        try:
+            result = self.get_device_overview()
+            overview = result.get("overview") or {}
+            return {"mood": overview.get("mood", "صاحي"),
+                    "reason": overview.get("mood_reason", "")}
+        except Exception as exc:
+            error("app", f"get_mood failed: {exc}")
+            return {"mood": "صاحي", "reason": ""}
+
+    def get_self_view(self):
+        """LONA seeing herself inside her own program (8 rows)."""
+        if selfview_mod is None:
+            return {"ok": False, "rows": []}
+        try:
+            mood = self.get_mood().get("mood", "صاحي")
+            settings = dict(_APP.settings)
+            settings["deep_file_access_granted"] = \
+                tools.is_deep_file_access_granted()
+            rows = selfview_mod.get_self_view(
+                mood=mood, monitor=_APP._monitor, settings=settings)
+            return {"ok": True, "rows": rows}
+        except Exception as exc:
+            error("app", f"get_self_view failed: {exc}")
+            return {"ok": False, "rows": []}
+
+    def get_api_keys_status(self):
+        if apikeys_mod is None:
+            return {"ok": False, "groq": False, "gemini": False}
+        try:
+            status = apikeys_mod.get_api_keys_status()
+            return {"ok": True, **status}
+        except Exception as exc:
+            error("app", f"get_api_keys_status failed: {exc}")
+            return {"ok": False, "groq": False, "gemini": False}
+
+    def save_api_key(self, provider, value):
+        """Save a Groq/Gemini key from Settings (never logged)."""
+        if apikeys_mod is None:
+            return {"ok": False, "error": "unavailable"}
+        try:
+            return apikeys_mod.save_key(provider, value)
+        except Exception as exc:
+            error("app", f"save_api_key failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    def test_api_key(self, provider):
+        """Tiny live validity check (15s timeout). Presence/validity
+        only - the key value is never returned or logged."""
+        if apikeys_mod is None:
+            return {"ok": False, "valid": False,
+                    "detail": "unavailable"}
+        try:
+            return apikeys_mod.test_key(provider)
+        except Exception as exc:
+            error("app", f"test_api_key failed: {exc}")
+            return {"ok": False, "valid": False, "detail": str(exc)}
+
+    def check_invite(self, code):
+        """First-install invite check (local only). On success the
+        install is marked activated and the screen never shows again."""
+        if invite_mod is None:
+            return {"ok": False, "activated": False}
+        try:
+            ok = invite_mod.check(code)
+            if ok:
+                invite_mod.mark_activated()
+            return {"ok": ok, "activated": invite_mod.is_activated()}
+        except Exception as exc:
+            error("app", f"check_invite failed: {exc}")
+            return {"ok": False, "activated": False}
+
+    def get_activation_state(self):
+        if invite_mod is None:
+            return {"activated": True}  # no gate when the module is missing
+        try:
+            return {"activated": invite_mod.is_activated()}
+        except Exception:
+            return {"activated": False}
+
+    def set_deep_think(self, enabled):
+        _APP.settings["deep_think_enabled"] = bool(enabled)
+        ok = save_settings(_APP.settings)
+        info("app", f"Deep Think {'ON' if enabled else 'OFF'}")
+        return {"ok": ok,
+                "deep_think_enabled": bool(_APP.settings.get(
+                    "deep_think_enabled", False))}
+
+    def get_deep_think(self):
+        return {"deep_think_enabled": bool(_APP.settings.get(
+            "deep_think_enabled", False))}
+
+    def get_proactive_feed(self):
+        """Companion feed (morning brief, check-ins, battery warnings,
+        routine suggestions) + the next exam countdown."""
+        feed = []
+        try:
+            if _APP._companion is not None:
+                feed = _APP._companion.get_feed()
+        except Exception as exc:
+            warn("app", f"get_proactive_feed failed: {exc}")
+        exam = self.get_exam_countdown()
+        return {"feed": feed, "exam": exam}
+
+    def get_exam_countdown(self):
+        """Nearest upcoming exam + days left, or an honest 'no date
+        set' state - never an invented date."""
+        try:
+            if companion_mod is not None:
+                return companion_mod.get_next_exam(
+                    _APP.settings.get("exams") or [])
+        except Exception as exc:
+            error("app", f"get_exam_countdown failed: {exc}")
+        return {"set": False,
+                "detail": "مفيش موعد امتحان متسجل — ضيف مواعيدك من الإعدادات"}
+
+    def request_clean_cache(self):
+        """Clean caches now (GREEN tier, user-initiated from the UI).
+        Returns the size freed. The very next device overview reflects
+        the real post-clean values (live readings, no cache)."""
+        if fixer_mod is None:
+            return {"ok": False, "error": "unavailable"}
+        try:
+            result = fixer_mod.clear_temp_files(dry_run=False)
+            return {"ok": True, **result}
+        except Exception as exc:
+            error("app", f"request_clean_cache failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    def request_deep_file_access(self, path):
+        """Deep-file access (RED): starts the permission-card flow in
+        a background thread (never blocks the bridge) and returns a
+        pending id; poll get_deep_file_access_result(id)."""
+        req_id = uuid.uuid4().hex[:8]
+        _APP._deep_file_results[req_id] = {"done": False, "result": ""}
+
+        def _run():
+            try:
+                result = tools.execute_tool(
+                    "deep_file_access", {"path": str(path or "")})
+            except Exception as exc:
+                result = f"مقدرتش أوصل للملفات العميقة: {exc}"
+            _APP._deep_file_results[req_id] = {"done": True,
+                                               "result": result}
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    def get_deep_file_access_result(self, req_id):
+        entry = _APP._deep_file_results.get(str(req_id or ""), {})
+        return {"done": bool(entry.get("done")),
+                "result": entry.get("result", "")}
+
+    def browser_open_url(self, url):
+        if browser_mod is None:
+            return {"ok": False, "error": "unavailable"}
+        try:
+            ok = browser_mod.open_default_browser(url)
+            return {"ok": bool(ok), "url": url}
+        except Exception as exc:
+            error("app", f"browser_open_url failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    def focus_start(self, work_min=25, break_min=5):
+        """Start focus mode: silences non-urgent alerts, runs Pomodoro,
+        sets mood مركّز."""
+        try:
+            if _APP._companion is not None:
+                result = _APP._companion.focus_start(
+                    work_min=int(work_min or 25),
+                    break_min=int(break_min or 5))
+            else:
+                result = {"ok": False, "reason": "companion_unavailable"}
+            _APP.settings["focus_mode"] = True
+            save_settings(_APP.settings)
+            if _APP._monitor is not None:
+                _APP._monitor.set_focus_mode(True)
+            return result
+        except Exception as exc:
+            error("app", f"focus_start failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    def focus_stop(self):
+        try:
+            if _APP._companion is not None:
+                result = _APP._companion.focus_stop()
+            else:
+                result = {"ok": False, "reason": "companion_unavailable"}
+            _APP.settings["focus_mode"] = False
+            save_settings(_APP.settings)
+            if _APP._monitor is not None:
+                _APP._monitor.set_focus_mode(False)
+            return result
+        except Exception as exc:
+            error("app", f"focus_stop failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    def get_focus_state(self):
+        if _APP._companion is not None:
+            try:
+                return _APP._companion.get_focus_state()
+            except Exception:
+                pass
+        return {"active": bool(_APP.settings.get("focus_mode", False)),
+                "phase": "", "remaining_sec": 0,
+                "work_min": 25, "break_min": 5}
+
+    def set_ai_name(self, name):
+        """Rename the AI from Settings (customizable name, v1.6.0).
+        The wake word re-syncs from the new name ("يا {name}") and
+        persists with it; the listener picks the new phrase up live.
+        The spoken name is never hardcoded - it always comes from
+        this setting."""
+        cleaned = str(name or "").strip()
+        if not cleaned or len(cleaned) > 30 or any(
+                ch in cleaned for ch in "\n\r\t"):
+            return {"ok": False, "error": "invalid_name"}
+        try:
+            from settings_store import derive_wake_phrase
+            phrase = derive_wake_phrase(cleaned)
+        except Exception:
+            phrase = f"يا {cleaned}"
+        _APP.settings["ai_name"] = cleaned
+        _APP.settings["wakeword_phrase"] = phrase
+        ok = save_settings(_APP.settings)
+        info("app", f"AI renamed to {cleaned} - wake phrase is now {phrase}")
+        return {"ok": ok, "ai_name": cleaned, "wakeword_phrase": phrase}
+
+    def get_undoable(self):
+        """Undoable autonomous-fix actions (killed processes +
+        Recycle-Bin files)."""
+        if fixer_mod is None:
+            return {"ok": False, "entries": []}
+        try:
+            return {"ok": True, "entries": fixer_mod.list_undoable()}
+        except Exception as exc:
+            error("app", f"get_undoable failed: {exc}")
+            return {"ok": False, "entries": []}
+
+    def relaunch_undo(self, index):
+        """Relaunch a killed process from the undo list."""
+        if fixer_mod is None:
+            return {"ok": False, "error": "unavailable"}
+        try:
+            entries = fixer_mod.list_undoable()
+            entry = entries[int(index)]
+            if entry.get("kind") != "process":
+                return {"ok": False,
+                        "error": "only processes can be relaunched"}
+            return fixer_mod.relaunch_process(entry)
+        except Exception as exc:
+            error("app", f"relaunch_undo failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    def export_backup(self, path, password):
+        """Export settings + encrypted keys (password from the UI -
+        never logged, never stored)."""
+        try:
+            import backup as backup_mod
+            return backup_mod.export_settings_backup(path, password)
+        except Exception as exc:
+            error("app", f"export_backup failed: {exc}")
+            return {"ok": False, "detail": str(exc)}
+
+    def import_backup(self, path, password):
+        """Import a settings backup (password from the UI - never
+        logged). On success the live settings are reloaded."""
+        try:
+            import backup as backup_mod
+            result = backup_mod.import_settings_backup(path, password)
+            if result.get("ok"):
+                _APP.settings = load_settings()
+            return result
+        except Exception as exc:
+            error("app", f"import_backup failed: {exc}")
+            return {"ok": False, "detail": str(exc)}
+
+    def understand_image(self, image_path, prompt, confirmed=False):
+        """Image/screenshot understanding (Gemini vision). Refused
+        unless confirmed=True (the UI warning + the user's yes)."""
+        try:
+            result = tools.execute_tool("understand_image", {
+                "image_path": str(image_path or ""),
+                "prompt": str(prompt or ""),
+                "confirmed": bool(confirmed)})
+            return {"ok": True, "text": result}
+        except Exception as exc:
+            error("app", f"understand_image failed: {exc}")
+            return {"ok": False, "text": str(exc)}
 
     # -- windows -----------------------------------------------------------
     def open_main(self):
@@ -1033,7 +1399,7 @@ class Api:
         def _run():
             result = updater.apply_downloaded()
             if result.get("ok"):
-                info("update", "Update installed - restarting Memo AI")
+                info("update", "Update installed - restarting LONA")
                 time.sleep(0.5)
                 try:
                     if getattr(sys, "frozen", False):
@@ -1363,6 +1729,10 @@ class MemoApp:
         # startup). _alerts is the in-app banner feed (Api.get_alerts).
         self._monitor = None
         self._notif_watcher = None
+        # v1.6.0: proactive companion + deep-file request results
+        # (created in run() - best effort like the monitor).
+        self._companion = None
+        self._deep_file_results: dict = {}
         # v1.5: wake-word listener (created in run() when enabled -
         # best effort like the monitor; None = never started / module
         # missing). _speaking_until is the mic guard: while the app is
@@ -1709,14 +2079,37 @@ class MemoApp:
         the JS bridge thread: tools may wait on an Allow/Deny dialog that
         only the bridge can resolve."""
         try:
+            # v1.6.0: self-view summary (mood, own usage, temp) goes
+            # into the system prompt each turn; deep think + privacy
+            # mode come from settings. All guarded - a failed summary
+            # never blocks the chat.
+            self_view = ""
+            try:
+                if selfview_mod is not None:
+                    mood = "صاحي"
+                    if self._monitor is not None:
+                        mood = self._monitor.get_device_overview().get(
+                            "mood", "صاحي")
+                    settings = dict(self.settings)
+                    settings["deep_file_access_granted"] = \
+                        tools.is_deep_file_access_granted()
+                    self_view = selfview_mod.self_view_summary(
+                        mood=mood, monitor=self._monitor,
+                        settings=settings)
+            except Exception:
+                self_view = ""
             result = brain.ask_with_tools(
-                text, self.settings.get("ai_name", "Memo"),
+                text, self.settings.get("ai_name", "LONA"),
                 self.settings.get("user_name", "Mohamed"),
                 self.settings.get("language", "ar"),
                 # v1.4.1: the model MUST know when owner mode is open,
                 # or its system prompt refuses source-code questions
                 # with "تواصل مع المطور" even after a successful unlock.
-                owner_unlocked=self.owner_unlocked)
+                owner_unlocked=self.owner_unlocked,
+                deep_think=bool(self.settings.get(
+                    "deep_think_enabled", False)),
+                privacy_mode=self.settings.get("privacy_mode", True),
+                self_view=self_view)
         except Exception as exc:
             error("brain", f"Tool chat failed: {exc}")
             result = {"reply": "حصلت مشكلة وأنا بنفذ، جرّب تاني.",
@@ -1768,7 +2161,7 @@ class MemoApp:
                     msg = item["message"]
                     if item.get("notification_title"):
                         msg = f"{item['notification_title']}\n{msg}"
-                    notif_mod.show_toast(item["title"] or "Memo AI", msg)
+                    notif_mod.show_toast(item["title"] or "LONA", msg)
                 except Exception:
                     pass
         except Exception as exc:
@@ -1824,7 +2217,58 @@ class MemoApp:
         threading.Thread(target=_run, daemon=True,
                          name="memo-notif-start").start()
 
-    # -- wake word "يا ميمو" (v1.5) --------------------------------------
+
+    def _start_companion(self) -> None:
+        """Proactive companion (v1.6.0). Best effort - never blocks
+        startup. Morning brief, check-ins, battery warnings, focus
+        mode and routine suggestions all flow through _on_system_alert
+        (the in-app alerts channel)."""
+        if companion_mod is None:
+            warn("app", "Companion module unavailable")
+            return
+        if not self.settings.get("companion_enabled", True):
+            info("app", "Companion disabled in settings")
+            return
+        try:
+            self._companion = companion_mod.Companion(
+                self.settings, on_alert=self._on_system_alert,
+                monitor_fn=(lambda: self._monitor.get_status()
+                            if self._monitor is not None else None))
+            if self._companion.start():
+                info("app", "Proactive companion started")
+            else:
+                self._companion = None
+        except Exception as exc:
+            warn("app", f"Companion did not start: {exc}")
+            self._companion = None
+
+    def _start_tempwatch(self) -> None:
+        """Background temperature monitor registration (v1.6.0): HKCU
+        Run ("LONA TempWatch") so it runs even when the app is closed.
+        Best effort - a failed registration never blocks startup."""
+        if tempwatch_mod is None:
+            warn("app", "TempWatch module unavailable")
+            return
+        try:
+            tempwatch_mod.apply_tempwatch_setting(
+                bool(self.settings.get("tempwatch_enabled", True)))
+        except Exception as exc:
+            warn("app", f"TempWatch registration failed: {exc}")
+
+    def _companion_morning_brief(self) -> None:
+        """One short device brief on startup (battery/RAM/temp/exams),
+        into the proactive feed + in-app alerts (not spoken - the
+        greeting thread owns the spoken greeting)."""
+        if self._companion is None:
+            return
+        try:
+            status = self._monitor.get_status() \
+                if self._monitor is not None else None
+            self._companion.morning_brief(status)
+        except Exception as exc:
+            warn("app", f"Companion morning brief failed: {exc}")
+
+    # -- wake word "يا لونا" (v1.5) --------------------------------------
     def _wake_is_speaking(self) -> bool:
         """Mic guard: True while the app is playing a spoken reply
         (the listener ignores detections then - its own TTS must
@@ -1885,7 +2329,7 @@ class MemoApp:
                               "this build",
                     "model_ready": False,
                     "phrase": wakeword_mod.WAKE_PHRASE
-                    if wakeword_mod else "يا ميمو",
+                    if wakeword_mod else "يا لونا",
                     "wake_count": 0, "last_wake_at": "",
                     "bursts_checked": 0, "bursts_discarded_noise": 0}
         if self._wakeword is None:
@@ -1915,7 +2359,7 @@ class MemoApp:
     def _on_wake_word(self, command: str):
         """A wake was detected (listener thread). Show the main window,
         chime + flash the UI, then get the command: if the wake burst
-        already held one ("يا ميمو افتح النور"), run it directly; else
+        already held one ("يا لونا افتح النور"), run it directly; else
         record 5 s with the normal mic path. The listener stays
         paused until the reply has finished playing, so the mic never
         hears its own TTS. The transcript itself is never logged."""
@@ -2118,6 +2562,12 @@ class MemoApp:
                 self._notif_watcher.stop()
             except Exception:
                 pass
+        # v1.6.0: stop the proactive companion.
+        if self._companion is not None:
+            try:
+                self._companion.stop()
+            except Exception:
+                pass
         # v1.5: stop the wake-word listener (closes the mic).
         try:
             self.stop_wakeword()
@@ -2180,7 +2630,7 @@ class MemoApp:
                     "until the user shows it")
 
     def run(self):
-        info("app", f"Memo AI v{VERSION} starting")
+        info("app", f"LONA v{VERSION} starting")
         try:
             pv = getattr(webview, "__version__", "unknown")
         except Exception:
@@ -2205,10 +2655,10 @@ class MemoApp:
         # the running instance and exits BEFORE any window is created.
         if not _acquire_single_instance_lock():
             if winshape.signal_show_main():
-                info("app", "Another Memo AI instance is already running - "
+                info("app", "Another LONA instance is already running - "
                             "signaled it to show the main window")
             else:
-                info("app", "Another Memo AI instance is already running - "
+                info("app", "Another LONA instance is already running - "
                             "exiting (could not signal it)")
             return
         # v1.4.0: WhatsApp linking - start the sidecar if enabled.
@@ -2232,7 +2682,7 @@ class MemoApp:
             # The island starts in its IDLE compact state (v1.2.3).
             island_x = max(0, (sw - ISLAND_IDLE_W) // 2)
             self.island_window = webview.create_window(
-                "Memo AI", str(ui_dir / "island.html"),
+                "LONA", str(ui_dir / "island.html"),
                 width=ISLAND_IDLE_W, height=ISLAND_IDLE_H, x=island_x, y=12,
                 frameless=True, transparent=False, on_top=True,
                 resizable=False, background_color=ISLAND_BG, js_api=self.api)
@@ -2241,7 +2691,7 @@ class MemoApp:
         # pill). min_size=(640,520): the morph to a 190x52 pill is gone
         # with the island, so the window keeps its full minimum.
         self.main_window = webview.create_window(
-            "Memo AI", str(ui_dir / "index.html"),
+            "LONA", str(ui_dir / "index.html"),
             width=MAIN_W, height=MAIN_H,
             hidden=self.settings.get("island_enabled", False),
             min_size=(640, 520), js_api=self.api)
@@ -2256,7 +2706,7 @@ class MemoApp:
             # v1.3.1: the pet starts HIDDEN unless the user left it visible
             # (hidden= at creation avoids a flash of the cat at startup).
             self.pet_window = webview.create_window(
-                "Memo AI Pet", str(ui_dir / "pet.html"),
+                "LONA Pet", str(ui_dir / "pet.html"),
                 width=PET_SIZE, height=PET_SIZE,
                 x=sw - PET_SIZE - 20, y=sh - PET_SIZE - 90,
                 frameless=True, transparent=False, on_top=True,
@@ -2290,6 +2740,35 @@ class MemoApp:
             self._start_notifications()
         except Exception as exc:
             warn("app", f"Notification watcher did not start: {exc}")
+        # v1.6.0: proactive companion + TempWatch registration + invite
+        # gate (best effort, like the monitor). The invite screen is a
+        # UI concern: it shows only when not activated; Python only
+        # answers get_activation_state()/check_invite().
+        try:
+            self._start_companion()
+        except Exception as exc:
+            warn("app", f"Companion did not start: {exc}")
+        try:
+            self._start_tempwatch()
+        except Exception as exc:
+            warn("app", f"TempWatch did not start: {exc}")
+        try:
+            if invite_mod is not None:
+                activated = invite_mod.is_activated()
+                info("app", "Activation: "
+                            f"{'activated' if activated else 'invite screen (first install)'}")
+                if not activated:
+                    # Migrate any txt keys now (first run): the vault
+                    # gets them before the user even reaches Settings.
+                    try:
+                        if apikeys_mod is not None:
+                            apikeys_mod.migrate_txt_keys()
+                    except Exception:
+                        pass
+            threading.Thread(target=self._companion_morning_brief,
+                             daemon=True).start()
+        except Exception as exc:
+            warn("app", f"Invite/companion brief failed: {exc}")
         # v1.5: always-listening wake word (best effort - the model
         # loads in the background; a missing mic/model never blocks
         # startup or the chat).
@@ -2304,7 +2783,7 @@ class MemoApp:
         threading.Thread(target=_bridge_ready_watchdog,
                          args=(self._watchdog_pages(),),
                          daemon=True).start()
-        info("app", "Memo AI started - main window only "
+        info("app", "LONA started - main window only "
                     "(pet + island disabled)")
         # v1.3.1: webview.start(func) runs func in a thread BEFORE any
         # window exists, so _apply_window_regions polls until the HWNDs
@@ -2317,7 +2796,7 @@ class MemoApp:
             webview.start(self._apply_window_regions)
         else:
             webview.start()
-        info("app", "Memo AI exited")
+        info("app", "LONA exited")
 
     def _apply_window_regions(self):
         """Apply the Win32 window regions (v1.3.1, app/winshape.py) to
@@ -2359,7 +2838,7 @@ class MemoApp:
                 # v1.3.2: EnumWindows ONLY - the old _window_hwnd() read
                 # window.native.Handle from THIS thread (WinForms creates
                 # a Form's handle on the calling thread -> frozen window).
-                hwnd = _find_hwnd_by_title("Memo AI", max_width=400)
+                hwnd = _find_hwnd_by_title("LONA", max_width=400)
                 if hwnd:
                     self._island_hwnd = hwnd
                     winshape.log_window("island", hwnd, "before region")
@@ -2371,7 +2850,7 @@ class MemoApp:
                     winshape.log_window("island", hwnd, "after region")
                     pending["island"] = False
             if pending.get("pet"):
-                hwnd = _find_hwnd_by_title("Memo AI Pet")
+                hwnd = _find_hwnd_by_title("LONA Pet")
                 if hwnd:
                     self._pet_hwnd = hwnd
                     winshape.log_window("pet", hwnd, "before region")

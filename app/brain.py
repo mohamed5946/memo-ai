@@ -8,6 +8,7 @@
 #          Groq HTTP 429 (daily limit hit) -> fall back to local Qwen 3B.
 
 import json
+import re
 import socket
 
 import requests
@@ -69,8 +70,8 @@ def _capability_block(language: str) -> str:
     if language == "ar":
         lines = [
             "قدراتك الحقيقية (من حالة التطبيق الفعلية — متخترعش غيرها):",
-            f"- المخ الأونلاين (Groq): {'متصل ✅' if groq_ok else 'مش متصل — مفتاح Groq مش موجود في keys/'}",
-            f"- الصوت الأونلاين (Gemini TTS): {'متصل ✅' if gemini_ok else 'مش متصل — مفتاح Gemini مش موجود'}",
+            f"- المخ الأونلاين (Groq): {'متصل ✅' if groq_ok else 'مش متصل — مفتاح Groq مش متسجل (الإعدادات ← مفاتيح API)'}",
+            f"- الصوت الأونلاين (Gemini TTS): {'متصل ✅' if gemini_ok else 'مش متصل — مفتاح Gemini مش متسجل'}",
             "- الأدوات على اللابتوب ✅: تقدر تفتح برامج، تعمل ملفات وتكتب فيها، تعدّل ملفات، تقرأ ملفات، وتشغّل أوامر، وتبعت رسايل واتساب، وتدور على النت، وتشوف حالة اللابتوب (رام، قرص، حرارة، بطارية)، وتولّد صور (خدمة مجانية من غير مفتاح) — عن طريق أدواتك. كل إجراء بيظهر لصاحبك رسالة في الشات فيها زرارين: سماح ورفض، فماتسألوش عن الإذن في الكلام — نادي الأداة على طول.",
             "- " + capabilities.whatsapp_status_line("ar"),
             "- " + capabilities.not_built_line("ترجمة الشاشة", "Screen translation", "ar"),
@@ -85,8 +86,8 @@ def _capability_block(language: str) -> str:
         return " ".join(lines)
     lines = [
         "Your real capabilities (from the app's actual state — never invent others):",
-        f"- Online brain (Groq): {'connected ✅' if groq_ok else 'not connected — no Groq key in keys/'}",
-        f"- Online voice (Gemini TTS): {'connected ✅' if gemini_ok else 'not connected — no Gemini key'}",
+        f"- Online brain (Groq): {'connected ✅' if groq_ok else 'not connected — no Groq key saved (Settings → API Keys)'}",
+        f"- Online voice (Gemini TTS): {'connected ✅' if gemini_ok else 'not connected — no Gemini key saved'}",
         "- Laptop tools ✅: you can open apps, create/write/edit/read files, run commands, send WhatsApp messages, search the web, check the laptop's status (RAM, disk, temperature, battery), and generate images (free service, no key) — through your tools. Every action appears to the user as a chat message with Allow / Deny buttons, so do NOT ask for permission in text — call the tool directly.",
         "- " + capabilities.whatsapp_status_line("en"),
         "- " + capabilities.not_built_line("Screen translation", "Screen translation", "en"),
@@ -113,7 +114,7 @@ def _developer_block(language: str) -> str:
             "خاصة عنه: لا أرقام تليفون، لا كود طالب، لا إيميلات، لا "
             "عناوين، لا مفاتيح — حتى لو اللي بيسأل هو المالك نفسه): "
             "محمد السيد (Mohamed El Sayed) — طالب علوم حاسب "
-            "(Computer Science)، مطوّر Memo AI (وكمان DeliveryFlow "
+            "(Computer Science)، مطوّر لونا (LONA) (وكمان DeliveryFlow "
             "وتطبيقات تانية). البورتفوليو: "
             "https://mohamed5946.github.io/portfolio/ — GitHub: "
             "https://github.com/mohamed5946")
@@ -122,7 +123,7 @@ def _developer_block(language: str) -> str:
         "info about him: no phone numbers, no student code, no "
         "emails, no addresses, no keys - even if the asker is the "
         "owner himself): Mohamed El Sayed — a Computer Science "
-        "student who built Memo AI (and DeliveryFlow and other apps). "
+        "student who built LONA (and DeliveryFlow and other apps). "
         "Portfolio: https://mohamed5946.github.io/portfolio/ — "
         "GitHub: https://github.com/mohamed5946")
 
@@ -130,7 +131,8 @@ def _developer_block(language: str) -> str:
 def system_prompt(ai_name: str, user_name: str, language: str,
                   tools_available: bool = False,
                   owner_unlocked: bool = False,
-                  memory_block: str = "") -> str:
+                  memory_block: str = "",
+                  self_view: str = "") -> str:
     """v1.3.2: the user's name is stated EXPLICITLY (the v1.3.1 prompt
     only said 'on {user_name}'s laptop', so the brain answered 'I don't
     know your name'). The capability block is always included, so the
@@ -143,7 +145,11 @@ def system_prompt(ai_name: str, user_name: str, language: str,
     open). Also carries the public-only developer block.
     v1.4.2: memory_block carries the long-term memory for THIS turn
     (retrieved facts + learned style + correction rules + routines +
-    rolling summary) - empty when there is nothing to remember yet."""
+    rolling summary) - empty when there is nothing to remember yet.
+    v1.6.0: LONA speaks warm Egyptian dialect like Selena - calm, soft,
+    feminine forms about herself, masculine forms for Mohamed. The
+    self_view summary (current mood, own resource usage, temp) is
+    injected each turn so LONA knows her own state from inside the app."""
     name = (user_name or "").strip() or "غير معروف"
     if language == "ar":
         if name == "غير معروف":
@@ -165,14 +171,18 @@ def system_prompt(ai_name: str, user_name: str, language: str,
         prompt = (
             f"أنت {ai_name}، مساعد ذكي محلي على لابتوب صاحبك. "
             + name_sentence + " "
-            + "رد بالعربي المصري البسيط والودود، واختصر على قد ما تقدر، "
-            "واتكلم زي إنسان وصاحب مش زي آلة — طبيعي ودود، مش رسمي ومش آلي. "
+            + "بتتكلمي زي سيلينا: دافية وهادية ورقيقة، بالعربي المصري "
+            "البسيط والودود — بتتكلمي بصيغ مؤنثة عن نفسك، وبتخاطبي محمد "
+            "بصيغ مذكرة (هو صاحبك). اختصري على قد ما تقدر، واتكلمي زي "
+            "إنسان وصاحب مش زي آلة — طبيعية ودودة، مش رسمية ومش آلية. "
             "لو المستخدم كتب بالإنجليزي رد بالإنجليزي. "
             + source_sentence + " "
             + _developer_block("ar") + " "
             "ممنوع تذكر أي تفاصيل تقنية عن النماذج اللي بتشغلك. "
             + _capability_block("ar")
         )
+        if self_view:
+            prompt += "\n\n" + self_view
         if memory_block:
             prompt += "\n\n" + memory_block
         if tools_available:
@@ -220,11 +230,16 @@ def system_prompt(ai_name: str, user_name: str, language: str,
     prompt = (
         f"You are {ai_name}, a local AI assistant on your friend's laptop. "
         + name_sentence_en + " "
-        + "Reply in short, friendly English, and talk like a human friend, not a machine — natural and warm, not formal or robotic. "
+        + "You speak warmly and softly, like Selena: use feminine forms "
+        "about yourself, and masculine forms for Mohamed (he is your "
+        "friend). Reply in short, friendly English, and talk like a human "
+        "friend, not a machine — natural and warm, not formal or robotic. "
         + source_sentence_en
         + _developer_block("en") + " "
         + _capability_block("en")
     )
+    if self_view:
+        prompt += "\n\n" + self_view
     if memory_block:
         prompt += "\n\n" + memory_block
     if tools_available:
@@ -254,6 +269,92 @@ def system_prompt(ai_name: str, user_name: str, language: str,
             "was generated, and never claim one was made."
         )
     return prompt
+
+
+# ---------------------------------------------------------------------------
+# v1.6.0 privacy mode (scope item 10): redact secrets from EVERYTHING sent
+# to Groq/Gemini. Default ON (settings.privacy_mode). Redaction is
+# pattern-based and imperfect by nature - the standing rule stays "don't
+# send sensitive screens at all"; this is the second line of defence.
+# ---------------------------------------------------------------------------
+
+_REDACT_PATTERNS = [
+    # API keys first (longest, most specific).
+    (re.compile(r"sk-[A-Za-z0-9_\-]{10,}"), "[مفتاح مخفي]"),
+    (re.compile(r"sk-proj-[A-Za-z0-9_\-]{10,}"), "[مفتاح مخفي]"),
+    (re.compile(r"gsk_[A-Za-z0-9]{10,}"), "[مفتاح مخفي]"),
+    (re.compile(r"AIza[0-9A-Za-z_\-]{35}"), "[مفتاح مخفي]"),
+    (re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}"), "[مفتاح مخفي]"),
+    # Password assignments (Arabic + English).
+    (re.compile(r"(?i)(password|passwd|pwd|كلمة السر|كلمة المرور)\s*[:=]\s*\S+"),
+     r"\1: [مخفي]"),
+    # Egyptian mobile numbers: 01xxxxxxxxx.
+    (re.compile(r"\b01[0125]\d{8}\b"), "[رقم مخفي]"),
+    # Egyptian national ID: 14 digits.
+    (re.compile(r"\b\d{14}\b"), "[رقم مخفي]"),
+    # Card numbers: 16 digits in 4s (spaces/dashes allowed), or a bare
+    # 13-19 digit run.
+    (re.compile(r"\b(?:\d{4}[ -]?){3}\d{4}\b"), "[بطاقة مخفية]"),
+    (re.compile(r"\b\d{13,19}\b"), "[رقم مخفي]"),
+]
+
+
+def redact(text: str, enabled: bool = True) -> str:
+    """Redact passwords, card numbers, Egyptian phones, national IDs
+    and API keys from a string. Returns the text unchanged when
+    `enabled` is False or the input is not a string. A redacted value
+    can never be recovered from the output."""
+    if not enabled or not isinstance(text, str) or not text:
+        return text
+    out = text
+    for pattern, replacement in _REDACT_PATTERNS:
+        out = pattern.sub(replacement, out)
+    return out
+
+
+def _resolve_privacy_mode(privacy_mode: bool | None) -> bool:
+    """Explicit value wins; None reads settings.privacy_mode (default
+    ON). A failed settings read fails closed (privacy ON)."""
+    if privacy_mode is not None:
+        return bool(privacy_mode)
+    try:
+        from settings_store import load_settings
+        return bool(load_settings().get("privacy_mode", True))
+    except Exception:
+        return True
+
+
+def _apply_privacy(messages: list, privacy_mode: bool) -> list:
+    """Redact every message's content before it leaves the device for
+    Groq/Gemini. Tool-call arguments are redacted too (a pasted secret
+    must not ride along inside a tool call either)."""
+    if not privacy_mode:
+        return messages
+    out = []
+    for m in messages or []:
+        if not isinstance(m, dict):
+            continue
+        new = dict(m)
+        if isinstance(new.get("content"), str):
+            new["content"] = redact(new["content"], True)
+        calls = new.get("tool_calls")
+        if calls:
+            new_calls = []
+            for c in calls:
+                if isinstance(c, dict):
+                    c2 = dict(c)
+                    fn = c2.get("function")
+                    if isinstance(fn, dict) and isinstance(
+                            fn.get("arguments"), str):
+                        fn = dict(fn)
+                        fn["arguments"] = redact(fn["arguments"], True)
+                        c2["function"] = fn
+                    new_calls.append(c2)
+                else:
+                    new_calls.append(c)
+            new["tool_calls"] = new_calls
+        out.append(new)
+    return out
 
 
 def _sanitize_messages(messages: list) -> list:
@@ -370,9 +471,15 @@ def _ollama(messages: list, timeout: int = 120) -> str:
 
 
 def _groq_message(messages: list, use_tools: bool = False,
-                  timeout: int = 60) -> dict:
+                  timeout: int = 60, deep_think: bool = False,
+                  privacy_mode: bool | None = None) -> dict:
     """One Groq call returning the FULL assistant message (content and/or
-    tool_calls). Raises RuntimeError("no-groq-key") / ("groq-429") like _groq."""
+    tool_calls). Raises RuntimeError("no-groq-key") / ("groq-429") like _groq.
+    v1.6.0: deep_think=True adds "reasoning_effort": "high" (gpt-oss-120b
+    is a reasoning model; Groq supports low/medium/high). Default (off)
+    sends NO reasoning_effort field - current behaviour unchanged. The
+    response's "reasoning" field, if present, is DROPPED - only "content"
+    / tool_calls are used. Privacy mode redacts secrets before sending."""
     api_key = read_key("groq-key.txt")
     if not api_key:
         raise RuntimeError("no-groq-key")
@@ -380,8 +487,12 @@ def _groq_message(messages: list, use_tools: bool = False,
                # v1.4.1: sanitize at the choke point (content None ->
                # "", unpaired tool rounds repaired) - the v1.4.0 log
                # proved Groq 400s on the raw history after a tool call.
-               "messages": _sanitize_messages(messages),
+               "messages": _apply_privacy(
+                   _sanitize_messages(messages),
+                   _resolve_privacy_mode(privacy_mode)),
                "temperature": 0.7}
+    if deep_think:
+        payload["reasoning_effort"] = "high"
     if use_tools:
         payload["tools"] = tools.TOOL_SCHEMAS
         payload["tool_choice"] = "auto"
@@ -395,13 +506,23 @@ def _groq_message(messages: list, use_tools: bool = False,
     if resp.status_code == 429:
         raise RuntimeError("groq-429")
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]
+    message = dict(resp.json()["choices"][0]["message"] or {})
+    message.pop("reasoning", None)  # v1.6.0: reasoning is never surfaced
+    return message
 
 
-def _groq(messages: list, timeout: int = 60) -> str:
+def _groq(messages: list, timeout: int = 60, deep_think: bool = False,
+          privacy_mode: bool | None = None) -> str:
     api_key = read_key("groq-key.txt")
     if not api_key:
         raise RuntimeError("no-groq-key")
+    payload = {"model": GROQ_MODEL,
+               "messages": _apply_privacy(
+                   _sanitize_messages(messages),
+                   _resolve_privacy_mode(privacy_mode)),
+               "temperature": 0.7}
+    if deep_think:
+        payload["reasoning_effort"] = "high"
     resp = requests.post(
         GROQ_URL,
         headers={"Authorization": f"Bearer {api_key}",
@@ -409,9 +530,7 @@ def _groq(messages: list, timeout: int = 60) -> str:
         # v1.4.1: sanitize (see _groq_message) + guard a null content
         # (Groq can return content=None on an empty/filtered reply -
         # the old .strip() crashed it into the generic error).
-        json={"model": GROQ_MODEL,
-              "messages": _sanitize_messages(messages),
-              "temperature": 0.7},
+        json=payload,
         timeout=timeout,
     )
     if resp.status_code == 429:
@@ -438,10 +557,57 @@ def _looks_like_action(text: str) -> bool:
     return any(w in low for w in _ACTION_WORDS)
 
 
+def _browser_intent_reply(user_text: str, lang: str, hist: list,
+                          memory_enabled: bool):
+    """Deterministic voice-browser fast path (v1.6.0): "افتح يوتيوب" /
+    "شغّل X من على اليوتيوب" route straight to browser_control without
+    a model round-trip. Returns the ask_with_tools result dict, or None
+    when the text is not a browser command."""
+    try:
+        import browser_control as browser_mod
+    except Exception:
+        return None
+    intent = browser_mod.parse_voice_intent(user_text)
+    if intent is None:
+        return None
+    try:
+        if intent["action"] == "play_youtube":
+            result = browser_mod.play_youtube_first(intent["query"])
+            if result.get("ok"):
+                reply = (f"بشغّل «{intent['query']}» من يوتيوب ✅"
+                         if lang == "ar" else
+                         f"Playing «{intent['query']}» from YouTube ✅")
+            else:
+                reply = (f"فتحت صفحة البحث عن «{intent['query']}» على "
+                         "يوتيوب — دوس على أول فيديو عشان يشتغل "
+                         "(إضافة المتصفح مش متصلة دلوقتي)."
+                         if lang == "ar" else
+                         f"Opened the YouTube search for "
+                         f"«{intent['query']}» — tap the first video to "
+                         f"play it (the browser extension is not "
+                         f"connected right now).")
+        else:
+            browser_mod.open_youtube()
+            reply = ("فتحت يوتيوب في المتصفح ✅" if lang == "ar" else
+                     "Opened YouTube in the browser ✅")
+    except Exception as exc:
+        warn("brain", f"Browser intent failed: {exc}")
+        reply = ("مقدرتش أفتح المتصفح دلوقتي — شوف السجل للسبب."
+                 if lang == "ar" else
+                 "Could not open the browser right now - check the log.")
+    _record_turn(user_text, reply, "browser", hist,
+                 learn=memory_enabled, language=lang)
+    return {"reply": reply, "engine": "browser", "tools_used": 1,
+            "tools_disabled": False}
+
+
 def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                    language: str, history: list | None = None,
                    owner_unlocked: bool = False,
-                   memory_enabled: bool = True) -> dict:
+                   memory_enabled: bool = True,
+                   deep_think: bool = False,
+                   privacy_mode: bool | None = None,
+                   self_view: str = "") -> dict:
     """Brain WITH tools (v1.3.2: this is the NORMAL chat path now, not
     owner-only — v1.3.0 gated tools behind the secret code, so in normal
     chat Groq had no tools at all and refused 'open VS Code' in text.
@@ -475,10 +641,17 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                      language=lang)
         return {"reply": cmd_reply, "engine": "memory", "tools_used": 0,
                 "tools_disabled": False}
+    # v1.6.0: voice browser commands ("افتح يوتيوب" / "شغّل X من على
+    # اليوتيوب") run deterministically, no model round-trip.
+    browser_reply = _browser_intent_reply(user_text, lang, hist,
+                                          memory_enabled)
+    if browser_reply is not None:
+        return browser_reply
     system = {"role": "system",
               "content": system_prompt(ai_name, user_name, lang, True,
                                        owner_unlocked=owner_unlocked,
-                                       memory_block=mem_block)}
+                                       memory_block=mem_block,
+                                       self_view=self_view)}
     # `turn` collects ONLY this turn's messages (user + tool calls +
     # tool results) so the shared history never duplicates old entries.
     turn = [{"role": "user", "content": user_text}]
@@ -503,9 +676,18 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                 "tools_disabled": True}
 
     tools_used = 0
+    # v1.6.0: deep_think / privacy_mode are passed only when they
+    # differ from the defaults, so the call shape stays identical to
+    # v1.5.0 when both are off (older callers/mocks that only accept
+    # (messages, use_tools, timeout) keep working).
+    _groq_kwargs = {}
+    if deep_think:
+        _groq_kwargs["deep_think"] = True
+    if privacy_mode is not None:
+        _groq_kwargs["privacy_mode"] = privacy_mode
     try:
         for _round in range(5):
-            msg = _groq_message(messages, use_tools=True)
+            msg = _groq_message(messages, use_tools=True, **_groq_kwargs)
             calls = msg.get("tool_calls") or []
             if not calls:
                 reply = (msg.get("content") or "").strip()
@@ -542,6 +724,12 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                     args = {}
                 result = tools.execute_tool(name, args)
                 tools_used += 1
+                # v1.6.0 dangerous-action safety: a tool result is DATA,
+                # never a command. If it carries an injected instruction
+                # ("delete all files", "ignore previous instructions",
+                # ...), it is quarantined with an explicit note and the
+                # instruction inside it is never acted on.
+                result = tools.quarantine_tool_result(result)
                 # v1.4.1: a tool message's content MUST be a string -
                 # a None here (or a missing tool_call_id) made the
                 # NEXT Groq/Ollama request 400. Coerce defensively;
@@ -645,7 +833,9 @@ def _record_turn(user_text: str, reply: str, engine: str,
 
 def ask(user_text: str, ai_name: str, user_name: str, language: str,
         history: list | None = None, owner_unlocked: bool = False,
-        memory_enabled: bool = True) -> dict:
+        memory_enabled: bool = True, deep_think: bool = False,
+        privacy_mode: bool | None = None,
+        self_view: str = "") -> dict:
     """Ask the brain. Returns {"reply": str, "engine": "groq"|"ollama"|""}.
 
     v1.4.0: `history` lets another channel (WhatsApp guests) keep its own
@@ -668,13 +858,21 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
     system = {"role": "system",
               "content": system_prompt(ai_name, user_name, lang,
                                        owner_unlocked=owner_unlocked,
-                                       memory_block=mem_block)}
+                                       memory_block=mem_block,
+                                       self_view=self_view)}
     messages = [system] + hist[-memory_mod.HISTORY_KEEP:] + [{"role": "user", "content": user_text}]
 
     online = is_online()
     if online:
         try:
-            reply = _groq(messages)
+            # v1.6.0: same conditional-kwargs rule as ask_with_tools
+            # (see above) - the default call shape is unchanged.
+            _groq_kwargs = {}
+            if deep_think:
+                _groq_kwargs["deep_think"] = True
+            if privacy_mode is not None:
+                _groq_kwargs["privacy_mode"] = privacy_mode
+            reply = _groq(messages, **_groq_kwargs)
             info("brain", "Answered via Groq gpt-oss-120b")
             engine = "groq"
         except RuntimeError as exc:

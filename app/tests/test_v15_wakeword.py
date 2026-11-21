@@ -1,19 +1,19 @@
-# Memo AI v1.5 - headless tests for the "يا ميمو" wake word
+# LONA v1.5 - headless tests for the "يا لونا" wake word
 # (run on Linux, no Windows, no mic, no network except the model
 # cache when present):
 #
 #   python -m unittest app.tests.test_v15_wakeword -v
 #
 # What is proven here:
-#   * The phrase matcher: the full phrase "يا ميمو" wakes (alone, or
-#     with a command after it); the Whisper-small truncation "يا ميم"
-#     wakes too; "ميمو" alone, "يا ميمي", "يا محمد", "يا مين" and
+#   * The phrase matcher: the full phrase "يا لونا" wakes (alone, or
+#     with a command after it); the Whisper-small truncation "يا لون"
+#     wakes too; "لونا" alone, "يا لوني", "يا محمد", "يا مين" and
 #     other speech never wake.
 #   * The energy VAD: silence never opens a burst; speech opens one;
 #     1.2 s of silence closes it; steady noise is discarded WITHOUT
 #     transcription (quiet-fraction gate).
 #   * The listener state machine (fake spotter + scripted audio):
-#     "يا ميمو" -> the app wakes (callback fires, with the command
+#     "يا لونا" -> the app wakes (callback fires, with the command
 #     when the burst held one); other speech -> no wake; disabled ->
 #     no listening at all; paused (turn-based mic) -> no wake;
 #     resumed -> wakes again; cooldown blocks a second immediate
@@ -31,7 +31,8 @@
 #   * REAL spotter end-to-end (only when the faster-whisper "small"
 #     model is already in the local HF cache - skipped in CI):
 #     the real model transcribes the Piper fixture WAVs and the
-#     matcher wakes on all 6 positive fixtures, none of the 3
+#     matcher wakes on all 6 positive fixtures (old-phrase audio,
+#     matched with phrase="يا ميمو"), none of the 3
 #     negatives, and nothing on silence/noise.
 #
 # Fixtures (app/tests/fixtures/wakeword/*.wav): synthesized with
@@ -171,7 +172,7 @@ def _small_model_cached() -> Path | None:
 
 class TestNormalizeArabic(unittest.TestCase):
     def test_diacritics_and_alef_forms(self):
-        self.assertEqual(normalize_arabic("يَا مِيمُو"), "يا ميمو")
+        self.assertEqual(normalize_arabic("يَا لُونَا"), "يا لونا")
         # Four alef forms all normalise to ا, then the elongation
         # collapse (runs of 3+ -> 1) leaves a single ا.
         self.assertEqual(normalize_arabic("أإآٱ"), "ا")
@@ -181,43 +182,43 @@ class TestNormalizeArabic(unittest.TestCase):
         self.assertEqual(normalize_arabic("موسى"), "موسي")
 
     def test_elongation_collapse(self):
-        self.assertEqual(normalize_arabic("يا ميمووو"), "يا ميمو")
-        self.assertEqual(normalize_arabic("يااا ميمو"), "يا ميمو")
+        self.assertEqual(normalize_arabic("يا لونااا"), "يا لونا")
+        self.assertEqual(normalize_arabic("يااا لونا"), "يا لونا")
 
     def test_tatweel_stripped(self):
-        self.assertEqual(normalize_arabic("يـا مـيـمـو"), "يا ميمو")
+        self.assertEqual(normalize_arabic("يـا لـونـا"), "يا لونا")
 
 
 class TestExtractWakeCommand(unittest.TestCase):
     def test_phrase_alone_wakes_with_no_command(self):
-        self.assertEqual(extract_wake_command("يا ميمو"), (True, ""))
-        self.assertEqual(extract_wake_command("يا ميمو؟"), (True, ""))
+        self.assertEqual(extract_wake_command("يا لونا"), (True, ""))
+        self.assertEqual(extract_wake_command("يا لونا؟"), (True, ""))
 
     def test_phrase_with_command(self):
-        matched, cmd = extract_wake_command("يا ميمو افتح النور")
+        matched, cmd = extract_wake_command("يا لونا افتح النور")
         self.assertTrue(matched)
         self.assertEqual(cmd, "افتح النور")
 
     def test_truncated_pair_wakes(self):
-        # Whisper-small drops the final و when more words follow.
-        matched, cmd = extract_wake_command("يا ميم افتح النور")
+        # Whisper-small drops the final letter when more words follow.
+        matched, cmd = extract_wake_command("يا لون افتح النور")
         self.assertTrue(matched)
         self.assertEqual(cmd, "افتح النور")
-        matched, cmd = extract_wake_command("يا ميمُ أنتُ فين")
+        matched, cmd = extract_wake_command("يا لونُ أنتُ فين")
         self.assertTrue(matched)
         self.assertEqual(cmd, "انت فين")
 
     def test_name_alone_never_wakes(self):
-        self.assertEqual(extract_wake_command("ميمو"), (False, ""))
+        self.assertEqual(extract_wake_command("لونا"), (False, ""))
 
     def test_similar_words_never_wake(self):
-        for text in ("يا ميمي", "يا محمد", "يا مين اللي عمل كده",
+        for text in ("يا لوني", "يا محمد", "يا مين اللي عمل كده",
                      "السلام عليكم ورحمة الله", "افتح النور", ""):
             with self.subTest(text=text):
                 self.assertEqual(extract_wake_command(text), (False, ""))
 
     def test_contains_helper(self):
-        self.assertTrue(contains_wake_phrase("يا ميمو انت فين"))
+        self.assertTrue(contains_wake_phrase("يا لونا انت فين"))
         self.assertFalse(contains_wake_phrase("يا محمد"))
 
 
@@ -307,7 +308,7 @@ class _ListenerCase(unittest.TestCase):
 
 class TestListenerWake(_ListenerCase):
     def test_phrase_wakes_with_command(self):
-        spotter = _FakeSpotter(["يا ميمو افتح النور"])
+        spotter = _FakeSpotter(["يا لونا افتح النور"])
         listener = self._make_listener(spotter)
         listener.start()
         try:
@@ -319,7 +320,7 @@ class TestListenerWake(_ListenerCase):
             listener.stop()
 
     def test_phrase_alone_wakes_with_empty_command(self):
-        spotter = _FakeSpotter(["يا ميمو"])
+        spotter = _FakeSpotter(["يا لونا"])
         listener = self._make_listener(spotter)
         listener.start()
         try:
@@ -347,7 +348,7 @@ class TestListenerWake(_ListenerCase):
             listener.stop()
 
     def test_name_alone_does_not_wake(self):
-        spotter = _FakeSpotter(["ميمو"])
+        spotter = _FakeSpotter(["لونا"])
         listener = self._make_listener(spotter)
         listener.start()
         try:
@@ -360,7 +361,7 @@ class TestListenerWake(_ListenerCase):
             listener.stop()
 
     def test_silence_never_transcribes(self):
-        spotter = _FakeSpotter(["يا ميمو"])
+        spotter = _FakeSpotter(["يا لونا"])
         listener = self._make_listener(spotter)
         listener.start()
         try:
@@ -372,7 +373,7 @@ class TestListenerWake(_ListenerCase):
             listener.stop()
 
     def test_steady_noise_discarded_without_transcription(self):
-        spotter = _FakeSpotter(["يا ميمو"])
+        spotter = _FakeSpotter(["يا لونا"])
         listener = self._make_listener(spotter)
         listener.start()
         try:
@@ -390,7 +391,7 @@ class TestListenerWake(_ListenerCase):
 
     def test_cooldown_blocks_second_immediate_wake(self):
         self.settings["wakeword_cooldown_sec"] = 60
-        spotter = _FakeSpotter(["يا ميمو", "يا ميمو"])
+        spotter = _FakeSpotter(["يا لونا", "يا لونا"])
         listener = self._make_listener(spotter)
         listener.start()
         try:
@@ -405,7 +406,7 @@ class TestListenerWake(_ListenerCase):
 
     def test_speaking_suppresses_rewake(self):
         speaking = {"on": True}
-        spotter = _FakeSpotter(["يا ميمو"])
+        spotter = _FakeSpotter(["يا لونا"])
         listener = WakeWordListener(
             self.settings, on_wake=lambda cmd: self.wakes.append(cmd),
             is_speaking=lambda: speaking["on"],
@@ -421,7 +422,7 @@ class TestListenerWake(_ListenerCase):
             listener.stop()
 
     def test_pause_blocks_wake_resume_restores(self):
-        spotter = _FakeSpotter(["يا ميمو", "يا ميمو"])
+        spotter = _FakeSpotter(["يا لونا", "يا لونا"])
         listener = self._make_listener(spotter)
         listener.start()
         try:
@@ -441,7 +442,7 @@ class TestListenerWake(_ListenerCase):
 
     def test_disabled_listener_never_starts(self):
         self.settings["wakeword_enabled"] = False
-        spotter = _FakeSpotter(["يا ميمو"])
+        spotter = _FakeSpotter(["يا لونا"])
         listener = self._make_listener(spotter)
         self.assertFalse(listener.start())
         self.assertEqual(listener.status()["state"], "off")
@@ -461,7 +462,7 @@ class TestSettingsAndWiring(unittest.TestCase):
         import settings_store
         self.assertTrue(settings_store.DEFAULTS["wakeword_enabled"])
         self.assertEqual(settings_store.DEFAULTS["wakeword_phrase"],
-                         "يا ميمو")
+                         "يا لونا")
         self.assertEqual(settings_store.DEFAULTS["wakeword_cooldown_sec"],
                          5)
 
@@ -476,7 +477,7 @@ class TestSettingsAndWiring(unittest.TestCase):
             self.assertTrue(settings_store.save_settings(settings))
             reloaded = settings_store.load_settings()
             self.assertFalse(reloaded["wakeword_enabled"])
-            self.assertEqual(reloaded["wakeword_phrase"], "يا ميمو")
+            self.assertEqual(reloaded["wakeword_phrase"], "يا لونا")
 
     def test_main_wiring(self):
         src = _read("app/main.py")
@@ -528,7 +529,7 @@ class TestSettingsAndWiring(unittest.TestCase):
     def test_version_manifest(self):
         manifest = json.loads(_read("version.json"))
         self.assertEqual(manifest["version"], "1.5.0")
-        self.assertTrue(any("ميمو" in f.get("title", "")
+        self.assertTrue(any("لونا" in f.get("title", "")
                             for f in manifest.get("features", [])))
 
 
@@ -625,7 +626,9 @@ class TestRealSpotterEndToEnd(unittest.TestCase):
             with self.subTest(fixture=name):
                 samples = _wav_samples_16k(FIXTURES / name)
                 text = self.spotter.transcribe(samples)
-                matched, cmd = extract_wake_command(text)
+                # The fixture WAVs speak the previous phrase "يا ميمو":
+                # match them with that phrase explicitly.
+                matched, cmd = extract_wake_command(text, phrase="يا ميمو")
                 self.assertTrue(
                     matched,
                     f"{name} transcribed as {text!r} - no wake")

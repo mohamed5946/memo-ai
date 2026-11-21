@@ -37,7 +37,7 @@ DATA_DIR = APP_DIR / "data"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 
 DEFAULTS = {
-    "ai_name": "Memo",
+    "ai_name": "LONA",
     "user_name": "Mohamed",
     "language": "ar",            # "ar" or "en"
     "voice": "girl_warm",        # boy_calm | boy_fun | girl_warm | girl_fast
@@ -89,13 +89,12 @@ DEFAULTS = {
     "monitor_cooldown_min": 30,
     "monitor_alert_in_app": True,   # show alerts inside the app
     "monitor_alert_toast": True,    # ... and as a Windows toast
-    # v1.5: wake word "يا ميمو" (always-listening, offline).
-    # Default ON - the user asked for it. The mic is fully closed
-    # when this is off. The spotter is faster-whisper "small" (no new
-    # dependency, no key, no account); the model downloads ~500 MB on
-    # first enable and needs ~485 MB RAM resident (measured).
+    # v1.5: wake word (always-listening, offline). The phrase DERIVES
+    # from the AI's name: "يا {ai_name}" (default "يا لونا"). Any user
+    # can rename the AI from Settings (ai_name) - set_ai_name() re-syncs
+    # this phrase, and the listener matches the synced phrase.
     "wakeword_enabled": True,
-    "wakeword_phrase": "يا ميمو",
+    "wakeword_phrase": "يا لونا",
     "wakeword_cooldown_sec": 5,
     # v1.4.2: important-notification alerts (Windows toast listener).
     "notifications_enabled": True,
@@ -110,7 +109,40 @@ DEFAULTS = {
         "critical", "error", "alert",
         "مهم", "عاجل", "تنبيه", "تحديث", "كلمة السر", "خطأ", "حرج", "أمن",
     ],
+    # v1.6.0: themes (old theme is never deleted - it stays as "old"
+    # beside the new ones; the UI applies the id, Python only persists it).
+    "theme": "old",
+    # v1.6.0: Deep Think (Groq reasoning_effort="high" when on).
+    "deep_think_enabled": False,
+    # v1.6.0: proactive companion / focus mode.
+    "focus_mode": False,
+    "quiet_hours_enabled": True,
+    "companion_enabled": True,
+    "tempwatch_enabled": True,
+    "morning_brief_enabled": True,
+    "routine_learning_enabled": True,
+    # v1.6.0: privacy mode (default ON) - redact secrets from anything
+    # sent to Groq/Gemini (see brain.redact).
+    "privacy_mode": True,
+    # v1.6.0: exam countdown - list of {"subject", "date": "YYYY-MM-DD"}.
+    # Default EMPTY: no date is ever invented; the UI says "no date set".
+    "exams": [],
 }
+
+
+def derive_wake_phrase(ai_name: str) -> str:
+    """The wake word derives from the AI's name: "يا {ai_name}".
+    Default ("LONA") -> "يا لونا". An empty/blank name falls back to
+    the default phrase. The spoken name is NEVER hardcoded - callers
+    always read the ai_name setting and derive from it."""
+    name = str(ai_name or "").strip()
+    if not name:
+        return "يا لونا"
+    # The default name "LONA" is spoken in Arabic as "لونا" - the wake
+    # word is an Arabic phrase, so a Latin name is never spoken raw.
+    if name.upper() == "LONA":
+        return "يا لونا"
+    return f"يا {name}"
 
 
 def load_settings() -> dict:
@@ -140,7 +172,27 @@ def save_settings(settings: dict) -> bool:
 
 
 def read_key(name: str, quiet: bool = False) -> str:
-    """Read a key file (e.g. 'groq-key.txt') from ../keys/. Returns '' if missing."""
+    """Read a key file (e.g. 'groq-key.txt'). Returns '' if missing.
+
+    v1.6.0: Groq/Gemini keys live in the Windows Credential Manager
+    (DPAPI) - see apikeys.py. This function delegates to that store so
+    every existing caller (brain, speak, ...) keeps working unchanged.
+    Azure keys are not in the vault - they still read from txt. The
+    value is never logged. (Lazy import: apikeys imports this module
+    for paths, so a top-level import would be a cycle.)"""
+    provider = {"groq-key.txt": "groq",
+                "gemini-key.txt": "gemini"}.get(str(name or "").strip())
+    if provider:
+        try:
+            import apikeys
+            value = apikeys.read_key_value(provider)
+        except Exception as exc:
+            error("keys", f"Could not read {provider} key: {exc}")
+            return ""
+        if not value and not quiet:
+            warn("keys", f"Key missing: {provider} "
+                         f"(add it in Settings -> API Keys)")
+        return value
     path = KEYS_DIR / name
     try:
         if not path.exists():
