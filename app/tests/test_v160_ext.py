@@ -442,3 +442,42 @@ class TestInstallerRegistration:
         called = iss.index("WriteNativeHostManifest();",
                            iss.index("procedure CurStepChanged"))
         assert defined < called
+
+    def test_code_comments_have_no_nested_braces(self):
+        # Inno Setup Pascal Script comments are { ... }: a "{" inside
+        # one ENDS the comment at the next "}" - so "{app}" inside a
+        # comment made the rest of the comment parse as code (CI
+        # 2026-11-21: "Syntax error" at the {app} line). Scan the
+        # [Code] section tracking comment/string state properly.
+        iss = _read("installer/memo-ai.iss")
+        code = iss.split("[Code]", 1)[1]
+        in_comment = in_string = False
+        i = 0
+        while i < len(code):
+            ch = code[i]
+            if in_string:
+                if ch == "'":
+                    if i + 1 < len(code) and code[i + 1] == "'":
+                        i += 2
+                        continue
+                    in_string = False
+                i += 1
+                continue
+            if in_comment:
+                assert ch != "{", (
+                    "nested '{' inside a [Code] comment: "
+                    + code[max(0, i - 50):i + 30].replace("\n", " "))
+                if ch == "}":
+                    in_comment = False
+                i += 1
+                continue
+            if ch == "'":
+                in_string = True
+            elif ch == "{":
+                in_comment = True
+            else:
+                assert ch != "}", (
+                    "'}' outside a [Code] comment: "
+                    + code[max(0, i - 50):i + 30].replace("\n", " "))
+            i += 1
+        assert not in_comment and not in_string

@@ -216,13 +216,14 @@ end;
 { ---- v1.6.0: LONA Browser native host (Chrome) ---- }
 { The manifest's "path" must be an ABSOLUTE path to an executable, so
   the template shipped in [Files] cannot carry it — this rewrites
-  {app}\native-host.json at install time with the real install dir.
-  The exe itself runs the host stdio loop when launched with
-  --native-host (or with a chrome-extension:// origin argument — see
-  extension/NATIVE_HOST_MAIN_HOOK.txt). allowed_origins carries a
-  placeholder: the extension id is only known after the extension is
-  first loaded in Chrome (chrome://extensions), so it must be filled
-  in with the real id once — the file is plain JSON next to the exe. }
+  native-host.json in the install folder at install time with the
+  real install dir. The exe itself runs the host stdio loop when
+  launched with --native-host (or with a chrome-extension:// origin
+  argument — see extension/NATIVE_HOST_MAIN_HOOK.txt).
+  allowed_origins carries a placeholder: the extension id is only
+  known after the extension is first loaded in Chrome
+  (chrome://extensions), so it must be filled in with the real id
+  once — the file is plain JSON next to the exe. }
 
 procedure WriteNativeHostManifest();
 var
