@@ -504,7 +504,7 @@ class TestSettingsAndWiring(unittest.TestCase):
         css = _read("app/ui/styles.css")
         self.assertIn('id="set-wakeword"', html)
         self.assertIn('id="wakeword-status"', html)
-        self.assertIn("v1.5.0", html)
+        self.assertIn("v1.6.0", html)  # v1.6.0 UI
         for name in ("onWakeWord", "wakeHeard", "wakeReply",
                      "wakeNoCommand", "refreshWakewordStatus"):
             self.assertIn(name, js)

@@ -446,7 +446,9 @@ class TestSettingsReorg(unittest.TestCase):
                         "logs", "updates"):
             self.assertIn(f'data-section="{section}"', html)
             self.assertIn(f'id="section-{section}"', html)
-        self.assertEqual(html.count('class="back-btn'), 9)
+        # v1.6.0 adds 5 sections (themes, api-keys, self-view,
+        # first-run, backup), each with its own back button: 9 + 5.
+        self.assertEqual(html.count('class="back-btn'), 14)
         self.assertIn('id="settings-menu"', html)
         # Quit lives on the menu; Save lives in its own section.
         self.assertIn('id="quit-btn"', html)
