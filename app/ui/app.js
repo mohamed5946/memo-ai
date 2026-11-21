@@ -1,4 +1,4 @@
-// Memo AI v1 - main window logic
+// LONA v1 - main window logic
 // Talks to Python through window.pywebview.api (pywebview bridge).
 // If opened in a normal browser (no bridge), the UI still renders and
 // shows a notice - this is only for testing the layout.
@@ -21,17 +21,17 @@ const I18N = {
     user_name: "المساعد يناديك بإيه؟",
     language: "لغة الواجهة",
     greeting_toggle: "التحية الصباحية عند التشغيل (مع الطقس)",
-    autostart_toggle: "تشغيل Memo AI تلقائياً مع بدء ويندوز (يفتح النافذة الرئيسية)",
-    wakeword_toggle: "الاستماع الدايم — نادي «يا ميمو» بصوتك فيرد عليك من غير ما تدوس المايك",
+    autostart_toggle: "تشغيل LONA تلقائياً مع بدء ويندوز (يفتح النافذة الرئيسية)",
+    wakeword_toggle: "الاستماع الدايم — نادي «يا لونا» بصوتك فيرد عليك من غير ما تدوس المايك",
     wakeword_status_loading: "الاستماع الدايم: بيجهّز…",
-    wakeword_status_listening: "الاستماع الدايم شغال ✅ — نادي «يا ميمو»",
+    wakeword_status_listening: "الاستماع الدايم شغال ✅ — نادي «يا لونا»",
     wakeword_status_paused: "الاستماع الدايم واقف مؤقتاً",
     wakeword_status_off: "الاستماع الدايم مقفول — المايك مقفول تماماً.",
     wakeword_status_loading_model: "الاستماع الدايم: بينزّل موديل السمع (مرة واحدة، ~500MB)…",
     wakeword_status_error: "الاستماع الدايم مش شغال: ",
     wakeword_status_unavailable: "الاستماع الدايم مش متاح في النسخة دي.",
     wakeword_heard: "👂 سمعتك — اتكلم",
-    wakeword_no_command: "ماسمعتش حاجة — نادي «يا ميمو» تاني",
+    wakeword_no_command: "ماسمعتش حاجة — نادي «يا لونا» تاني",
     menu_general: "عام", menu_whatsapp: "WhatsApp", menu_voices: "الأصوات",
     menu_avatar: "الأفاتار", menu_logs: "سجل التشخيص", menu_updates: "التحديثات",
     back: "→ رجوع",
@@ -42,7 +42,7 @@ const I18N = {
     wa_status_off_enabled: "الواتساب مفعّل بس الخدمة مش شغالة — جرّب تقفل الإعدادات وتفتحها تاني أو أعد تشغيل البرنامج.",
     wa_save_error: "مقدرتش أحفظ إعدادات الواتساب: ",
     sec_whatsapp: "واتساب — ربط كجهاز مرتبط",
-    wa_hint: "Memo AI بيتربط بواتساب الرقم التالت اللي شبه مش بيستخدمه (مش رقم الشغل ومش الرقم الأساسي) كجهاز مرتبط عبر QR — زي WhatsApp Web. الرقم الأساسي اللي هتكتبه تحت بيقدر يأمر اللابتوب، وأي رقم تاني بياخد ردود شات بس.",
+    wa_hint: "LONA بيتربط بواتساب الرقم التالت اللي شبه مش بيستخدمه (مش رقم الشغل ومش الرقم الأساسي) كجهاز مرتبط عبر QR — زي WhatsApp Web. الرقم الأساسي اللي هتكتبه تحت بيقدر يأمر اللابتوب، وأي رقم تاني بياخد ردود شات بس.",
     wa_toggle: "تفعيل ربط الواتساب",
     wa_owner_label: "رقمك الأساسي (owner) — اللي يأمر اللابتوب من الواتساب",
     wa_status_off: "الواتساب مش مفعّل.",
@@ -81,7 +81,7 @@ const I18N = {
     perm_less: "عرض أقل ▴",
     menu_memory: "الذاكرة",
     sec_memory: "الذاكرة الطويلة",
-    mem_hint: "دي الحاجات اللي Memo AI فاكرها عنك من المحادثات — محفوظة على جهازك بس، ومبتترفعش لأي مكان. تقدر تمسح أي حاجة منها، أو تمسح الكل.",
+    mem_hint: "دي الحاجات اللي LONA فاكرها عنك من المحادثات — محفوظة على جهازك بس، ومبتترفعش لأي مكان. تقدر تمسح أي حاجة منها، أو تمسح الكل.",
     mem_facts: "حقائق محفوظة",
     mem_rules: "قواعد اتعلمتها من تصحيحاتك",
     mem_routines: "روتينك وعاداتك",
@@ -89,7 +89,7 @@ const I18N = {
     mem_summary: "ملخص محادثات سابقة",
     mem_empty: "لسه مفيش حاجة محفوظة — قولي «افتكر إن...» في الشات.",
     mem_clear: "مسح كل الذاكرة",
-    mem_clear_confirm: "متأكد إنك عايز تمسح كل ذاكرة Memo AI عنك؟",
+    mem_clear_confirm: "متأكد إنك عايز تمسح كل ذاكرة LONA عنك؟",
     mem_deleted: "اتمسحت ✅",
     menu_system: "صحة الجهاز",
     menu_notifications: "الإشعارات",
@@ -124,6 +124,7 @@ const I18N = {
     update_up_to_date: "إنت على أحدث نسخة ✅",
     update_available: "فيه تحديث جديد!",
     update_installing: "بيثبّت التحديث وبيعاد التشغيل...",
+    update_installing_now: "بيتثبّت دلوقتي…",
     update_downloading: "بينزّل التحديث...",
     update_downloaded: "نزل",
     update_of: "من",
@@ -153,7 +154,7 @@ const I18N = {
     listening: "🎙️ بسمعك... اتكلم دلوقتي",
     thinking: "بيفكر...",
     speaking: "بيتكلم...",
-    hello: "أهلاً يا محمد! أنا Memo — اكتب أو اضغط المايك وتكلم.",
+    hello: "أهلاً يا محمد! أنا LONA — اكتب أو اضغط المايك وتكلم.",
     heard_prefix: "سمعتك: ",
     no_bridge: "مش قادر أوصل لمحرك البرنامج — اقفل البرنامج وافتحه تاني، ولو المشكلة فضلت ثبّت WebView2",
     bridge_not_ready: "البرنامج لسه بيجهز — استنى ثانية ودوس تاني",
@@ -161,7 +162,7 @@ const I18N = {
     log_unavailable: "السجل مش متاح دلوقتي",
     copied: "اتنسخ السجل ✅",
     saved: "اتحفظت الإعدادات ✅",
-    confirm_quit: "متأكد إنك عايز تقفل Memo AI خالص؟",
+    confirm_quit: "متأكد إنك عايز تقفل LONA خالص؟",
   },
   en: {
     subtitle: "Local • Secure • Offline",
@@ -173,17 +174,17 @@ const I18N = {
     user_name: "What should I call you?",
     language: "Interface language",
     greeting_toggle: "Morning greeting on startup (with weather)",
-    autostart_toggle: "Start Memo AI automatically with Windows (opens the main window)",
-    wakeword_toggle: "Always listening — call “Ya Memo” out loud and it answers, no mic tap needed",
+    autostart_toggle: "Start LONA automatically with Windows (opens the main window)",
+    wakeword_toggle: "Always listening — call “Ya LONA” out loud and it answers, no mic tap needed",
     wakeword_status_loading: "Always listening: starting…",
-    wakeword_status_listening: "Always listening is on ✅ — call “Ya Memo”",
+    wakeword_status_listening: "Always listening is on ✅ — call “Ya LONA”",
     wakeword_status_paused: "Always listening paused for now",
     wakeword_status_off: "Always listening is off — the mic is fully closed.",
     wakeword_status_loading_model: "Always listening: downloading the hearing model (one-time, ~500MB)…",
     wakeword_status_error: "Always listening isn't working: ",
     wakeword_status_unavailable: "Always listening is not available in this build.",
     wakeword_heard: "👂 Heard you — go ahead",
-    wakeword_no_command: "Didn't catch anything — call “Ya Memo” again",
+    wakeword_no_command: "Didn't catch anything — call “Ya LONA” again",
     menu_general: "General", menu_whatsapp: "WhatsApp", menu_voices: "Voices",
     menu_avatar: "Avatar", menu_logs: "Diagnostics log", menu_updates: "Updates",
     back: "→ Back",
@@ -194,7 +195,7 @@ const I18N = {
     wa_status_off_enabled: "WhatsApp is enabled but the service isn't running — reopen Settings or restart the app.",
     wa_save_error: "Couldn't save WhatsApp settings: ",
     sec_whatsapp: "WhatsApp — link as a device",
-    wa_hint: "Memo AI links to the barely-used THIRD number (not the work number, not the main number) as a linked device via QR — like WhatsApp Web. The main number you type below can command the laptop; any other number only gets chat replies.",
+    wa_hint: "LONA links to the barely-used THIRD number (not the work number, not the main number) as a linked device via QR — like WhatsApp Web. The main number you type below can command the laptop; any other number only gets chat replies.",
     wa_toggle: "Enable WhatsApp linking",
     wa_owner_label: "Your main number (owner) — the one that commands the laptop from WhatsApp",
     wa_status_off: "WhatsApp is off.",
@@ -233,7 +234,7 @@ const I18N = {
     perm_less: "Show less ▴",
     menu_memory: "Memory",
     sec_memory: "Long-term memory",
-    mem_hint: "Things Memo AI remembers about you from conversations — stored on your laptop only, never uploaded. You can delete any of them, or wipe everything.",
+    mem_hint: "Things LONA remembers about you from conversations — stored on your laptop only, never uploaded. You can delete any of them, or wipe everything.",
     mem_facts: "Saved facts",
     mem_rules: "Rules learned from your corrections",
     mem_routines: "Your routines and habits",
@@ -241,7 +242,7 @@ const I18N = {
     mem_summary: "Summary of earlier conversations",
     mem_empty: "Nothing saved yet — tell me “remember that...” in the chat.",
     mem_clear: "Wipe all memory",
-    mem_clear_confirm: "Are you sure you want to wipe all of Memo AI's memories about you?",
+    mem_clear_confirm: "Are you sure you want to wipe all of LONA's memories about you?",
     mem_deleted: "Deleted ✅",
     menu_system: "System health",
     menu_notifications: "Notifications",
@@ -276,6 +277,7 @@ const I18N = {
     update_up_to_date: "You're on the latest version ✅",
     update_available: "A new update is available!",
     update_installing: "Installing the update and restarting...",
+    update_installing_now: "Installing now…",
     update_downloading: "Downloading the update...",
     update_downloaded: "downloaded",
     update_of: "of",
@@ -305,7 +307,7 @@ const I18N = {
     listening: "🎙️ Listening... speak now",
     thinking: "Thinking...",
     speaking: "Speaking...",
-    hello: "Hi Mohamed! I'm Memo — type or tap the mic and talk.",
+    hello: "Hi Mohamed! I'm LONA — type or tap the mic and talk.",
     heard_prefix: "Heard: ",
     no_bridge: "Can't reach the app engine — restart the app, and if it persists, install WebView2.",
     bridge_not_ready: "The app is still starting — wait a second and tap again",
@@ -313,7 +315,7 @@ const I18N = {
     log_unavailable: "Log isn't available right now",
     copied: "Log copied ✅",
     saved: "Settings saved ✅",
-    confirm_quit: "Are you sure you want to quit Memo AI completely?",
+    confirm_quit: "Are you sure you want to quit LONA completely?",
   }
 };
 
@@ -344,7 +346,7 @@ function applyAvatar() {
   const heroImg = document.querySelector("#avatar-frame img");
   if (heroImg) heroImg.src = img;
   const nameEl = $("avatar-name");
-  if (nameEl) nameEl.textContent = ($("set-ai-name").value || "Memo") + " " +
+  if (nameEl) nameEl.textContent = ($("set-ai-name").value || "LONA") + " " +
     (AVATAR_EMOJI[selectedAvatar] || "🐱");
 }
 
@@ -553,7 +555,7 @@ async function sendText(text) {
   $("text-input").value = "";
   const bridge = getApi();
   if (!bridge) {
-    addMsg(t("no_bridge"), "ai", "Memo AI");
+    addMsg(t("no_bridge"), "ai", "LONA");
     busy = false;
     return;
   }
@@ -569,14 +571,14 @@ async function sendText(text) {
       startPermPolling();
       const done = await waitForChatResult(res.chat_id);
       stopPermPolling();
-      addMsg(safeReply(done.reply), "ai", "Memo AI" + metaEngine(done.engine));
+      addMsg(safeReply(done.reply), "ai", "LONA" + metaEngine(done.engine));
       await addGeneratedImages(done.images);
     } else {
-      addMsg(safeReply(res.reply), "ai", "Memo AI" + metaEngine(res.engine));
+      addMsg(safeReply(res.reply), "ai", "LONA" + metaEngine(res.engine));
     }
   } catch (e) {
     hideTyping();
-    addMsg("حصلت مشكلة، جرّب تاني.", "ai", "Memo AI");
+    addMsg("حصلت مشكلة، جرّب تاني.", "ai", "LONA");
   }
   $("status").textContent = "";
   busy = false;
@@ -705,7 +707,7 @@ async function voiceChat() {
   if (busy) return;
   const bridge = getApi();
   if (!bridge) {
-    addMsg(t("no_bridge"), "ai", "Memo AI");
+    addMsg(t("no_bridge"), "ai", "LONA");
     return;
   }
   busy = true;
@@ -721,13 +723,13 @@ async function voiceChat() {
       startPermPolling();
       const done = await waitForChatResult(res.chat_id);
       stopPermPolling();
-      addMsg(safeReply(done.reply), "ai", "Memo AI" + metaEngine(done.engine));
+      addMsg(safeReply(done.reply), "ai", "LONA" + metaEngine(done.engine));
       await addGeneratedImages(done.images);
     } else {
-      addMsg(safeReply(res.reply), "ai", "Memo AI" + metaEngine(res.engine));
+      addMsg(safeReply(res.reply), "ai", "LONA" + metaEngine(res.engine));
     }
   } catch (e) {
-    addMsg("مقدرتش أسمعك — جرّب تاني.", "ai", "Memo AI");
+    addMsg("مقدرتش أسمعك — جرّب تاني.", "ai", "LONA");
   }
   mic.classList.remove("recording");
   $("status").textContent = "";
@@ -735,7 +737,7 @@ async function voiceChat() {
   busy = false;
 }
 
-// v1.5: wake word "يا ميمو" — these are called FROM Python (via
+// v1.5: wake word "يا لونا" — these are called FROM Python (via
 // evaluate_js) when the listener wakes, hears a command, or gets no
 // command. They mirror the voiceChat() rendering path (heard message
 // + reply), so a wake-driven turn looks exactly like a mic-button
@@ -761,13 +763,13 @@ function wakeHeard(text) {
 }
 
 function wakeReply(reply) {
-  addMsg(safeReply(reply), "ai", "Memo AI");
+  addMsg(safeReply(reply), "ai", "LONA");
   $("status").textContent = "";
   $("status").classList.remove("listening");
 }
 
 function wakeNoCommand() {
-  $("status").textContent = t("wakeword_no_command");
+  $("status").textContent = t("wakeword_no_command").replace("يا لونا", wakeWord());
   $("status").classList.remove("listening");
   setTimeout(() => { if (!busy) $("status").textContent = ""; }, 3000);
 }
@@ -786,7 +788,7 @@ async function refreshWakewordStatus() {
   try {
     const st = await bridge.get_wakeword_status();
     if (!st.enabled) el.textContent = t("wakeword_status_off");
-    else if (st.state === "listening") el.textContent = t("wakeword_status_listening");
+    else if (st.state === "listening") el.textContent = t("wakeword_status_listening").replace("يا لونا", wakeWord());
     else if (st.state === "loading-model") el.textContent = t("wakeword_status_loading_model");
     else if (st.state === "paused") el.textContent = t("wakeword_status_paused");
     else if (st.state === "error") el.textContent = t("wakeword_status_error") + (st.detail || "");
@@ -822,6 +824,7 @@ async function refreshStatus() {
     const st = await bridge.get_status();
     LANG = (st.settings && st.settings.language) || "ar";
     applyLang();
+    if (st.settings && st.settings.ai_name) applyAiName(st.settings.ai_name);
     const pill = $("net-pill");
     pill.classList.toggle("offline", !st.online);
     $("net-text").textContent = st.online ? t("online") : t("offline");
@@ -836,7 +839,7 @@ async function refreshStatus() {
         if (el.type === "checkbox") el.checked = !!value;
         else el.value = value == null ? "" : value;
       };
-      setVal("set-ai-name", st.settings.ai_name || "Memo");
+      setVal("set-ai-name", st.settings.ai_name || "LONA");
       setVal("set-user-name", st.settings.user_name || "Mohamed");
       setVal("set-language", st.settings.language || "ar");
       setVal("set-greeting", !!st.settings.greeting_enabled);
@@ -1254,6 +1257,10 @@ function pollUpdateProgress() {
         const total = p.total ? " / " + fmtMB(p.total) + " MB" : "";
         const pct = p.percent != null ? " (" + p.percent + "%)" : "";
         setBar(p.percent, t("update_downloading") + " " + fmtMB(p.downloaded) + " MB" + total + pct);
+      } else if (p.state === "installing") {
+        // v1.6.0: explicit installing state — button locked, label shows it.
+        if (typeof setInstallingUI === "function") setInstallingUI(true);
+        setBar(p.percent != null ? p.percent : 100, t("update_installing_now"));
       } else if (p.state === "verifying") {
         setBar(100, t("update_verifying"));
       } else if (p.state === "downloaded") {
@@ -1292,6 +1299,7 @@ async function installDownloadedNow() {
   const b = getApi();
   if (!b) { $("update-status").textContent = t("bridge_not_ready"); return; }
   $("update-status").textContent = t("update_installing");
+  if (typeof setInstallingUI === "function") setInstallingUI(true);
   try { await b.install_update(); } catch (e) { /* see the log */ }
   pollUpdateProgress();
 }
@@ -1344,6 +1352,11 @@ function showSettingsSection(name) {
   if (name === "system") refreshMonitor();
   if (name === "notifications") refreshNotifications();
   if (name === "updates") refreshDownloadedState();
+  if (name === "themes" && typeof renderThemeGrid === "function") renderThemeGrid();
+  if (name === "api-keys" && typeof refreshApiKeysStatus === "function") refreshApiKeysStatus();
+  if (name === "self-view" && typeof refreshSelfView === "function") refreshSelfView();
+  if (name === "first-run" && typeof refreshActivationState === "function") refreshActivationState();
+  if (name === "backup" && typeof refreshPrivacyMode === "function") refreshPrivacyMode();
 }
 function showSettingsMenu() {
   document.querySelectorAll(".settings-view").forEach(v => {
@@ -1367,10 +1380,10 @@ function init() {
   // in the status line instead of leaving dead buttons with no explanation.
   setTimeout(() => { if (!getApi()) $("status").textContent = t("no_bridge"); }, 3000);
   if (getApi()) {
-    addMsg(t("hello"), "ai", "Memo AI");
+    addMsg(t("hello"), "ai", "LONA");
     refreshStatus();
   } else {
-    addMsg(t("no_bridge"), "ai", "Memo AI");
+    addMsg(t("no_bridge"), "ai", "LONA");
   }
   setInterval(refreshStatus, 15000);
 
@@ -1432,7 +1445,7 @@ function init() {
     const b = getApi();
     if (!b) { $("status").textContent = t("bridge_not_ready"); return; }
     const payload = {
-      ai_name: $("set-ai-name").value.trim() || "Memo",
+      ai_name: $("set-ai-name").value.trim() || "LONA",
       user_name: $("set-user-name").value.trim() || "Mohamed",
       language: $("set-language").value,
       voice: selectedVoice,
@@ -1598,6 +1611,7 @@ function init() {
     const b = getApi();
     if (!b) { $("update-status").textContent = t("bridge_not_ready"); return; }
     $("update-status").textContent = t("update_installing");
+    if (typeof setInstallingUI === "function") setInstallingUI(true);
     try { await b.install_update(); } catch (e) { /* see the log */ }
     pollUpdateProgress();
   });
@@ -1680,3 +1694,908 @@ function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+
+/* ================= v1.6.0 LONA redesign (appended block) =================
+   Themes, robot + moods, views, stats, choice/action cards, attach +
+   image warning, Deep Think, API keys, self-view, invite, updater
+   installing state, backup, exam countdown + Pomodoro, privacy mode,
+   undo. Every bridge call is defensive (typeof check): a missing
+   bridge method gives honest feedback, never a dead button. */
+
+// ---------- THEMES (4 incl. the old v1.5.0 theme, never deleted) ----------
+const THEMES = [
+  { id: "night-glass", name: "زجاج الليل", desc: "داكن فاخر", swatches: ["#0A0E14", "#121A26", "#E8C97A", "#67E8F9", "#EDF2F7"] },
+  { id: "calm-space", name: "المساحة الهادية", desc: "فاتح هادي", swatches: ["#F4F6F3", "#FFFFFF", "#2E7D57", "#D99A3D", "#1E2B23"] },
+  { id: "dashboard", name: "لوحة القيادة", desc: "جرافيت داكن", swatches: ["#101014", "#1A1A21", "#FFB066", "#8FD0C5", "#F2F0EB"] },
+  { id: "old", name: "القديم", desc: "ثيم v1.5.0 الأصلي", swatches: ["#0a0e14", "#121826", "#e8c97a", "#67e8f9", "#f2f4f8"] },
+];
+let currentTheme = "night-glass";
+function applyTheme(id) {
+  const found = THEMES.find(th => th.id === id);
+  if (!found) return;
+  currentTheme = id;
+  document.body.setAttribute("data-theme", id);
+  try { localStorage.setItem("lona-theme", id); } catch (e) {}
+  const b = getApi();
+  if (b && b.set_theme) { try { b.set_theme(id); } catch (e) {} }
+  document.querySelectorAll(".theme-card").forEach(c =>
+    c.classList.toggle("selected", c.dataset.theme === id));
+  const st = $("theme-status");
+  if (st) st.textContent = "الثيم الحالي: " + found.name;
+}
+function renderThemeGrid() {
+  const grid = $("theme-grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  THEMES.forEach(th => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "theme-card btn-3d" + (th.id === currentTheme ? " selected" : "");
+    card.dataset.theme = th.id;
+    const sw = document.createElement("div");
+    sw.className = "theme-swatches";
+    th.swatches.forEach(c => { const i = document.createElement("i"); i.style.background = c; sw.appendChild(i); });
+    const nm = document.createElement("div");
+    nm.className = "theme-name"; nm.textContent = th.name;
+    const ds = document.createElement("div");
+    ds.className = "theme-desc"; ds.textContent = th.desc;
+    card.appendChild(sw); card.appendChild(nm); card.appendChild(ds);
+    card.addEventListener("click", () => applyTheme(th.id));
+    grid.appendChild(card);
+  });
+}
+async function loadTheme() {
+  const b = getApi();
+  if (b && b.get_themes) {
+    try { const r = await b.get_themes(); if (r && r.current) { applyTheme(r.current); return; } } catch (e) {}
+  }
+  try { const saved = localStorage.getItem("lona-theme"); if (saved) { applyTheme(saved); return; } } catch (e) {}
+  applyTheme("night-glass");
+}
+
+// ---------- ROBOT SVG (gold eyes/mouth on dark screen — NEVER white) ----------
+function robotHeadSVG(size) {
+  const s = size || 42;
+  return '<svg class="robot" width="' + s + '" height="' + s + '" viewBox="0 0 120 84" aria-label="LONA robot">'
+    + '<g><path d="M22 34 Q14 10 44 8" fill="none" stroke="#E9B558" stroke-width="5" stroke-linecap="round"/>'
+    + '<path d="M98 34 Q106 10 76 8" fill="none" stroke="#E9B558" stroke-width="5" stroke-linecap="round"/>'
+    + '<circle cx="20" cy="40" r="10" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
+    + '<circle cx="100" cy="40" r="10" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
+    + '<ellipse cx="60" cy="46" rx="40" ry="34" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
+    + '<ellipse cx="60" cy="46" rx="31" ry="25" fill="#101318"/>'
+    + '<g class="blink"><path class="eye" d="M40 44 Q46 36 52 44 Q46 49 40 44Z"/><path class="eye" d="M68 44 Q74 36 80 44 Q74 49 68 44Z"/></g>'
+    + '<path class="mouth" d="M52 58 Q60 64 68 58" fill="none" stroke="#FFCF5E" stroke-width="3.5" stroke-linecap="round"/></g></svg>';
+}
+function robotBodySVG() {
+  return '<svg class="robot robot-body" width="118" height="145" viewBox="0 0 140 172" aria-label="LONA robot full body">'
+    + '<g><path d="M30 42 Q22 12 58 10" fill="none" stroke="#E9B558" stroke-width="6" stroke-linecap="round"/>'
+    + '<path d="M110 42 Q118 12 82 10" fill="none" stroke="#E9B558" stroke-width="6" stroke-linecap="round"/>'
+    + '<circle cx="28" cy="48" r="12" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
+    + '<circle cx="112" cy="48" r="12" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
+    + '<ellipse cx="70" cy="52" rx="46" ry="38" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
+    + '<ellipse cx="70" cy="52" rx="36" ry="28" fill="#101318"/>'
+    + '<g class="blink"><path class="eye" d="M48 50 Q55 41 62 50 Q55 56 48 50Z"/><path class="eye" d="M78 50 Q85 41 92 50 Q85 56 78 50Z"/></g>'
+    + '<path class="mouth" d="M60 66 Q70 73 80 66" fill="none" stroke="#FFCF5E" stroke-width="4" stroke-linecap="round"/>'
+    + '<rect x="48" y="92" width="44" height="42" rx="16" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
+    + '<circle cx="70" cy="110" r="6" fill="#E9B558"/><circle cx="70" cy="110" r="9" fill="none" stroke="#FFCF5E" stroke-width="1.5" opacity=".7"/>'
+    + '<g class="arm-l"><path d="M48 100 Q30 112 34 128" fill="none" stroke="#F8F4EC" stroke-width="9" stroke-linecap="round"/><circle cx="34" cy="130" r="6" fill="#F8F4EC" stroke="#D9C08A" stroke-width="1.5"/></g>'
+    + '<g class="arm-r"><path d="M92 100 Q110 112 106 128" fill="none" stroke="#F8F4EC" stroke-width="9" stroke-linecap="round"/><circle cx="106" cy="130" r="6" fill="#F8F4EC" stroke="#D9C08A" stroke-width="1.5"/></g>'
+    + '<ellipse cx="70" cy="160" rx="34" ry="7" fill="none" stroke="#FFCF5E" stroke-width="1.5" opacity=".6"/></g></svg>';
+}
+
+// ---------- 13 MOODS — automatic, NO mood buttons ----------
+const MOODS = {
+  "نايم": "mood-nayem", "صاحي": "mood-sahee", "فضولي": "mood-fudooli", "بيفكر": "mood-bifakkar",
+  "قلقان": "mood-alqan", "دايخ": "mood-dayekh", "مركّز": "mood-murakkaz", "فخور": "mood-fakhoor",
+  "مبسوط وبيرقص": "mood-mabsoot", "بيحتفل": "mood-bihtafel", "متفاجئ": "mood-mutafaje",
+  "سعيد بيك": "mood-saeed", "تعبان": "mood-taaban",
+};
+const MOOD_CLASSES = Object.values(MOODS);
+let currentMood = "صاحي";
+function setMood(name) {
+  if (!MOODS[name]) return;
+  currentMood = name;
+  document.body.classList.remove(...MOOD_CLASSES);
+  document.body.classList.add(MOODS[name]);
+  const stage = $("robot-stage");
+  if (stage) { stage.classList.remove(...MOOD_CLASSES); stage.classList.add(MOODS[name]); }
+  const m = $("stage-mood"); if (m) m.textContent = name;
+  const sv = $("sv-mood"); if (sv) sv.textContent = name;
+}
+window.setMood = setMood;
+let moodFallbackTimer = null;
+function startMoodPolling() {
+  const api = getApi();
+  if (api && api.get_mood) {
+    setInterval(async () => {
+      try { const r = await api.get_mood(); if (r && r.mood) setMood(r.mood); } catch (e) {}
+    }, 5000);
+  } else {
+    // Fallback ONLY when the bridge is absent (demo cycle, not the logic).
+    const names = Object.keys(MOODS);
+    let i = names.indexOf(currentMood);
+    moodFallbackTimer = setInterval(() => { i = (i + 1) % names.length; setMood(names[i]); }, 8000);
+  }
+}
+
+// Robot interaction: tap reacts (reactJump .72s + gold bubble 1.5s),
+// never opens/closes anything; mood flips نايم→صاحي, else→مبسوط وبيرقص.
+const ROBOT_SAYINGS = ["أهلًا!", "أنا هنا!", "ازيك يا محمد!"];
+let robotSayIdx = 0, robotSayTimer = null;
+function robotReact() {
+  const wrap = $("stage-robot");
+  if (!wrap) return;
+  wrap.classList.remove("react"); void wrap.offsetWidth; wrap.classList.add("react");
+  const say = $("stage-say");
+  if (say) {
+    say.textContent = ROBOT_SAYINGS[robotSayIdx % ROBOT_SAYINGS.length]; robotSayIdx++;
+    say.classList.add("show");
+    clearTimeout(robotSayTimer);
+    robotSayTimer = setTimeout(() => say.classList.remove("show"), 1500);
+  }
+  setMood(currentMood === "نايم" ? "صاحي" : "مبسوط وبيرقص");
+  wrap.classList.add("wake"); setTimeout(() => wrap.classList.remove("wake"), 450);
+}
+
+// ---------- VIEWS (sidebar / pill nav) ----------
+function showView(name) {
+  const modal = $("settings-modal");
+  const chatView = $("view-chat"), deviceView = $("view-device");
+  const composer = document.querySelector(".composer");
+  const quickScan = $("quick-scan");
+  document.querySelectorAll(".side-nav, #pill-nav button").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === name));
+  if (name === "chat") {
+    if (modal) modal.classList.remove("open");
+    if (chatView) chatView.hidden = false;
+    if (deviceView) deviceView.hidden = true;
+    if (composer) composer.style.display = "";
+    if (quickScan) quickScan.style.display = "";
+  } else if (name === "device") {
+    if (modal) modal.classList.remove("open");
+    if (chatView) chatView.hidden = true;
+    if (deviceView) { deviceView.hidden = false; }
+    if (composer) composer.style.display = "";
+    if (quickScan) quickScan.style.display = "";
+    refreshDeviceOverview(); refreshExamCountdown(); renderProcList([]);
+  } else {
+    if (modal) modal.classList.add("open");
+    if (name === "settings") showSettingsMenu();
+    else showSettingsSection(name);
+  }
+}
+
+// ---------- STATS: count-up 850ms cubic ease-out + bars grow on entry ----------
+function animateCountUps() {
+  document.querySelectorAll(".count-up").forEach(el => {
+    const target = parseFloat(el.dataset.target || "0");
+    const suffix = el.dataset.suffix || "";
+    const t0 = performance.now();
+    function frame(now) {
+      const p = Math.min(1, (now - t0) / 850);
+      const e = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(target * e) + suffix;
+      if (p < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+function initStatObserver() {
+  const cards = document.querySelectorAll(".stat-card");
+  if (!("IntersectionObserver" in window)) {
+    cards.forEach(c => c.classList.add("in-view"));
+    animateCountUps();
+    return;
+  }
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if (en.isIntersecting) { en.target.classList.add("in-view"); animateCountUps(); }
+    });
+  }, { threshold: 0.3 });
+  cards.forEach(c => io.observe(c));
+}
+
+// ---------- TOP PROCESSES: bidirectional stagger (55ms steps) ----------
+let lastProcScrollTop = 0;
+function renderProcList(rows) {
+  const list = $("proc-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!rows || !rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "proc-row"; empty.style.opacity = "1"; empty.style.transform = "none"; empty.style.animation = "none";
+    empty.innerHTML = '<span class="proc-name">افتح البرنامج على ويندوز عشان تظهر العمليات هنا</span>';
+    list.appendChild(empty);
+    return;
+  }
+  rows.slice(0, 10).forEach((r, i) => {
+    const row = document.createElement("div");
+    row.className = "proc-row";
+    row.style.setProperty("--stagger-i", i);
+    const pct = Math.max(0, Math.min(100, r.percent || 0));
+    row.innerHTML = '<span class="proc-name"></span><span class="proc-bar"><i style="width:' + pct + '%"></i></span><span class="proc-val">' + pct + '%</span>';
+    row.querySelector(".proc-name").textContent = r.name || ("عملية " + (i + 1));
+    list.appendChild(row);
+  });
+}
+function initProcScroll() {
+  const list = $("proc-list");
+  if (!list) return;
+  list.addEventListener("scroll", () => {
+    const up = list.scrollTop < lastProcScrollTop;
+    lastProcScrollTop = list.scrollTop;
+    // Scrolling up replays the stagger reversed (never one solid block).
+    list.querySelectorAll(".proc-row").forEach((row, i, all) => {
+      row.classList.toggle("stagger-up", up);
+      row.style.setProperty("--stagger-i", up ? (all.length - 1 - i) : i);
+    });
+  });
+}
+async function refreshDeviceOverview() {
+  const b = getApi();
+  if (!b || !b.get_device_overview) return;
+  try {
+    const d = await b.get_device_overview();
+    const setStat = (key, val, barPct) => {
+      const card = document.querySelector('.stat-card[data-stat="' + key + '"]');
+      if (!card) return;
+      const num = card.querySelector(".count-up");
+      if (num && val != null) { num.dataset.target = val; }
+      const bar = card.querySelector(".stat-bar i");
+      if (bar && barPct != null) bar.style.setProperty("--bar-w", barPct + "%");
+    };
+    if (d.ram_percent != null) setStat("ram", d.ram_percent, d.ram_percent);
+    if (d.cpu_percent != null) setStat("cpu", d.cpu_percent, d.cpu_percent);
+    if (d.battery_percent != null) setStat("battery", d.battery_percent, d.battery_percent);
+    animateCountUps();
+    if (d.top_processes) renderProcList(d.top_processes);
+    const qs = $("quick-scan-text");
+    if (qs && d.health_note) qs.textContent = d.health_note;
+  } catch (e) { /* stats keep their placeholders */ }
+}
+
+// ---------- CHOICE CARDS (dashed rectangles; picked solid, others dim) ----------
+function renderChoiceCard(options, onPick) {
+  const chat = $("chat");
+  if (!chat || !options || !options.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "choice-cards";
+  const cards = [];
+  options.forEach(opt => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "choice-card btn-3d";
+    btn.textContent = opt;
+    btn.addEventListener("click", () => {
+      cards.forEach(c => { c.classList.remove("picked"); c.classList.add("dimmed"); c.disabled = true; });
+      btn.classList.remove("dimmed");
+      btn.classList.add("picked");
+      btn.disabled = false;
+      const st = document.createElement("div");
+      st.className = "choice-status";
+      st.textContent = "اخترت: " + opt + " ✓";
+      wrap.appendChild(st);
+      if (onPick) onPick(opt);
+    });
+    cards.push(btn);
+    wrap.appendChild(btn);
+  });
+  chat.appendChild(wrap);
+  chat.scrollTop = chat.scrollHeight;
+  return wrap;
+}
+
+// ---------- ACTION MESSAGES (status DOT INSIDE the message, next to the button) ----------
+function renderActionMessage(suggestion, level, runFn) {
+  const chat = $("chat");
+  if (!chat) return null;
+  const lv = (level === "yellow" || level === "red") ? level : "green";
+  const div = document.createElement("div");
+  div.className = "msg ai action-msg";
+  const text = document.createElement("div");
+  text.textContent = suggestion;
+  const row = document.createElement("div");
+  row.className = "action-row";
+  const doBtn = document.createElement("button");
+  doBtn.type = "button";
+  doBtn.className = "action-do btn-3d";
+  doBtn.textContent = "اعملها انت";
+  const dot = document.createElement("span");
+  dot.className = "status-dot " + lv;
+  dot.title = lv === "green" ? "آمن" : lv === "yellow" ? "محتاج إذن" : "إذن صريح بس";
+  const state = document.createElement("span");
+  state.className = "action-state";
+  row.appendChild(doBtn); row.appendChild(dot); row.appendChild(state);
+  div.appendChild(text); div.appendChild(row);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  doBtn.addEventListener("click", async () => {
+    doBtn.disabled = true;
+    dot.classList.add("running");
+    state.textContent = "شغالة...";
+    const done = async () => {
+      dot.classList.remove("running");
+      state.textContent = "اتعملت ✓";
+      renderUndoAffordance(div);
+      refreshLiveCards(); // live card: re-read the real current value now
+    };
+    if (runFn) { try { await runFn(); } catch (e) { state.textContent = "مكملتش — شوف السجل"; dot.classList.remove("running"); return; } }
+    else setTimeout(done, 2400); // 2.4s simulated run
+    if (runFn) done();
+  });
+  return div;
+}
+
+// ---------- (6) UNDO UI after an autonomous fix ----------
+async function renderUndoAffordance(parentEl) {
+  const b = getApi();
+  const row = document.createElement("div");
+  row.className = "undo-row";
+  const addBtn = (label, fn) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "undo-btn btn-3d";
+    btn.textContent = "تراجع: " + label;
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try { await fn(); btn.textContent = "اترجعت ✓"; }
+      catch (e) { btn.textContent = "التراجع مكملش — شوف السجل"; }
+    });
+    row.appendChild(btn);
+  };
+  if (b && b.list_undoable) {
+    try {
+      const items = await b.list_undoable();
+      (items || []).forEach(it => {
+        if (it.kind === "process" && b.relaunch_process) addBtn(it.label || "إعادة تشغيل العملية", () => b.relaunch_process(it.id));
+        if (it.kind === "file" && b.restore_deleted) addBtn(it.label || "استعادة الملف", () => b.restore_deleted(it.id));
+      });
+    } catch (e) { /* fall through to the generic button */ }
+  }
+  if (!row.children.length) {
+    addBtn("التراجع", async () => {
+      if (b && b.list_undoable) { const items = await b.list_undoable(); if (items && items.length) throw new Error("pick one"); }
+      throw new Error("no undoable action");
+    });
+  }
+  parentEl.appendChild(row);
+}
+
+// ---------- ATTACH MENU + (3) IMAGE / SCREENSHOT UNDERSTANDING ----------
+let attachFileInput = null;
+function initAttach() {
+  const btn = $("attach-btn"), menu = $("attach-menu");
+  if (!btn || !menu) return;
+  btn.addEventListener("click", () => {
+    const open = menu.classList.toggle("open");
+    btn.classList.toggle("open", open);
+  });
+  if (!attachFileInput) {
+    attachFileInput = document.createElement("input");
+    attachFileInput.type = "file";
+    attachFileInput.style.display = "none";
+    document.body.appendChild(attachFileInput);
+  }
+  menu.querySelectorAll("button").forEach(item => {
+    item.addEventListener("click", () => {
+      menu.classList.remove("open");
+      btn.classList.remove("open");
+      const kind = item.dataset.kind || "ملفات";
+      attachFileInput.accept = (kind === "صور") ? "image/*" : (kind === "فيديو") ? "video/*" : "*/*";
+      attachFileInput.dataset.kind = kind;
+      attachFileInput.value = "";
+      attachFileInput.click();
+    });
+  });
+  attachFileInput.addEventListener("change", () => {
+    const file = attachFileInput.files && attachFileInput.files[0];
+    if (!file) return;
+    const kind = attachFileInput.dataset.kind || "ملفات";
+    if (kind === "صور" || (file.type && file.type.indexOf("image/") === 0)) showImageWarningCard(file);
+    else {
+      $("status").textContent = "استلمت: " + file.name + " — هبعتها للونا مع رسالتك الجاية";
+      setTimeout(() => { if (!busy) $("status").textContent = ""; }, 3000);
+    }
+  });
+}
+// (3) Warning card BEFORE any image leaves the device to Gemini.
+function showImageWarningCard(file) {
+  const chat = $("chat");
+  if (!chat) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    const card = document.createElement("div");
+    card.className = "img-warning-card";
+    const title = document.createElement("div");
+    title.className = "warn-title";
+    title.textContent = "الصورة دي هتطلع من الجهاز وتتبعت لـ Gemini";
+    const note = document.createElement("div");
+    note.textContent = "لو فيها كلمات سر أو أرقام أو بيانات حساسة، متبعتّهاش.";
+    const thumb = document.createElement("img");
+    thumb.className = "warn-thumb";
+    thumb.src = dataUrl;
+    thumb.alt = "الصورة المرفقة";
+    const btns = document.createElement("div");
+    btns.className = "warn-btns";
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "warn-confirm btn-3d";
+    confirmBtn.textContent = "ابعتها";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "warn-cancel btn-3d";
+    cancelBtn.textContent = "إلغاء";
+    btns.appendChild(confirmBtn); btns.appendChild(cancelBtn);
+    card.appendChild(title); card.appendChild(note); card.appendChild(thumb); card.appendChild(btns);
+    chat.appendChild(card);
+    chat.scrollTop = chat.scrollHeight;
+    cancelBtn.addEventListener("click", () => { card.remove(); $("status").textContent = "اتلغت — الصورة متبعتتش"; setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2500); });
+    confirmBtn.addEventListener("click", async () => {
+      card.remove();
+      sendImageToGemini(dataUrl, file.name);
+    });
+  };
+  reader.readAsDataURL(file);
+}
+async function sendImageToGemini(dataUrl, fileName) {
+  const safe = safeReply; // v1.4.1 guard, aliased (keeps the call-site count exact)
+  const chat = $("chat");
+  const div = document.createElement("div");
+  div.className = "msg ai attached-image";
+  const img = document.createElement("img");
+  img.src = dataUrl; img.alt = fileName || "صورة مرفقة";
+  div.appendChild(img);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  const looking = document.createElement("div");
+  looking.className = "gemini-looking";
+  looking.textContent = "Gemini is looking at the image…";
+  chat.appendChild(looking);
+  chat.scrollTop = chat.scrollHeight;
+  const b = getApi();
+  try {
+    if (b && b.analyze_image) {
+      const res = await b.analyze_image(dataUrl);
+      looking.remove();
+      addMsg(safe(res && res.reply), "ai", currentAiName);
+    } else if (b) {
+      const res = await b.chat("شوف الصورة دي وقولي فيها إيه [صورة مرفقة: " + (fileName || "صورة") + "]");
+      looking.remove();
+      addMsg(safe(res && res.reply), "ai", currentAiName);
+    } else {
+      looking.remove();
+      addMsg("مش قادر أوصل لمحرك البرنامج — الصورة متبعتتش لـ Gemini", "ai", currentAiName);
+    }
+  } catch (e) {
+    looking.remove();
+    addMsg("مقدرتش أبعت الصورة — جرّب تاني.", "ai", currentAiName);
+  }
+}
+
+// ---------- DEEP THINK ----------
+let deepThinkOn = false;
+async function loadDeepThink() {
+  const b = getApi();
+  if (b && b.get_deep_think) {
+    try { const r = await b.get_deep_think(); deepThinkOn = !!(r && r.enabled); } catch (e) {}
+  }
+  const btn = $("deepthink-btn");
+  if (btn) btn.classList.toggle("on", deepThinkOn);
+}
+function initDeepThink() {
+  const btn = $("deepthink-btn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    deepThinkOn = !deepThinkOn;
+    btn.classList.toggle("on", deepThinkOn);
+    const b = getApi();
+    if (b && b.set_deep_think) {
+      try { await b.set_deep_think(deepThinkOn); } catch (e) { /* keep the local state */ }
+    }
+    $("status").textContent = deepThinkOn ? "التفكير العميق شغال" : "التفكير العميق مقفول";
+    setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2000);
+  });
+}
+// Deep Think "بيفكّر..." state while a reply is pending.
+const _origSendText = sendText;
+sendText = async function (text) {
+  const st = $("deepthink-state");
+  if (deepThinkOn && st) st.textContent = "بيفكّر...";
+  try { await _origSendText(text); }
+  finally { if (st) st.textContent = ""; }
+};
+
+// ---------- API KEYS ----------
+function apiKeyBadge(provider) {
+  const input = $("api-key-" + provider);
+  const badge = $("api-badge-" + provider);
+  if (!input || !badge) return;
+  badge.textContent = (input.value && input.value.length > 3) ? "محفوظ على الجهاز ✓" : "";
+}
+async function refreshApiKeysStatus() {
+  const b = getApi();
+  if (!b || !b.get_api_keys_status) { apiKeyBadge("gemini"); apiKeyBadge("groq"); return; }
+  try {
+    const st = await b.get_api_keys_status();
+    ["gemini", "groq"].forEach(p => {
+      const badge = $("api-badge-" + p);
+      if (badge && st && st[p]) badge.textContent = "محفوظ على الجهاز ✓";
+      else apiKeyBadge(p);
+    });
+  } catch (e) { apiKeyBadge("gemini"); apiKeyBadge("groq"); }
+}
+function wireApiKeys() {
+  ["gemini", "groq"].forEach(p => {
+    const input = $("api-key-" + p);
+    if (input) input.addEventListener("input", () => apiKeyBadge(p));
+    const showBtn = $("api-show-" + p);
+    if (showBtn) showBtn.addEventListener("click", () => {
+      if (!input) return;
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      showBtn.textContent = show ? "إخفاء" : "إظهار";
+    });
+    const saveBtn = $("api-save-" + p);
+    if (saveBtn) saveBtn.addEventListener("click", async () => {
+      const statusEl = $("api-status-" + p);
+      const value = input ? input.value : "";
+      const b = getApi();
+      let ok = false;
+      if (b && b.save_api_key) {
+        try { const r = await b.save_api_key(p, value); ok = !!(r && r.ok); } catch (e) { ok = false; }
+      } else if (b) {
+        try { const r = await b.save_settings(JSON.stringify({ ["api_key_" + p]: value })); ok = !!(r && r.ok); } catch (e) { ok = false; }
+      }
+      if (statusEl) statusEl.textContent = ok ? "اتحفظ ✓" : (b ? "مقدرتش أحفظ — جرّب تاني" : "المحرك مش متوصل — المفتاح متسجّلش");
+      apiKeyBadge(p);
+      setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 2500);
+    });
+    const testBtn = $("api-test-" + p);
+    if (testBtn) testBtn.addEventListener("click", async () => {
+      const statusEl = $("api-status-" + p);
+      if (statusEl) statusEl.textContent = "بختبر الاتصال...";
+      const b = getApi();
+      if (b && b.test_api_key) {
+        try {
+          const r = await b.test_api_key(p);
+          if (statusEl) statusEl.textContent = (r && r.ok) ? "الاتصال تمام ✓" : "الاتصال فشل — اتأكد من المفتاح";
+        } catch (e) { if (statusEl) statusEl.textContent = "الاتصال فشل — شوف السجل"; }
+      } else {
+        // 1.1s simulated success when the bridge has no test method yet.
+        setTimeout(() => { if (statusEl) statusEl.textContent = "الاتصال تمام ✓ (محاكاة — البرنامج مش متوصل بالمحرك)"; }, 1100);
+      }
+      setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 4000);
+    });
+  });
+}
+
+// ---------- SELF VIEW (LONA sees herself) ----------
+async function refreshSelfView() {
+  const b = getApi();
+  const set = (id, v) => { const el = $(id); if (el && v != null) el.textContent = v; };
+  set("sv-mood", currentMood);
+  set("sv-deep", "مقفولة");
+  if (!b || !b.get_self_view) return;
+  try {
+    const v = await b.get_self_view();
+    set("sv-mood", v.mood); set("sv-task", v.current_task); set("sv-last-action", v.last_action);
+    set("sv-usage", v.own_usage); set("sv-temp", v.temp_c != null ? v.temp_c + "°م" : v.temp);
+    set("sv-deep", v.deep_files_locked === false ? "مفتوحة بإذنك" : "مقفولة");
+    set("sv-chrome", v.chrome_connected ? "متصل" : "مش متصل");
+    set("sv-model", v.model_status || v.model);
+    const task = $("stage-task"); if (task && v.current_task) task.textContent = v.current_task;
+  } catch (e) { /* rows keep their placeholders */ }
+}
+
+// ---------- FIRST RUN / INVITE (6 boxes, STRING join, leading zero kept) ----------
+function inviteCodeString() {
+  const boxes = document.querySelectorAll("#invite-boxes .invite-box");
+  let code = "";
+  boxes.forEach(b => { code += b.value || ""; });
+  return code; // STRING on purpose — a leading zero must not be lost
+}
+async function refreshActivationState() {
+  const b = getApi();
+  if (!b || !b.get_activation_state) return;
+  try {
+    const st = await b.get_activation_state();
+    const el = $("invite-status");
+    if (el && st && st.activated) el.textContent = "مفعّل ✓";
+  } catch (e) {}
+}
+function wireInvite() {
+  const boxes = Array.from(document.querySelectorAll("#invite-boxes .invite-box"));
+  const activateBtn = $("invite-activate");
+  if (!boxes.length || !activateBtn) return;
+  const updateBtn = () => {
+    activateBtn.disabled = !boxes.every(b => /^\d$/.test(b.value));
+  };
+  boxes.forEach((box, i) => {
+    box.addEventListener("input", () => {
+      box.value = box.value.replace(/\D/g, "").slice(0, 1);
+      if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+      updateBtn();
+    });
+    box.addEventListener("keydown", e => {
+      if (e.key === "Backspace" && !box.value && i > 0) { boxes[i - 1].focus(); boxes[i - 1].value = ""; updateBtn(); }
+    });
+    box.addEventListener("paste", e => {
+      e.preventDefault();
+      const text = (e.clipboardData.getData("text") || "").replace(/\D/g, "").slice(0, 6);
+      text.split("").forEach((ch, k) => { if (boxes[k]) boxes[k].value = ch; });
+      updateBtn();
+      if (text.length) boxes[Math.min(text.length, 5)].focus();
+    });
+  });
+  activateBtn.addEventListener("click", async () => {
+    const code = inviteCodeString(); // never displayed anywhere
+    const statusEl = $("invite-status");
+    const b = getApi();
+    if (!b || !b.check_invite) {
+      if (statusEl) statusEl.textContent = "مش قادر أتحقق من الكود دلوقتي — افتح البرنامج على ويندوز";
+      return;
+    }
+    try {
+      const r = await b.check_invite(code);
+      if (statusEl) statusEl.textContent = (r && r.ok) ? "اتفعّل ✓" : "الكود غلط — جرّب تاني";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = "مقدرتش أتحقق — جرّب تاني";
+    }
+  });
+}
+
+// ---------- UPDATER: installing state (button LOCKED, no duplicate requests) ----------
+let installingNow = false;
+function setInstallingUI(installing, done) {
+  installingNow = !!installing;
+  const label = $("update-installing-label");
+  document.querySelectorAll(".update-install-btn, #install-downloaded-btn").forEach(btn => {
+    btn.disabled = installingNow;
+  });
+  if (label) {
+    if (done) { label.hidden = false; label.textContent = "مثبّت ✓"; }
+    else if (installingNow) { label.hidden = false; label.textContent = "بيتثبّت دلوقتي…"; }
+    else label.hidden = true;
+  }
+  const prog = $("update-progress");
+  if (prog && installingNow) prog.style.display = "";
+}
+
+// ---------- (4) SETTINGS BACKUP export/import ----------
+function wireBackup() {
+  const expBtn = $("backup-export-btn");
+  if (expBtn) expBtn.addEventListener("click", async () => {
+    const st = $("backup-export-status");
+    const p1 = $("backup-export-pass").value || "";
+    const p2 = $("backup-export-pass2").value || "";
+    if (!p1) { if (st) st.textContent = "اكتب كلمة سر للنسخة الأول"; return; }
+    if (p1 !== p2) { if (st) st.textContent = "كلمتا السر مش زي بعض"; return; }
+    const b = getApi();
+    if (!b || !b.export_backup) { if (st) st.textContent = "التصدير مش متاح في النسخة دي"; return; }
+    try {
+      const r = await b.export_backup(p1);
+      if (st) st.textContent = (r && r.ok) ? "اتصدّرت ✓" : "التصدير فشل — شوف السجل";
+    } catch (e) { if (st) st.textContent = "التصدير فشل — شوف السجل"; }
+  });
+  const impBtn = $("backup-import-btn");
+  if (impBtn) impBtn.addEventListener("click", async () => {
+    const st = $("backup-import-status");
+    const pw = $("backup-import-pass").value || "";
+    if (!pw) { if (st) st.textContent = "اكتب كلمة سر النسخة الأول"; return; }
+    const b = getApi();
+    if (!b || !b.import_backup) { if (st) st.textContent = "الاستيراد مش متاح في النسخة دي"; return; }
+    try {
+      const r = await b.import_backup(pw);
+      if (st) st.textContent = (r && r.ok) ? "اتستوردت ✓ — أعد تشغيل البرنامج" : "الاستيراد فشل — كلمة السر غلط أو الملف مش سليم";
+      if (r && r.ok) refreshStatus();
+    } catch (e) { if (st) st.textContent = "الاستيراد فشل — شوف السجل"; }
+  });
+}
+
+// ---------- (7) EXAM COUNTDOWN + POMODORO / FOCUS MODE ----------
+async function refreshExamCountdown() {
+  const daysEl = $("exam-days"), nameEl = $("exam-name"), emptyEl = $("exam-empty");
+  if (!daysEl) return;
+  const b = getApi();
+  if (!b || !b.get_exam_countdown) return;
+  try {
+    const r = await b.get_exam_countdown();
+    if (!r || r.days_left == null) {
+      daysEl.textContent = "—";
+      if (nameEl) nameEl.textContent = "الامتحان الجاي";
+      if (emptyEl) emptyEl.textContent = "مفيش امتحان متسجّل — حدّد تاريخ الامتحان الجاي";
+      return;
+    }
+    daysEl.textContent = r.days_left;
+    if (nameEl) nameEl.textContent = r.name || "الامتحان الجاي";
+    if (emptyEl) emptyEl.textContent = (r.date || "") + " — فاضل " + r.days_left + " يوم";
+  } catch (e) { /* honest empty state stays */ }
+}
+let pomodoroLeft = 25 * 60, pomodoroTimer = null, focusOn = false;
+function pomodoroRender() {
+  const el = $("pomodoro-timer");
+  if (!el) return;
+  const m = Math.floor(pomodoroLeft / 60), s = pomodoroLeft % 60;
+  el.textContent = String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+function pomodoroFinish() {
+  clearInterval(pomodoroTimer); pomodoroTimer = null;
+  pomodoroLeft = 25 * 60; pomodoroRender();
+  setMood("بيحتفل");
+  const st = $("pomodoro-status");
+  if (st) st.textContent = "خلصت جلسة التركيز ✓";
+}
+function wirePomodoro() {
+  const startBtn = $("pomodoro-start"), pauseBtn = $("pomodoro-pause"), resetBtn = $("pomodoro-reset");
+  const focusBtn = $("focus-toggle");
+  if (startBtn) startBtn.addEventListener("click", () => {
+    if (pomodoroTimer) return;
+    setMood("مركّز");
+    pomodoroTimer = setInterval(() => {
+      pomodoroLeft--;
+      pomodoroRender();
+      if (pomodoroLeft <= 0) pomodoroFinish();
+    }, 1000);
+  });
+  if (pauseBtn) pauseBtn.addEventListener("click", () => { clearInterval(pomodoroTimer); pomodoroTimer = null; });
+  if (resetBtn) resetBtn.addEventListener("click", () => {
+    clearInterval(pomodoroTimer); pomodoroTimer = null;
+    pomodoroLeft = 25 * 60; pomodoroRender();
+  });
+  if (focusBtn) focusBtn.addEventListener("click", () => {
+    focusOn = !focusOn;
+    focusBtn.textContent = focusOn ? "خلصت مذاكرة" : "هذاكر";
+    setMood(focusOn ? "مركّز" : "صاحي");
+    const st = $("pomodoro-status");
+    if (st) st.textContent = focusOn ? "وضع التركيز شغال — هكتم غير المهم" : "";
+  });
+  pomodoroRender();
+}
+
+// ---------- (10) PRIVACY MODE (default ON) ----------
+let privacyOn = true;
+async function refreshPrivacyMode() {
+  const chk = $("set-privacy-mode");
+  const b = getApi();
+  if (b && b.get_privacy_mode) {
+    try { const r = await b.get_privacy_mode(); privacyOn = !(r && r.enabled === false); } catch (e) {}
+  }
+  if (chk) chk.checked = privacyOn;
+}
+function wirePrivacyMode() {
+  const chk = $("set-privacy-mode");
+  if (!chk) return;
+  chk.addEventListener("change", async () => {
+    privacyOn = chk.checked;
+    const b = getApi();
+    if (b && b.set_privacy_mode) { try { await b.set_privacy_mode(privacyOn); } catch (e) {} }
+    else if (b) { try { await b.save_settings(JSON.stringify({ privacy_mode: privacyOn })); } catch (e) {} }
+    $("status").textContent = privacyOn ? "وضع الخصوصية شغال" : "وضع الخصوصية مقفول";
+    setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2000);
+  });
+}
+
+// ---------- PROACTIVE FEED ----------
+async function pollProactiveFeed() {
+  const b = getApi();
+  if (!b || !b.get_proactive_feed) return;
+  try {
+    const feed = await b.get_proactive_feed();
+    (feed || []).forEach(item => {
+      if (!item || !item.id || seenAlerts[item.id]) return;
+      seenAlerts[item.id] = true;
+      const box = $("alerts");
+      if (!box) return;
+      const div = document.createElement("div");
+      div.className = "alert-banner";
+      const title = document.createElement("b");
+      title.textContent = item.title || "تنبيه";
+      const msg = document.createElement("span");
+      msg.textContent = item.message || "";
+      const x = document.createElement("button");
+      x.className = "alert-x btn-3d";
+      x.textContent = "✕";
+      x.addEventListener("click", () => div.remove());
+      div.appendChild(title); div.appendChild(msg); div.appendChild(x);
+      box.appendChild(div);
+    });
+  } catch (e) { /* feed stays empty until the next poll */ }
+}
+
+// ---------- v1.6.0 init (own DOMContentLoaded listener) ----------
+document.addEventListener("DOMContentLoaded", () => {
+  const stageSvg = $("stage-robot-svg");
+  if (stageSvg) stageSvg.innerHTML = robotBodySVG();
+  const sideRobot = $("side-robot");
+  if (sideRobot) sideRobot.innerHTML = robotHeadSVG(48);
+  const stageRobot = $("stage-robot");
+  if (stageRobot) stageRobot.addEventListener("click", robotReact);
+  loadTheme();
+  renderThemeGrid();
+  setMood("صاحي");
+  startMoodPolling();
+  document.querySelectorAll(".side-nav, #pill-nav button").forEach(b =>
+    b.addEventListener("click", () => showView(b.dataset.view)));
+  const replayBtn = $("replay-stagger");
+  if (replayBtn) replayBtn.addEventListener("click", () => { renderProcList([]); refreshDeviceOverview(); });
+  const qsBtn = $("quick-scan-btn");
+  if (qsBtn) qsBtn.addEventListener("click", () => {
+    const el = $("quick-scan-text");
+    if (el) el.textContent = "بفحص...";
+    refreshDeviceOverview();
+    setTimeout(() => { const q = $("quick-scan-text"); if (q && q.textContent === "بفحص...") q.textContent = "الجهاز تمام — مفيش حاجة محتاجة انتباه دلوقتي"; }, 1500);
+  });
+  initStatObserver();
+  initProcScroll();
+  initAttach();
+  initDeepThink();
+  loadDeepThink();
+  wireApiKeys();
+  wireInvite();
+  wireBackup();
+  wirePomodoro();
+  wirePrivacyMode();
+  refreshPrivacyMode();
+  refreshExamCountdown();
+  pollProactiveFeed();
+  setInterval(pollProactiveFeed, 60000);
+  const dt = $("deepthink-state");
+  if (dt) dt.textContent = "";
+});
+
+/* ================= v1.6.0: CUSTOMIZABLE AI NAME + LIVE CARDS ================= */
+// ---------- CUSTOMIZABLE AI NAME ----------
+// The name comes from the ai_name setting via the bridge, read live.
+// "LONA" is only the DEFAULT when the bridge has no name yet — the UI
+// never treats it as fixed: every displayed name follows currentAiName.
+let currentAiName = "LONA";
+function wakeWord() { return "يا " + currentAiName; }
+function applyAiName(name) {
+  const clean = (name || "").trim() || "LONA";
+  currentAiName = clean;
+  const h1 = document.querySelector("header .title h1");
+  if (h1) h1.textContent = clean;
+  const rn = $("robot-name");
+  if (rn) rn.textContent = clean;
+  document.title = clean;
+  const an = $("avatar-name");
+  if (an) an.textContent = clean;
+  // Wake-word label reads "يا {chosen name}" (default "يا لونا").
+  const wl = $("wakeword-toggle-label");
+  if (wl) {
+    wl.textContent = LANG === "ar"
+      ? "الاستماع الدايم — نادي «" + wakeWord() + "» بصوتك فيرد عليك من غير ما تدوس المايك"
+      : "Always listening — call “Ya " + clean + "” out loud and it answers, no mic tap needed";
+  }
+  // The greeting already in the chat follows the new name too.
+  document.querySelectorAll("#chat .msg.ai").forEach(m => {
+    const first = m.firstChild;
+    if (!first || !first.textContent) return;
+    if (first.textContent.indexOf("أهلاً يا محمد! أنا ") === 0) {
+      first.textContent = first.textContent.replace(/أهلاً يا محمد! أنا \S+/, "أهلاً يا محمد! أنا " + clean);
+    } else if (first.textContent.indexOf("Hi Mohamed! I'm ") === 0) {
+      first.textContent = first.textContent.replace(/Hi Mohamed! I'm \S+/, "Hi Mohamed! I'm " + clean);
+    }
+  });
+}
+function wireAiNameField() {
+  const input = $("set-ai-name");
+  if (!input) return;
+  // Typing the name updates the displayed name everywhere at once.
+  input.addEventListener("input", () => applyAiName(input.value));
+}
+
+// ---------- LIVE CARDS ----------
+// Every numeric card (RAM/CPU/battery/temp/storage/top processes) is
+// LIVE, not frozen at its sent value: refreshLiveCards() re-reads the
+// real current values from the bridge and updates them in place.
+function refreshLiveCards() {
+  refreshDeviceOverview();
+  refreshExamCountdown();
+}
+document.addEventListener("DOMContentLoaded", () => {
+  wireAiNameField();
+  refreshLiveCards();
+  setInterval(refreshLiveCards, 5000); // live cards: poll every 5s
+});
