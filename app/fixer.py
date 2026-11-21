@@ -124,6 +124,78 @@ def relaunch_process(entry: dict) -> dict:
         return {"ok": False, "reason": "launch_failed", "detail": str(exc)}
 
 
+def _remove_undo_entry(entry: dict) -> None:
+    """Drop one undo entry (after a successful restore/relaunch)."""
+    entries = _load_undo()
+    for i, old in enumerate(entries):
+        if old == entry:
+            del entries[i]
+            break
+    _save_undo(entries)
+
+
+def restore_deleted(entry: dict) -> dict:
+    """Restore a file previously sent to the Recycle Bin (undo).
+    Windows: Shell.Application COM (Namespace 0xA) - find the Bin
+    item whose original path matches and invoke the restore verb.
+    Non-Windows fallback: move the file back from app/data/trash/."""
+    entry = entry or {}
+    if str(entry.get("kind") or "") != "file":
+        return {"ok": False, "reason": "not_a_file",
+                "detail": "العنصر ده مش ملف — مفيش حاجة ترجع."}
+    original = str(entry.get("path") or "").strip()
+    if not original:
+        return {"ok": False, "reason": "no_path",
+                "detail": "مفيش مسار متسجل للملف ده."}
+    if sys.platform == "win32":
+        try:
+            import subprocess
+            ps = (
+                "$s=New-Object -ComObject Shell.Application;"
+                "$b=$s.Namespace(0xA);"
+                "$p='" + original.replace("'", "''") + "';"
+                "$i=$b.Items() | Where-Object { $_.Path -eq $p } "
+                "| Select-Object -First 1;"
+                "if ($i) { $i.InvokeVerb('restore'); 'restored' } "
+                "else { 'not_found' }"
+            )
+            proc = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                capture_output=True, text=True, timeout=30)
+            if "restored" in (proc.stdout or ""):
+                _remove_undo_entry(entry)
+                info("fixer", f"Restored from Recycle Bin: {original}")
+                return {"ok": True, "reason": "restored"}
+            return {"ok": False, "reason": "not_found",
+                    "detail": ("الملف مش موجود في سلة المهملات — "
+                               "يمكن اتمسح منها خلاص.")}
+        except Exception as exc:
+            error("fixer", f"Recycle Bin restore failed ({original}): {exc}")
+            return {"ok": False, "reason": "restore_failed",
+                    "detail": str(exc)}
+    # Non-Windows fallback (dev/tests): the trash folder.
+    try:
+        from settings_store import DATA_DIR
+        trash = DATA_DIR / "trash"
+        stem = Path(original).stem
+        suffix = Path(original).suffix
+        candidates = [p for p in trash.glob(f"{stem}*{suffix}")
+                      if p.is_file()] if trash.exists() else []
+        if not candidates:
+            return {"ok": False, "reason": "not_found",
+                    "detail": "الملف مش موجود في سلة المهملات المحلية."}
+        src = max(candidates, key=lambda p: p.stat().st_mtime)
+        dest = Path(original)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dest))
+        _remove_undo_entry(entry)
+        info("fixer", f"Restored from local trash: {original}")
+        return {"ok": True, "reason": "restored"}
+    except Exception as exc:
+        error("fixer", f"Local trash restore failed ({original}): {exc}")
+        return {"ok": False, "reason": "restore_failed", "detail": str(exc)}
+
+
 def _recycle_file(path: Path) -> bool:
     """Send a file to the Windows Recycle Bin (shell32 SHFileOperation
     FO_DELETE + FOF_ALLOWUNDO, ctypes - stdlib only), NOT a permanent

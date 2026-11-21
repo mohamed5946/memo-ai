@@ -365,7 +365,7 @@ try:
 except Exception:
     wakeword_mod = None
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -1234,6 +1234,83 @@ class Api:
         except Exception as exc:
             error("app", f"relaunch_undo failed: {exc}")
             return {"ok": False, "error": str(exc)}
+
+    def list_undoable(self):
+        """Undo list, raw (the UI renders one button per entry and
+        passes the entry INDEX back to relaunch_process /
+        restore_deleted)."""
+        if fixer_mod is None:
+            return []
+        try:
+            return fixer_mod.list_undoable()
+        except Exception as exc:
+            error("app", f"list_undoable failed: {exc}")
+            return []
+
+    def relaunch_process(self, index):
+        """UI name for relaunch_undo (index into list_undoable)."""
+        return self.relaunch_undo(index)
+
+    def restore_deleted(self, index):
+        """Restore a file previously sent to the Recycle Bin (undo).
+        Index into list_undoable()."""
+        if fixer_mod is None:
+            return {"ok": False, "error": "unavailable"}
+        try:
+            entries = fixer_mod.list_undoable()
+            entry = entries[int(index)]
+            if entry.get("kind") != "file":
+                return {"ok": False,
+                        "error": "only files can be restored"}
+            return fixer_mod.restore_deleted(entry)
+        except Exception as exc:
+            error("app", f"restore_deleted failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    def set_privacy_mode(self, enabled):
+        """Privacy mode on/off (redact secrets before anything is
+        sent to the AI). Persists in settings."""
+        try:
+            _APP.settings["privacy_mode"] = bool(enabled)
+            ok = save_settings(_APP.settings)
+            info("app", f"Privacy mode {'ON' if enabled else 'OFF'}")
+            return {"ok": ok,
+                    "privacy_mode": bool(_APP.settings["privacy_mode"])}
+        except Exception as exc:
+            error("app", f"set_privacy_mode failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    def analyze_image(self, data_url):
+        """Send an attached image to Gemini 2.5 Flash (vision).
+        The UI shows the 'this leaves the device' warning and the
+        user confirms BEFORE calling this - that confirmation is
+        what confirmed=True means here. Returns {"ok", "reply"} so
+        the chat can show the answer (or the refusal reason)."""
+        try:
+            import base64 as _b64
+            import image_understanding as _img
+        except Exception as exc:
+            return {"ok": False, "reply": "مقدرتش أجهّز فهم الصور.",
+                    "error": str(exc)}
+        try:
+            raw = str(data_url or "")
+            if ";base64," not in raw:
+                return {"ok": False,
+                        "reply": "الصورة مش بصيغة مفهومة — جرّب صورة تانية.",
+                        "reason": "invalid_data"}
+            payload = raw.split(";base64,", 1)[1]
+            image_bytes = _b64.b64decode(payload, validate=False)
+        except Exception as exc:
+            return {"ok": False,
+                    "reply": "مقدرتش أقرأ الصورة — جرّب صورة تانية.",
+                    "reason": "invalid_data", "error": str(exc)}
+        res = _img.send_image_to_gemini(
+            image_bytes, "اشرح اللي في الصورة دي بالعربي.",
+            confirmed=True)
+        if res.get("ok"):
+            return {"ok": True, "reply": res.get("text", "")}
+        return {"ok": False, "reply": res.get("detail", "مقدرتش أفهم الصورة."),
+                "reason": res.get("reason", "failed")}
 
     def export_backup(self, path, password):
         """Export settings + encrypted keys (password from the UI -
@@ -2866,6 +2943,13 @@ class MemoApp:
 
 
 def main():
+    # v1.6.0 (LONA Browser): Chrome native-messaging host mode.
+    # Chrome launches the exe with the extension origin as an argument
+    # (the manifest has no args field), so both triggers are needed.
+    if "--native-host" in sys.argv or any(
+            a.startswith("chrome-extension://") for a in sys.argv[1:]):
+        from native_host import run_host_main
+        raise SystemExit(run_host_main())
     MemoApp().run()
 
 

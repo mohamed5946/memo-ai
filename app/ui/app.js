@@ -2046,9 +2046,9 @@ async function renderUndoAffordance(parentEl) {
   if (b && b.list_undoable) {
     try {
       const items = await b.list_undoable();
-      (items || []).forEach(it => {
-        if (it.kind === "process" && b.relaunch_process) addBtn(it.label || "إعادة تشغيل العملية", () => b.relaunch_process(it.id));
-        if (it.kind === "file" && b.restore_deleted) addBtn(it.label || "استعادة الملف", () => b.restore_deleted(it.id));
+      (items || []).forEach((it, idx) => {
+        if (it.kind === "process" && b.relaunch_process) addBtn(it.label || it.name || "إعادة تشغيل العملية", () => b.relaunch_process(idx));
+        if (it.kind === "file" && b.restore_deleted) addBtn(it.label || it.name || "استعادة الملف", () => b.restore_deleted(idx));
       });
     } catch (e) { /* fall through to the generic button */ }
   }

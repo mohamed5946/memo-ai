@@ -77,6 +77,10 @@ Source: "..\keys\README.txt"; DestDir: "{app}\keys"; Flags: ignoreversion
 ; It is copied here and then REWRITTEN at install time by
 ; WriteNativeHostManifest() with the real install path (see [Code]).
 Source: "native-host.json"; DestDir: "{app}"; Flags: ignoreversion
+; v1.6.0 (LONA Browser extension): the extension source itself, so the
+; user can load it unpacked from the install folder
+; (chrome://extensions -> Developer mode -> Load unpacked -> {app}\extension).
+Source: "..\extension\*"; DestDir: "{app}\extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Memo AI"; Filename: "{app}\Memo AI.exe"

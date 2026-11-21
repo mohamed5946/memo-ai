@@ -118,12 +118,12 @@ def get_listener_status() -> dict:
                               "important notifications are watched."}
         if "DENIED" in name:
             return {"available": True, "access": "denied",
-                    "detail": ("Notification access denied - allow Memo AI "
+                    "detail": ("Notification access denied - allow LONA "
                                "in Windows Settings > System > Notifications "
                                "to watch important notifications.")}
         return {"available": True, "access": "not_requested",
                 "detail": ("Notification access not requested yet - "
-                           "Memo AI will ask once on first run.")}
+                           "LONA will ask once on first run.")}
     except Exception as exc:
         return {"available": False, "access": "unavailable",
                 "detail": f"Could not check notification access: {exc}"}
@@ -184,7 +184,7 @@ def show_toast(title: str, message: str) -> bool:
             f"<text id=\"2\">{_xml_escape(message)}</text>"
             "</binding></visual></toast>")
         notifier = (ToastNotificationManager
-                    .create_toast_notifier("Memo AI"))
+                    .create_toast_notifier("LONA"))
         notifier.show(ToastNotification(xml))
         return True
     except Exception as exc:

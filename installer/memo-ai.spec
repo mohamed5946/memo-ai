@@ -119,7 +119,9 @@ for _pkg in ("webview", "faster_whisper", "ctranslate2", "av",
              # v1.4.2: psutil (native _psutil_windows), ddgs (pure
              # Python, collected for safety - it is imported lazily
              # inside tools.py), winrt (Windows toast .pyd modules).
-             "psutil", "ddgs", "winrt"):
+             # v1.6.0: cryptography (native libs) - backup encryption
+             # (Fernet/PBKDF2) is imported lazily inside backup.py.
+             "psutil", "ddgs", "winrt", "cryptography"):
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b

@@ -426,5 +426,9 @@ class TestInstallerRegistration:
         assert "--native-host" in hook
         assert "chrome-extension://" in hook
         assert "run_host_main" in hook
-        # main.py itself is NOT touched by this workstream.
-        assert "--native-host" not in _read("app/main.py")
+        # Integration: the hook is now wired into main.py (the ext
+        # workstream itself was forbidden from touching main.py).
+        main = _read("app/main.py")
+        assert "--native-host" in main
+        assert "chrome-extension://" in main
+        assert "from native_host import run_host_main" in main
