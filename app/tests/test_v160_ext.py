@@ -432,3 +432,13 @@ class TestInstallerRegistration:
         assert "--native-host" in main
         assert "chrome-extension://" in main
         assert "from native_host import run_host_main" in main
+
+    def test_native_host_procedure_defined_before_use(self):
+        # Inno Setup's Pascal Script needs the procedure declared
+        # before CurStepChanged calls it (CI 2026-11-21: compile
+        # failed with "Unknown identifier 'WriteNativeHostManifest'").
+        iss = _read("installer/memo-ai.iss")
+        defined = iss.index("procedure WriteNativeHostManifest();")
+        called = iss.index("WriteNativeHostManifest();",
+                           iss.index("procedure CurStepChanged"))
+        assert defined < called

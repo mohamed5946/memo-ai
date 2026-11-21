@@ -213,15 +213,6 @@ begin
   end;
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssPostInstall then
-  begin
-    MigrateKeysFromZipInstall();
-    WriteNativeHostManifest();
-  end;
-end;
-
 { ---- v1.6.0: LONA Browser native host (Chrome) ---- }
 { The manifest's "path" must be an ABSOLUTE path to an executable, so
   the template shipped in [Files] cannot carry it — this rewrites
@@ -250,6 +241,15 @@ begin
   if not SaveStringToFile(ManifestPath, Json, False) then
     MsgBox('تعذّر كتابة ملف native-host.json — إضافة المتصفح مش هتتصل بـ LONA لحد ما يتكتب يدوياً.',
       mbInformation, MB_OK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    MigrateKeysFromZipInstall();
+    WriteNativeHostManifest();
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
