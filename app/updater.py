@@ -71,7 +71,10 @@ DOWNLOADED_STATE_PATH = APP_DIR / "data" / "update_downloaded.json"
 # v1.4.3: a new terminal state, "downloaded" - the file is on disk,
 # verified, and waiting for the user's Install-now / Install-later
 # choice. Nothing installs while the state is "downloaded".
-_PROGRESS = {"state": "idle",           # idle|downloading|verifying|downloaded|done|error
+# v1.6.0: a new state, "installing" - set at the start of
+# apply_downloaded() so the UI shows "بيتثبّت دلوقتي" and LOCKS the
+# button while the install runs (no double-tap duplicate installs).
+_PROGRESS = {"state": "idle",           # idle|downloading|verifying|downloaded|installing|done|error
              "downloaded": 0,           # bytes written so far
              "total": None,             # bytes (Content-Length) or None
              "percent": None,           # 0-100 or None when total unknown
@@ -648,6 +651,11 @@ def apply_downloaded() -> dict:
             clear_downloaded()
             return {"ok": False, "error": "corrupt", "redownload": True}
     kind = str(state.get("kind", "zip"))
+    # v1.6.0: the UI shows "بيتثبّت دلوقتي" and locks the button from
+    # this moment on (state "installing", with the version).
+    _set_progress(state="installing", version=remote)
+    info("update", f"Installing v{remote} ({kind}) - the update button "
+                   "must stay locked until this finishes")
     try:
         if kind == "setup":
             ok = _launch_setup(path)

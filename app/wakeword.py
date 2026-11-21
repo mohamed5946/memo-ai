@@ -1,28 +1,39 @@
-# Memo AI v1.5 - Wake word "يا ميمو" (always-listening, offline)
+# LONA v1.5 - Wake word "يا لونا" (always-listening, offline)
 #
-# The user calls Memo AI by name ("يا ميمو") and it wakes up: shows the
+# The user calls LONA by name ("يا لونا") and it wakes up: shows the
 # main window, plays a short chime, and listens for the command - no
 # tap on the mic button, no opening the app by hand.
 #
-# ENGINE CHOICE (measured 2026-11-07, before writing this module):
+# The phrase DERIVES from the AI's name (settings.ai_name, default
+# "LONA"): "يا {ai_name}" (see settings_store.derive_wake_phrase).
+# Any user can rename the AI from Settings and the wake phrase follows
+# the new name - the matcher takes the phrase as a parameter
+# (extract_wake_command(transcript, phrase)); WAKE_PHRASE below is
+# only the default.
+#
+# ENGINE CHOICE (measured 2026-11-07, before writing this module -
+# the measurements below were for the previous phrase "يا ميمو"; the
+# engine + fallback approach is unchanged for "يا لونا", and real-voice
+# accuracy on Mohamed's Egyptian voice is UNPROVEN until his field
+# test):
 #   * Porcupine: OUT - no Arabic for self-service custom wake words,
 #     and its free tier was discontinued 2026-06-30.
 #   * Vosk (ar-mgb2-0.4): OUT - the model does not know the name
-#     "ميمو" (it hears "يا ميمو" as "يامين"), grammar mode is
-#     unsupported by that model ("Runtime graphs are not supported"),
-#     and it needs ~670 MB RAM resident.
+#     "لونا", grammar mode is unsupported by that model ("Runtime
+#     graphs are not supported"), and it needs ~670 MB RAM resident.
 #   * openWakeWord (train a custom model): OUT for v1.5 - a model
 #     trained on synthetic-only positives gets ~8% recall on a real
 #     voice; ~90% recall needs ~50 REAL recordings of the user saying
 #     the phrase, which we do not have. (That is the v1.6 path: ask
-#     Mohamed to record "يا ميمو" ~50 times, then train.)
-#   * faster-whisper "tiny"/"base": OUT - tiny hears "يا ميمو" exactly
-#     only on clean default-speed speech (1/5 variations), base 1/6.
-#   * faster-whisper "small" (int8): IN - hears "يا ميمو" exactly in
-#     4/6 synthetic variations (fast/slow/noisy/clean) and, with the
-#     "يا ميم" fallback below, 6/6; 0 false positives on the negatives
-#     ("يا محمد", "يا مين اللي عمل كده", "السلام عليكم"). No new
-#     dependency (faster-whisper is already required), no key, no
+#     Mohamed to record "يا لونا" ~50 times, then train.)
+#   * faster-whisper "tiny"/"base": OUT - tiny heard the old phrase
+#     exactly only on clean default-speed speech (1/5 variations),
+#     base 1/6.
+#   * faster-whisper "small" (int8): IN - heard the old phrase exactly
+#     in 4/6 synthetic variations (fast/slow/noisy/clean) and, with the
+#     truncated-pair fallback below, 6/6; 0 false positives on the
+#     negatives ("يا محمد", "يا مين اللي عمل كده", "السلام عليكم"). No
+#     new dependency (faster-whisper is already required), no key, no
 #     account, fully offline. Cost: ~500 MB model download on first
 #     enable + ~485 MB RAM resident (measured). Wake latency is
 #     ~2-4 s (VAD silence gap + transcription) - slower than a
@@ -39,7 +50,7 @@
 #   * The burst is transcribed with faster-whisper "small" and the
 #     transcript is matched against the wake phrase (see
 #     extract_wake_command). If the burst also contains a command
-#     ("يا ميمو افتح النور"), the command rides along - no second
+#     ("يا لونا افتح النور"), the command rides along - no second
 #     recording is needed. Otherwise the app records 5 s for the
 #     command (the normal turn-based mic path).
 #   * The listener PAUSES while the app itself is speaking (its own
@@ -61,7 +72,8 @@ import numpy as np
 
 from logger import error, info, warn
 
-WAKE_PHRASE = "يا ميمو"
+WAKE_PHRASE = "يا لونا"  # default only - the live phrase derives from
+# settings.ai_name ("يا {ai_name}"); see settings_store.derive_wake_phrase.
 MODEL_SIZE = "small"          # faster-whisper model (see header)
 SAMPLE_RATE = 16000
 FRAME_SAMPLES = 480           # 30 ms @ 16 kHz
@@ -87,7 +99,7 @@ _AR_DIACRITICS = re.compile(r"[\u064b-\u0652\u0670\u0640]")
 def normalize_arabic(text: str) -> str:
     """Normalize Arabic for phrase matching: strip diacritics/tatweel,
     unify alef forms, ة->ه, ى->ي, collapse whitespace and runs of the
-    same letter (length >= 3, e.g. "ميمووو" -> "ميمو")."""
+    same letter (length >= 3, e.g. "لوناووو" -> "لونا")."""
     t = (text or "")
     t = _AR_DIACRITICS.sub("", t)
     t = (t.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
@@ -98,35 +110,49 @@ def normalize_arabic(text: str) -> str:
     return t
 
 
-def extract_wake_command(transcript: str) -> tuple:
+def extract_wake_command(transcript: str, phrase: str | None = None) -> tuple:
     """Match the wake phrase in a transcript.
 
-    Returns (matched, command): matched is True when the full phrase
-    "يا ميمو" is present, OR when the truncated pair "يا ميم" ends a
-    word pair (Whisper-small drops the final و when more words follow:
-    "يا ميم افتح النور" is really "يا ميمو افتح النور"). The command
+    `phrase` is the live wake phrase ("يا {ai_name}", default
+    WAKE_PHRASE = "يا لونا"). Returns (matched, command): matched is
+    True when the full phrase is present, OR when the truncated pair
+    (name minus its last letter, e.g. "يا لون") ends a word pair
+    (Whisper-small drops the final letter when more words follow:
+    "يا لون افتح النور" is really "يا لونا افتح النور"). The command
     is the text after the phrase, cleaned; "" means "wake, no command
-    yet - record one". "ميمو" alone, "يا ميمي", "يا محمد", "يا مين"
-    never match.
+    yet - record one". The bare name alone ("لونا"), "يا لوني",
+    "يا محمد", "يا مين" never match.
     """
     norm = normalize_arabic(transcript)
     if not norm:
         return False, ""
-    # Full phrase first: يا + optional space + ميمو.
-    m = re.search(r"يا\s*ميمو", norm)
+    norm_phrase = normalize_arabic(phrase or WAKE_PHRASE)
+    parts = norm_phrase.split()
+    if not parts:
+        return False, ""
+    if len(parts) >= 2:
+        prefix, name = parts[0], " ".join(parts[1:])
+    else:
+        prefix, name = "", parts[0]
+    # Full phrase first: يا + optional space + name.
+    prefix_part = (re.escape(prefix) + r"\s*") if prefix else ""
+    m = re.search(prefix_part + re.escape(name), norm)
     if m:
         cmd = norm[m.end():].strip(" ،.,!؟?")
         return True, cmd
-    # Truncated pair: "يا ميم" as a complete pair (space/end after).
-    m = re.search(r"يا\s*ميم(?=\s|$)", norm)
-    if m:
-        cmd = norm[m.end():].strip(" ،.,!؟?")
-        return True, cmd
+    # Truncated pair: name minus its last letter, as a complete pair
+    # (space/end after) - only for Arabic-letter names.
+    if len(name) > 1 and re.search(r"[\u0600-\u06ff]$", name):
+        trunc = name[:-1]
+        m = re.search(prefix_part + re.escape(trunc) + r"(?=\s|$)", norm)
+        if m:
+            cmd = norm[m.end():].strip(" ،.,!؟?")
+            return True, cmd
     return False, ""
 
 
-def contains_wake_phrase(transcript: str) -> bool:
-    return extract_wake_command(transcript)[0]
+def contains_wake_phrase(transcript: str, phrase: str | None = None) -> bool:
+    return extract_wake_command(transcript, phrase)[0]
 
 
 class EnergyVAD:
@@ -278,7 +304,10 @@ class WakeWordListener:
             "detail": detail,
             "model_ready": bool(self._spotter is not None and
                                 getattr(self._spotter, "loaded", False)),
-            "phrase": WAKE_PHRASE,
+            # The LIVE phrase derives from the AI's name (settings) -
+            # WAKE_PHRASE is only the default.
+            "phrase": str(self.settings.get("wakeword_phrase")
+                          or WAKE_PHRASE),
             "wake_count": self.wake_count,
             "last_wake_at": self.last_wake_at,
             "bursts_checked": self.bursts_checked,
@@ -329,7 +358,8 @@ class WakeWordListener:
                 self._set_state("paused")
             else:
                 self._set_state("listening")
-            info("wakeword", "Listening for 'يا ميمو' (always-on)")
+            info("wakeword", "Listening for "
+                             f"'{self.settings.get('wakeword_phrase') or WAKE_PHRASE}' (always-on)")
             self._run_loop()
         except Exception as exc:
             error("wakeword", f"Wake-word listener failed: {exc}")
@@ -451,7 +481,11 @@ class WakeWordListener:
         samples = np.frombuffer(b"".join(frames), dtype=np.int16)
         audio = samples.astype(np.float32) / 32768.0
         text = self._spotter.transcribe(audio)
-        matched, command = extract_wake_command(text)
+        # The phrase is read from settings on every burst, so renaming
+        # the AI (set_ai_name) takes effect without restarting the
+        # listener.
+        phrase = str(self.settings.get("wakeword_phrase") or WAKE_PHRASE)
+        matched, command = extract_wake_command(text, phrase)
         if not matched:
             return
         now = time.time()

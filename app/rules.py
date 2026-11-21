@@ -38,13 +38,13 @@ DEVELOPER_PATTERNS = [
 ]
 DEVELOPER_REPLY_AR = (
     "المطوّر هو محمد السيد (Mohamed El Sayed) — طالب علوم حاسب "
-    "(Computer Science)، وهو اللي طوّر Memo AI (وكمان DeliveryFlow "
+    "(Computer Science)، وهو اللي طوّر لونا (LONA) (وكمان DeliveryFlow "
     "وتطبيقات تانية). البورتفوليو بتاعه: "
     "https://mohamed5946.github.io/portfolio/ — وGitHub بتاعه: "
     "https://github.com/mohamed5946")
 DEVELOPER_REPLY_EN = (
     "The developer is Mohamed El Sayed — a Computer Science student "
-    "who built Memo AI (and DeliveryFlow and other apps). "
+    "who built LONA (and DeliveryFlow and other apps). "
     "His portfolio: https://mohamed5946.github.io/portfolio/ — "
     "and his GitHub: https://github.com/mohamed5946")
 

@@ -14,6 +14,7 @@
 # through; the exact keys live in DEFAULT_MONITOR_SETTINGS below and
 # must be added to settings_store.DEFAULTS by the parent.
 
+import ctypes
 import os
 import sys
 import threading
@@ -175,6 +176,209 @@ def read_cpu_temp() -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# v1.6.0: per-process usage, GPU, storage, battery drain, mood mapping
+# ---------------------------------------------------------------------------
+
+def _read_top_processes(limit: int = 10) -> list:
+    """Top processes by memory (RSS). Each entry:
+    {"pid", "name", "cpu_percent", "memory_mb", "status"}.
+    cpu_percent is the non-blocking (interval=None) value - 0.0 on the
+    first call for a process, which is psutil's honest behaviour, not a
+    bug. A process that vanishes mid-iteration is skipped, never fatal."""
+    if psutil is None:
+        return []
+    out = []
+    try:
+        for proc in psutil.process_iter(
+                ["pid", "name", "cpu_percent", "memory_info", "status"]):
+            try:
+                info_d = proc.info
+                mem = info_d.get("memory_info")
+                out.append({
+                    "pid": int(info_d.get("pid") or 0),
+                    "name": str(info_d.get("name") or "?"),
+                    "cpu_percent": float(info_d.get("cpu_percent") or 0.0),
+                    "memory_mb": int((mem.rss if mem else 0) // (1024 * 1024)),
+                    "status": str(info_d.get("status") or ""),
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied,
+                    psutil.ZombieProcess):
+                continue
+    except Exception as exc:
+        warn("monitor", f"Top-processes reading failed: {exc}")
+        return []
+    out.sort(key=lambda p: p["memory_mb"], reverse=True)
+    return out[:max(1, int(limit))]
+
+
+def read_gpu_usage() -> dict:
+    """Per-process GPU usage where a source answers, else honestly
+    unavailable. Windows: Win32_PerfFormattedData GPU engine counters
+    via PowerShell (no extra package). The counter exists only on
+    Windows 10+ with a WDDM driver; on Linux / without it this is
+    {"available": False, "percent": None, ...} - NEVER a guessed number."""
+    result = {"available": False, "percent": None, "detail": ""}
+    if sys.platform != "win32":
+        result["detail"] = "GPU counters are Windows-only in this build"
+        return result
+    try:
+        import subprocess
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "Get-Counter '\\GPU Engine(*)\\Utilization Percentage' "
+             "-ErrorAction SilentlyContinue | Select-Object -ExpandProperty "
+             "CounterSamples | Measure-Object -Property CookedValue -Sum "
+             "| Select-Object -ExpandProperty Sum"],
+            capture_output=True, text=True, timeout=10,
+            **hidden_spawn.run_kwargs())
+        raw = (proc.stdout or "").strip()
+        value = float(raw.splitlines()[0].strip()) if raw else None
+        if value is None or not (0.0 <= value <= 100.0 * 64):
+            result["detail"] = ("GPU counter answered but gave no usable "
+                                "value")
+            return result
+        # The counter sums across engines, so clamp to a 0-100 scale
+        # and say so - it is an aggregate, not a per-engine breakdown.
+        result.update({"available": True, "percent": round(min(value, 100.0), 1),
+                       "detail": "aggregate GPU Engine utilization"})
+        return result
+    except Exception as exc:
+        result["detail"] = f"GPU counter probe failed: {exc}"
+        return result
+
+
+def read_storage() -> list:
+    """Per-drive storage: [{"mount", "device", "total_gb", "free_gb",
+    "percent_free"}]. One failing drive never kills the list."""
+    if psutil is None:
+        return []
+    out = []
+    try:
+        parts = psutil.disk_partitions(all=False)
+    except Exception as exc:
+        warn("monitor", f"Disk partitions reading failed: {exc}")
+        return []
+    for part in parts:
+        try:
+            du = psutil.disk_usage(part.mountpoint)
+        except Exception:
+            continue
+        if not du.total:
+            continue
+        out.append({
+            "mount": str(part.mountpoint),
+            "device": str(part.device),
+            "total_gb": round(du.total / (1024 ** 3), 2),
+            "free_gb": round(du.free / (1024 ** 3), 2),
+            "percent_free": round(100.0 * du.free / du.total, 1),
+        })
+    return out
+
+
+def battery_drain_estimate(battery: dict | None,
+                           top_processes: list | None) -> dict:
+    """Per-app battery drain ESTIMATE (labelled as such - it is a share
+    of CPU time while discharging, not a measured mAh draw, and the
+    result says so). Only meaningful while discharging; otherwise the
+    top consumers are still listed with drain None."""
+    discharging = bool(battery and not battery.get("charging"))
+    consumers = []
+    procs = list(top_processes or [])
+    total_cpu = sum(p.get("cpu_percent") or 0.0 for p in procs)
+    for p in sorted(procs, key=lambda x: x.get("cpu_percent") or 0.0,
+                    reverse=True)[:5]:
+        cpu = float(p.get("cpu_percent") or 0.0)
+        consumers.append({
+            "name": p.get("name", "?"),
+            "pid": p.get("pid"),
+            "cpu_percent": cpu,
+            # Share of the top-process CPU time - an estimate, not a
+            # measured battery draw.
+            "cpu_share_percent": (round(100.0 * cpu / total_cpu, 1)
+                                  if total_cpu > 0 else 0.0),
+        })
+    return {"discharging": discharging,
+            "estimate": True,
+            "note": ("CPU-time share while discharging - an estimate, "
+                     "not a measured battery draw"),
+            "top_consumers": consumers}
+
+
+def _idle_seconds() -> float | None:
+    """Seconds since the last keyboard/mouse input (Windows
+    GetLastInputInfo). None off Windows or on any failure - never a
+    guessed number. Guarded: a broken probe must never raise."""
+    if sys.platform != "win32":
+        return None
+    try:
+        class _LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint),
+                        ("dwTime", ctypes.c_uint)]
+
+        info_obj = _LASTINPUTINFO()
+        info_obj.cbSize = ctypes.sizeof(_LASTINPUTINFO)
+        if not ctypes.windll.user32.GetLastInputInfo(
+                ctypes.byref(info_obj)):
+            return None
+        tick = ctypes.windll.kernel32.GetTickCount()
+        return max(0.0, (tick - info_obj.dwTime) / 1000.0)
+    except Exception:
+        return None
+
+
+# v1.6.0 mood thresholds (explicit, in priority order - the first match
+# wins, so a hot + low-battery machine reads as worried, not tired).
+_MOOD_TEMP_WORRIED_C = 90.0
+_MOOD_RAM_WORRIED_MB = 300
+_MOOD_BATTERY_TIRED_PCT = 15
+_MOOD_CPU_DIZZY_PCT = 85
+_MOOD_IDLE_SLEEP_SEC = 10 * 60
+_MOOD_RECENT_INTERACTION_SEC = 5 * 60
+
+
+def device_state_to_mood(status: dict, focus_mode: bool = False,
+                         idle_seconds: float | None = None) -> tuple:
+    """Map a device status dict to (mood, reason). `status` is the shape
+    get_status() / get_device_overview() return (ram/cpu/battery/temp).
+    Priority: worried (temp>=90 or free RAM<300MB) -> tired (battery<15%
+    discharging) -> dizzy (sustained CPU>85%) -> focused (focus mode on)
+    -> sleeping (idle>10min + otherwise healthy) -> happy (healthy +
+    recent interaction) -> awake (default). Never raises: a malformed
+    status reads as awake with the reason named."""
+    try:
+        ram = (status or {}).get("ram") or {}
+        cpu = (status or {}).get("cpu") or {}
+        battery = (status or {}).get("battery")
+        temp_c = (status or {}).get("temp_c")
+        free_mb = ram.get("free_mb")
+        if (temp_c is not None and float(temp_c) >= _MOOD_TEMP_WORRIED_C) \
+                or (free_mb is not None and float(free_mb) < _MOOD_RAM_WORRIED_MB):
+            if temp_c is not None and float(temp_c) >= _MOOD_TEMP_WORRIED_C:
+                return ("قلقان", f"حرارة المعالج {temp_c}°م — فوق 90°")
+            return ("قلقان", f"الرام الفاضية {free_mb} ميجا بس — أقل من 300")
+        if battery and not battery.get("charging"):
+            bpct = battery.get("percent")
+            if bpct is not None and float(bpct) < _MOOD_BATTERY_TIRED_PCT:
+                return ("تعبان", f"البطارية {bpct}% والشاحن مش متوصل")
+        sustained = cpu.get("sustained_high")
+        cpu_pct = cpu.get("percent")
+        if sustained or (cpu_pct is not None
+                         and float(cpu_pct) > _MOOD_CPU_DIZZY_PCT
+                         and sustained is True):
+            return ("دايخ", "المعالج شغال فوق 85% من فترة — حمل مستمر")
+        if focus_mode:
+            return ("مركّز", "وضع التركيز شغال")
+        if idle_seconds is not None and idle_seconds > _MOOD_IDLE_SLEEP_SEC:
+            return ("نايم", "الجهاز هادي ومفيش استخدام بقاله أكتر من 10 دقايق")
+        if idle_seconds is not None and idle_seconds <= _MOOD_RECENT_INTERACTION_SEC:
+            return ("مبسوط وبيرقص", "كل حاجة تمام ولسه كنت بتكلمني")
+        return ("صاحي", "الجهاز شغال عادي ومفيش مشاكل")
+    except Exception as exc:
+        warn("monitor", f"Mood mapping failed ({exc}) - defaulting to awake")
+        return ("صاحي", "مقدرتش أقرأ حالة الجهاز دلوقتي")
+
+
+# ---------------------------------------------------------------------------
 # Monitor
 # ---------------------------------------------------------------------------
 
@@ -205,6 +409,7 @@ class SystemMonitor:
         self._active = set()        # alert kinds whose condition is true
         self._last_fired = {}       # kind -> timestamp of last firing
         self._temp_cache = {"at": 0.0, "temp_c": None, "available": False}
+        self._focus_mode = False  # v1.6.0: companion focus mode -> mood مركّز
         self._stop_event = threading.Event()
         self._thread = None
         self.running = False
@@ -282,6 +487,24 @@ class SystemMonitor:
             battery = {"percent": int(raw.percent),
                        "charging": bool(raw.power_plugged)}
         temp_c, temp_available = self._read_temp_cached()
+        # v1.6.0: per-process + GPU + storage are best-effort additions -
+        # each one failing leaves the core reading intact (same rule as
+        # the v1.4.3 partial-data fix: never a crash, never fake zeros).
+        top_processes = []
+        try:
+            top_processes = _read_top_processes()
+        except Exception as exc:
+            warn("monitor", f"Top-processes reading failed: {exc}")
+        gpu = {"available": False, "percent": None, "detail": ""}
+        try:
+            gpu = read_gpu_usage()
+        except Exception as exc:
+            warn("monitor", f"GPU reading failed: {exc}")
+        storage = []
+        try:
+            storage = read_storage()
+        except Exception as exc:
+            warn("monitor", f"Storage reading failed: {exc}")
         return {
             "ram": ram,
             "disk": disk,
@@ -289,6 +512,10 @@ class SystemMonitor:
             "battery": battery,
             "temp_c": temp_c,
             "temp_available": temp_available,
+            "top_processes": top_processes,
+            "gpu": gpu,
+            "storage": storage,
+            "battery_drain": battery_drain_estimate(battery, top_processes),
         }
 
     # -- status ---------------------------------------------------------------
@@ -318,17 +545,81 @@ class SystemMonitor:
                        "temp_available": False}
         cpu_pct = reading.get("cpu_percent")
         self._record_cpu(cpu_pct if cpu_pct is not None else 0.0)
-        return {
+        # v1.6.0 additions: top processes / GPU / storage / battery drain
+        # come from the reading when the sampler provides them (the real
+        # sampler does); injected test readings omit them, so they are
+        # read live here instead of failing or faking a value.
+        top_processes = reading.get("top_processes")
+        if top_processes is None:
+            try:
+                top_processes = _read_top_processes()
+            except Exception:
+                top_processes = []
+        gpu = reading.get("gpu")
+        if gpu is None:
+            try:
+                gpu = read_gpu_usage()
+            except Exception:
+                gpu = {"available": False, "percent": None, "detail": ""}
+        storage = reading.get("storage")
+        if storage is None:
+            try:
+                storage = read_storage()
+            except Exception:
+                storage = []
+        battery = reading.get("battery")
+        drain = reading.get("battery_drain")
+        if drain is None:
+            drain = battery_drain_estimate(battery, top_processes)
+        status = {
             "ram": reading.get("ram"),
             "disk": reading.get("disk"),
             "cpu": {"percent": (float(cpu_pct) if cpu_pct is not None
                                 else None),
                     "sustained_high": self._sustained_high()},
-            "battery": reading.get("battery"),
+            "battery": battery,
             "temp_c": reading.get("temp_c"),
             "temp_available": bool(reading.get("temp_available", False)),
             "available": psutil is not None,
+            "top_processes": top_processes,
+            "gpu": gpu,
+            "storage": storage,
+            "battery_drain": drain,
         }
+        mood, mood_reason = device_state_to_mood(
+            status, focus_mode=bool(self._focus_mode),
+            idle_seconds=_idle_seconds())
+        status["mood"] = mood
+        status["mood_reason"] = mood_reason
+        return status
+
+    def get_device_overview(self) -> dict:
+        """v1.6.0: one flat overview for the island / device panels:
+        {ram, cpu, battery, temp_c, temp_available, disk, storage,
+        top_processes, gpu, battery_drain, mood, mood_reason}.
+        "disk" is the system-drive summary (back-compat key); "storage"
+        is the per-drive list. Nothing here is ever a guessed number."""
+        status = self.get_status()
+        return {
+            "ram": status.get("ram"),
+            "cpu": status.get("cpu"),
+            "battery": status.get("battery"),
+            "temp_c": status.get("temp_c"),
+            "temp_available": status.get("temp_available"),
+            "disk": status.get("disk"),
+            "storage": status.get("storage") or [],
+            "top_processes": status.get("top_processes") or [],
+            "gpu": status.get("gpu") or {"available": False,
+                                         "percent": None, "detail": ""},
+            "battery_drain": status.get("battery_drain") or {},
+            "mood": status.get("mood", "صاحي"),
+            "mood_reason": status.get("mood_reason", ""),
+        }
+
+    def set_focus_mode(self, on: bool) -> None:
+        """v1.6.0: the companion's focus mode feeds the mood mapping
+        (focused while it is on)."""
+        self._focus_mode = bool(on)
 
     # -- sustained CPU ---------------------------------------------------------
 
