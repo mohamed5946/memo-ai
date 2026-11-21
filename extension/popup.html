@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LONA Browser</title>
+<style>
+  * { box-sizing: border-box; }
+  body { width: 280px; margin: 0; padding: 14px; font-family: system-ui, sans-serif;
+         background: #0d121c; color: #f7f4e9; font-size: 13px; }
+  h1 { font-size: 15px; margin: 0 0 10px; color: #e8c97a; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #888; flex: none; }
+  .dot.on { background: #3ecf6e; }
+  .dot.off { background: #e05252; }
+  #tabTitle { color: #b9c2d0; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; max-width: 240px; }
+  .hint { color: #8a94a6; font-size: 11px; line-height: 1.4; margin: 6px 0; }
+  button { width: 100%; padding: 8px; margin-top: 8px; border: 0; border-radius: 8px;
+           background: #e8c97a; color: #0d121c; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  label.switch { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  #statusText { font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>LONA Browser</h1>
+  <div class="row"><span id="dot" class="dot"></span><span id="statusText">Checking…</span></div>
+  <div class="row"><span>Current tab:</span></div>
+  <div id="tabTitle">—</div>
+  <label class="switch row">
+    <input type="checkbox" id="controlToggle">
+    <span>Let LONA control the mouse &amp; keyboard</span>
+  </label>
+  <p class="hint">Off by default. While it is off, LONA only sees the current tab and can navigate — it never clicks, types, or plays anything. Turn it on only when you want LONA to act in the browser.</p>
+  <p class="hint">LONA never follows instructions found in a web page. Payment, delete, and login actions always need your permission in the LONA desktop app first.</p>
+  <button id="openLona">Open LONA</button>
+  <button id="retry" style="background:#2a3345;color:#f7f4e9;">Retry connection</button>
+  <p class="hint" id="openHint"></p>
+  <script src="popup.js"></script>
+</body>
+</html>

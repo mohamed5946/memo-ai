@@ -1,0 +1,60 @@
+LONA Browser — native-host hook for app/main.py
+================================================
+DO NOT edit main.py in this workstream (it is owned by the backend
+worker). The backend worker / integrator adds EXACTLY these 3 lines
+at the top of main() in app/main.py (currently line 2389):
+
+    def main():
+        if "--native-host" in sys.argv or any(a.startswith("chrome-extension://") for a in sys.argv[1:]):
+            from native_host import run_host_main
+            raise SystemExit(run_host_main())
+        MemoApp().run()
+
+Why both conditions:
+  * "--native-host" — the frozen exe is registered as the native host
+    with that argument (see installer/native-host.json + memo-ai.iss).
+    This is the documented launch mode.
+  * "chrome-extension://…" — Chrome itself launches the host exe
+    with the extension origin as its first argument (the native
+    messaging manifest has no args field, so Chrome never passes
+    --native-host on its own). Without this second check the
+    Chrome-launched exe would open the GUI instead of the stdio loop.
+
+What run_host_main() does (app/native_host.py, stdlib only):
+  * Reads framed JSON from stdin and writes framed replies to stdout
+    (Chrome Native Messaging protocol: 4-byte little-endian length +
+    UTF-8 JSON, binary mode).
+  * Opens a loopback listener on 127.0.0.1 (ephemeral port, written
+    to app/data/native-host.port) so the desktop app can send it
+    commands; it forwards them to the extension and returns the
+    extension's reply.
+  * Exits cleanly (code 0) on stdin EOF.
+  * Validates every command against the allowlist
+    (play_first_youtube, navigate, click, type, scroll,
+    get_tab_info, ping) and the URL host allowlist
+    (youtube.com, www.youtube.com, google.com). Dangerous commands
+    (pay, delete, login, …) are rejected with
+    "dangerous_action_needs_permission" — they need an explicit
+    permission card in the LONA desktop app first.
+
+Desktop-app side (no main.py change needed beyond the hook above):
+  from native_host import start_native_host_listener
+  client = start_native_host_listener()   # attaches to a Chrome host,
+                                          # or spawns a standalone one
+  client.send({"cmd": "play_first_youtube", "query": "الدحيح"})
+  client.is_connected()                   # transport alive?
+  client.close()
+
+Voice browser control (spec items 26 + 27) goes through this client:
+  "open YouTube"          -> client.send({"cmd": "navigate",
+                                          "url": "https://www.youtube.com/"})
+  "play X from YouTube"   -> client.send({"cmd": "play_first_youtube",
+                                          "query": "X"})
+  The extension navigates to the YouTube search page first when
+  needed, waits for results, then clicks the first video link
+  (a#video-title) — that click starts playback.
+
+Safety (adopted suggestion 1): page content is DATA, never commands.
+Nothing in a web page can become a command in the host, the
+background worker, or the content script, and dangerous actions
+need a desktop permission card first.

@@ -73,6 +73,10 @@ Source: "..\dist\Memo AI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 ; keys/ lives next to the exe (not inside _internal) so users can see and
 ; edit their key files; only the instructions file ships with the installer.
 Source: "..\keys\README.txt"; DestDir: "{app}\keys"; Flags: ignoreversion
+; v1.6.0 (LONA Browser extension): the Chrome native-host manifest.
+; It is copied here and then REWRITTEN at install time by
+; WriteNativeHostManifest() with the real install path (see [Code]).
+Source: "native-host.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Memo AI"; Filename: "{app}\Memo AI.exe"
@@ -82,6 +86,15 @@ Name: "{userdesktop}\Memo AI"; Filename: "{app}\Memo AI.exe"; Tasks: desktopicon
 ; After install, offer to run the app (v1.4.1: it starts with the main window directly - the island is gone).
 ; Skipped on silent installs (the updater relaunches the app itself).
 Filename: "{app}\Memo AI.exe"; Description: "{cm:LaunchProgram,Memo AI}"; Flags: nowait postinstall skipifsilent
+
+[Registry]
+; v1.6.0 (LONA Browser extension): register the native-messaging host
+; per-user (HKCU, no admin). Chrome reads this key when the extension
+; connects; the value points at the manifest shipped next to the exe.
+; The host id (com.memoai.host) is NOT renamed — only the display
+; name changed to LONA. Uninstall deletes the key (uninsdeletekey +
+; the explicit cleanup in CurUninstallStepChanged below).
+Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\com.memoai.host"; ValueType: string; ValueName: ""; ValueData: "{app}\native-host.json"; Flags: uninsdeletekey
 
 [Code]
 { ---- WebView2 Runtime check (v1.2.2) ---- }
@@ -199,5 +212,45 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
+  begin
     MigrateKeysFromZipInstall();
+    WriteNativeHostManifest();
+  end;
+end;
+
+{ ---- v1.6.0: LONA Browser native host (Chrome) ---- }
+{ The manifest's "path" must be an ABSOLUTE path to an executable, so
+  the template shipped in [Files] cannot carry it — this rewrites
+  {app}\native-host.json at install time with the real install dir.
+  The exe itself runs the host stdio loop when launched with
+  --native-host (or with a chrome-extension:// origin argument — see
+  extension/NATIVE_HOST_MAIN_HOOK.txt). allowed_origins carries a
+  placeholder: the extension id is only known after the extension is
+  first loaded in Chrome (chrome://extensions), so it must be filled
+  in with the real id once — the file is plain JSON next to the exe. }
+
+procedure WriteNativeHostManifest();
+var
+  ManifestPath, ExePath, Json: string;
+begin
+  ManifestPath := ExpandConstant('{app}\native-host.json');
+  ExePath := ExpandConstant('{app}\Memo AI.exe');
+  StringChangeEx(ExePath, '\', '\\', True);
+  Json := '{' + #13#10 +
+    '  "name": "com.memoai.host",' + #13#10 +
+    '  "description": "LONA browser bridge",' + #13#10 +
+    '  "path": "' + ExePath + '",' + #13#10 +
+    '  "type": "stdio",' + #13#10 +
+    '  "allowed_origins": ["chrome-extension://REPLACE_WITH_EXTENSION_ID/"]' + #13#10 +
+    '}';
+  if not SaveStringToFile(ManifestPath, Json, False) then
+    MsgBox('تعذّر كتابة ملف native-host.json — إضافة المتصفح مش هتتصل بـ LONA لحد ما يتكتب يدوياً.',
+      mbInformation, MB_OK);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+    RegDeleteKeyIncludingSubkeys(HKCU,
+      'Software\Google\Chrome\NativeMessagingHosts\com.memoai.host');
 end;
