@@ -348,19 +348,21 @@ begin
            mbInformation, MB_OK);
 end;
 
-{ ---- v2.0.0: migrate v1.6.3 data into the new data folder ---- }
-{ v2 keeps its state in %LOCALAPPDATA%\LONA (settings.json,
-  activated.json, tasks.json, memories.json, logs) instead of the
-  install folder. v1.6.3 kept settings.json + activated.json under
-  {app}\_internal\app\data (frozen install) or app\data (zip install).
-  Without this step an upgrade would ask for the invite code again
-  and reset every setting — the exact loss the v1.6.1 rename migration
-  was built to prevent. The API keys live in Windows Credential
-  Manager and migrate inside the app on first launch (see
-  lona2/apikeys.py _migrate_v1_keys); only the two files move here,
-  and only when the new location does not already have them.
-  Staging happens at ssInstall (before any file is overwritten) and
-  the restore at ssPostInstall (after the new files are in place). }
+// ---- v2.0.0: migrate v1.6.3 data into the new data folder ----
+// (// comments here on purpose: the text mentions {app} paths, and a
+// { } block comment would end at the first } inside {app}.)
+// v2 keeps its state in %LOCALAPPDATA%\LONA (settings.json,
+// activated.json, tasks.json, memories.json, logs) instead of the
+// install folder. v1.6.3 kept settings.json + activated.json under
+// {app}\_internal\app\data (frozen install) or app\data (zip install).
+// Without this step an upgrade would ask for the invite code again
+// and reset every setting — the exact loss the v1.6.1 rename migration
+// was built to prevent. The API keys live in Windows Credential
+// Manager and migrate inside the app on first launch (see
+// lona2/apikeys.py _migrate_v1_keys); only the two files move here,
+// and only when the new location does not already have them.
+// Staging happens at ssInstall (before any file is overwritten) and
+// the restore at ssPostInstall (after the new files are in place).
 
 function V2DataDir(): string;
 begin
