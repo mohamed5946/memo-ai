@@ -15,3 +15,6 @@ app/whatsapp_sidecar/node_modules/
 app/whatsapp_sidecar/node/
 # v1.4.0: WhatsApp session (Signal keys) - local only, NEVER committed
 app/data/whatsapp_auth/
+
+# v1.6.2: downloaded-update record - runtime state, never committed
+app/data/update_downloaded.json

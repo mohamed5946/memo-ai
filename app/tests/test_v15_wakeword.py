@@ -481,7 +481,7 @@ class TestSettingsAndWiring(unittest.TestCase):
 
     def test_main_wiring(self):
         src = _read("app/main.py")
-        self.assertIn('VERSION = "1.6.1"', src)
+        self.assertIn('VERSION = "1.6.2"', src)
         self.assertIn("def get_wakeword_status(self)", src)
         self.assertIn("def set_wakeword_enabled(self, enabled)", src)
         self.assertIn("def start_wakeword(self)", src)
@@ -528,7 +528,7 @@ class TestSettingsAndWiring(unittest.TestCase):
 
     def test_version_manifest(self):
         manifest = json.loads(_read("version.json"))
-        self.assertEqual(manifest["version"], "1.6.1")
+        self.assertEqual(manifest["version"], "1.6.2")
         self.assertTrue(any("لونا" in f.get("title", "")
                             for f in manifest.get("features", [])))
 

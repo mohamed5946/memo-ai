@@ -137,11 +137,12 @@ async function main() {
   out.hidden_when_available_even_with_hint_field = s5.state().hidden === true;
 
   // Scenario 6 — temp unavailable but no hint field yet (older API /
-  // D's monitor change not shipped): stays hidden, no crash.
+  // D's monitor change not shipped): v1.6.2 clarity — the hint now
+  // SHOWS with its HTML default text instead of staying silent.
   const s6 = freshSession();
   s6.setOverview(overview({ temp_available: false }));
   await s6.refresh();
-  out.hidden_without_hint_field_no_crash = s6.state().hidden === true;
+  out.shows_default_without_hint_field_no_crash = s6.state().hidden === false;
 
   // Scenario 7 — temp becomes available after the hint was shown:
   // the hint disappears.

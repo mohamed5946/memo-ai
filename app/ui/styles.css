@@ -70,6 +70,24 @@ header .spacer { flex: 1; }
   box-shadow: 0 2px 0 rgba(255,255,255,0.06) inset, 0 4px 12px rgba(0,0,0,0.35);
 }
 .icon-btn:hover { background: rgba(255,255,255,0.13); }
+/* v1.6.2 (frameless window): the header carries the window
+   controls (the traffic lights Mohamed is used to) and is the drag
+   region — see wireWindowControls() in app.js. Buttons are excluded
+   from dragging. */
+.win-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.win-btn { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25);
+  cursor: pointer; padding: 0; box-shadow: inset 0 -1px 2px rgba(0,0,0,.2); }
+.win-btn.close { background: #ff5f57; }
+.win-btn.min { background: #febc2e; }
+.win-btn.max { background: #28c840; }
+.win-btn:hover { filter: brightness(1.15); }
+.win-btn:active { filter: brightness(.9); }
+.header-clock { font-size: 13px; font-weight: 700; color: var(--m-text);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.model-indicator { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 700; color: var(--m-accent);
+  background: var(--m-pill); border: 1px solid var(--m-accent); white-space: nowrap; }
+
 /* v1.3.0 voice-output toggle: muted speaker is dimmed + amber. */
 .icon-btn.muted { opacity: 0.55; color: #fbbf24; border-color: rgba(251,191,36,0.45); }
 
@@ -170,8 +188,12 @@ header .spacer { flex: 1; }
   -webkit-user-select: text; user-select: text;
 }
 @keyframes msg-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+/* v1.6.2 (PARITY 2): user messages are a GOLD bubble — the theme
+   accent with dark text, bold — in every theme (the preview's gold
+   bubble). The old per-theme blue/orange/green paints are gone. */
 .msg.user {
-  align-self: flex-start; background: linear-gradient(150deg, #4a5f9e, #3b4f86);
+  align-self: flex-start; background: var(--m-accent); color: var(--m-on-accent);
+  font-weight: 700;
   border: 1px solid rgba(255,255,255,0.14); border-end-start-radius: 6px;
   box-shadow: 0 6px 18px rgba(0,0,0,0.35);
 }
@@ -552,15 +574,6 @@ body[data-theme="dashboard"], body[data-theme="old"] { background: var(--m-bg); 
    colours. Old keeps the true v1.5.0 blue (base rules above), so it needs
    no override here. Dashboard orange is a full button / bubble / active
    nav, not a dot. */
-body[data-theme="night-glass"] .msg.user {
-  background: linear-gradient(150deg, #2E4E74, #16283C);
-}
-body[data-theme="dashboard"] .msg.user {
-  background: linear-gradient(150deg, #FF9A3D, #E56E00); color: var(--m-on-accent);
-}
-body[data-theme="calm-space"] .msg.user {
-  background: linear-gradient(150deg, #3E8F66, #2E7D57); color: #FFFFFF;
-}
 body[data-theme="night-glass"] .send-btn {
   background: linear-gradient(160deg, #F0C75E, #C9A227); color: #241A02;
 }
@@ -576,11 +589,6 @@ body[data-theme="dashboard"] .side-nav.active {
 }
 
 /* ---------- window bar ---------- */
-.window-bar { display: flex; align-items: center; gap: 8px; padding: 2px 4px 0; }
-.window-bar .win-dot { width: 12px; height: 12px; border-radius: 50%; }
-.window-bar .win-dot.red { background: #E0655F; } .window-bar .win-dot.yellow { background: #E8B34B; }
-.window-bar .win-dot.green { background: #57B96A; }
-.window-bar .win-title { font-size: 13px; font-weight: 700; color: var(--m-muted); margin-inline-start: 4px; }
 
 /* ---------- shell: sidebar + main ---------- */
 .shell { display: flex; gap: 12px; flex: 1; min-height: 0; }
@@ -595,14 +603,19 @@ body[data-theme="dashboard"] .side-nav.active {
 .side-nav:hover { background: var(--m-pill); }
 .side-nav.active { background: var(--m-pill); border-color: var(--m-line); }
 .side-nav .ico { font-size: 17px; }
-.main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; padding-bottom: 96px; }
+.main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
 @media (max-width: 640px) { .sidebar { width: 60px; } .sidebar .side-nav span.lbl { display: none; } }
 
 /* ---------- robot stage ---------- */
-.robot-stage { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0 2px; position: relative; }
+/* v1.6.2 (PARITY 1): the robot stage sticks to the top of the chat
+   area — the full-body robot on its glowing platform stays visible
+   while the chat scrolls under it, reacting with the current mood. */
+.robot-stage { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 2px; position: sticky; top: 0; z-index: 5;
+  max-height: 110px; overflow: hidden;
+  background: linear-gradient(180deg, var(--m-bg) 78%, transparent); }
 .robot-stage .robot-wrap { cursor: pointer; position: relative; }
-.robot-stage svg.robot-body { width: 118px; height: auto; }
-.robot-stage .robot-name { font-size: 13px; font-weight: 700; color: var(--m-accent); }
+.robot-stage svg.robot-body { width: 64px; height: auto; }
+.robot-stage .robot-name { font-size: 12px; font-weight: 700; color: var(--m-accent); }
 .robot-stage .self-view-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; font-size: 12px; color: var(--m-muted); }
 .robot-stage .self-view-row b { color: var(--m-text); font-weight: 700; }
 .robot-bubble-say { position: absolute; top: -6px; inset-inline-start: 100%; background: var(--m-accent); color: var(--m-on-accent);
@@ -651,7 +664,7 @@ body[data-theme="dashboard"] .side-nav.active {
 .robot-rings ellipse { fill: none; stroke: #FFCF5E; opacity: .6; }
 .mood-mabsoot .robot-rings ellipse { animation: ring-pulse .9s ease-in-out infinite; }
 @keyframes ring-pulse { 0%,100% { opacity: .3; } 50% { opacity: .9; } }
-@media (max-width: 640px) { .robot-stage svg.robot-body { width: 82px; } }
+@media (max-width: 640px) { .robot-stage svg.robot-body { width: 54px; } }
 
 /* ---------- stats (count-up 850ms cubic ease-out, bars grow bottom-to-top) ---------- */
 .stats-row { display: flex; gap: 10px; order: 1; }
@@ -710,7 +723,7 @@ body[data-theme="dashboard"] .side-nav.active {
 .action-msg { display: flex; flex-direction: column; gap: 8px; }
 .action-msg .action-row { display: flex; align-items: center; gap: 10px; }
 .action-msg .action-do { padding: 8px 16px; border-radius: 999px; font-weight: 700; font-size: 13.5px;
-  background: var(--m-pill); border: 1px solid var(--m-accent); color: var(--m-text); }
+  background: var(--m-accent); border: 1px solid var(--m-accent); color: var(--m-on-accent); }
 .action-msg .status-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
 .action-msg .status-dot.green { background: #3ECF8E; box-shadow: 0 0 8px #3ECF8E; }
 .action-msg .status-dot.yellow { background: #F2B544; box-shadow: 0 0 8px #F2B544; }
@@ -718,11 +731,25 @@ body[data-theme="dashboard"] .side-nav.active {
 .action-msg .status-dot.running { animation: pulse-dot 1s ease-in-out infinite; }
 .action-msg .action-state { font-size: 12.5px; color: var(--m-muted); }
 
+/* ---------- live device card (v1.6.2 PARITY 3) ---------- */
+/* Real readings, re-read every 5s, flashing green on each re-read. */
+.live-device-msg .live-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: var(--m-accent2); margin-bottom: 6px; }
+.live-device-msg .live-head .live-time { margin-inline-start: auto; font-size: 11.5px; color: var(--m-muted); font-weight: 700; }
+.live-device-msg .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #3ECF8E; box-shadow: 0 0 8px #3ECF8E; animation: pulse-dot 1.6s ease-in-out infinite; flex-shrink: 0; }
+.live-device-msg .live-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 3px 0; }
+.live-device-msg .live-row b { direction: ltr; }
+.live-device-msg .bar { height: 7px; border-radius: 999px; background: var(--m-track); overflow: hidden; margin: 2px 0 6px; }
+.live-device-msg .bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--m-accent), var(--m-accent2)); transition: width .8s cubic-bezier(.22,1,.36,1); }
+.live-device-msg .live-programs-btn { margin-top: 8px; padding: 9px 18px; font-size: 13.5px; }
+.live-device-msg.flash { border-color: #3ECF8E; box-shadow: 0 0 0 3px rgba(62,207,142,.22); }
+
 /* ---------- composer: + attach menu + Deep Think ---------- */
-/* v1.6.1: the composer is STICKY at the bottom of the main column —
-   it never scrolls away with the chat. The glass background + blur
-   keep scrolled messages from showing through the bar. */
-.composer { order: 5; position: sticky; bottom: 0; z-index: 20;
+/* v1.6.2 (F1): the composer is a DIRECT flex child of .app, outside
+   the scroll area entirely — it is pinned at the very bottom by the
+   flex column, so no message can ever appear below it (the v1.6.1
+   sticky-inside-the-scroll-area bar still let cards render under it).
+   The glass background + blur keep the bar distinct. */
+.composer { flex-shrink: 0; z-index: 20;
   background: var(--m-glass); border: 1px solid var(--m-line);
   border-radius: 18px; padding: 8px 10px;
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
@@ -743,6 +770,40 @@ body[data-theme="dashboard"] .side-nav.active {
 .deepthink-btn:active { transform: scale(.92); }
 .deepthink-btn.on { background: var(--m-pill); border-color: var(--m-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--m-accent) 30%, transparent), 0 0 16px color-mix(in srgb, var(--m-accent) 35%, transparent); }
 .deepthink-state { font-size: 12.5px; color: var(--m-accent); font-weight: 700; min-height: 18px; text-align: center; }
+
+/* ---------- model picker (v1.6.2) ---------- */
+/* The button sits in the composer and shows the current choice short
+   (تلقائي / Groq / Gemini / محلي); the menu opens upward with the 4
+   full labels. Unavailable options stay visible but disabled, with
+   their reason under them — never hidden. */
+.model-wrap { position: relative; flex-shrink: 0; }
+.model-btn { height: 44px; padding: 0 14px; border-radius: 999px; font-size: 13.5px; font-weight: 700;
+  background: var(--m-card); border: 1px solid var(--m-line); color: var(--m-text); white-space: nowrap; }
+.model-menu { position: absolute; bottom: 52px; inset-inline-start: 0; display: none; flex-direction: column; gap: 4px;
+  background: var(--m-card); border: 1px solid var(--m-line); border-radius: 14px; padding: 6px; min-width: 250px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.45); z-index: 30; }
+.model-menu.open { display: flex; animation: msg-in .3s cubic-bezier(.22,1,.36,1); }
+.model-menu button { text-align: start; padding: 9px 12px; border-radius: 9px; font-size: 14px; color: var(--m-text); }
+.model-menu button:hover:not(:disabled) { background: var(--m-pill); }
+.model-menu button.selected { border: 1px solid var(--m-accent); background: var(--m-pill); }
+.model-menu button:disabled { opacity: .55; cursor: default; }
+.model-menu button .model-reason { display: block; font-size: 12px; color: var(--m-muted); margin-top: 2px; }
+
+/* ---------- generated images + lightbox (v1.6.2) ---------- */
+/* Generated images show small in chat (320px cap) — a tap opens the
+   full image in the lightbox; click anywhere or Esc closes it. */
+.gen-img { max-width: 320px; max-height: 320px; width: auto; height: auto;
+  border-radius: 14px; cursor: zoom-in; object-fit: contain; }
+.lightbox { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.88); cursor: zoom-out; }
+.lightbox[hidden] { display: none; }
+.lightbox img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 12px; }
+.lightbox-close { position: absolute; top: 14px; inset-inline-end: 14px; width: 40px; height: 40px;
+  border-radius: 50%; font-size: 18px; background: rgba(255,255,255,.12); color: #fff; cursor: pointer; }
+/* Self-view clarity rows: a locked/empty state says why + how to open it. */
+.sv-link { font-size: 12px; color: var(--m-accent); text-decoration: underline; }
+.sv-btn { padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  background: var(--m-accent); color: var(--m-on-accent); cursor: pointer; }
 
 /* ---------- themes picker ---------- */
 .theme-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }

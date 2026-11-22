@@ -442,12 +442,14 @@ def save_key(provider: str, value: str) -> dict:
             pass
         info("keys", f"API key saved for {provider} in Credential Manager "
                      "(value never logged)")
+        _invalidate_status_cache()
         return {"ok": True, "provider": provider, "present": True}
     if not _txt_write(provider, cleaned):
         return {"ok": False, "provider": provider, "present": False,
                 "error": "could not write key file"}
     info("keys", f"API key saved for {provider} (txt fallback, "
                  "value never logged)")
+    _invalidate_status_cache()
     return {"ok": True, "provider": provider, "present": True}
 
 
@@ -462,13 +464,42 @@ def delete_key(provider: str) -> dict:
     except Exception:
         pass
     info("keys", f"API key deleted for {provider}")
+    _invalidate_status_cache()
     return {"ok": True, "provider": provider}
+
+
+# v1.6.2 (keyboard-field fix): get_api_keys_status() is CACHED --
+# the API Keys page used to hit Credential Manager once per provider
+# on every open, on the bridge thread. Presence only (never values),
+# TTL 30 s, invalidated on every save/delete. _maybe_migrate() still
+# runs exactly once per process (the _migration_done flag above) --
+# the cache never skips a migration, it only skips repeat vault reads.
+_STATUS_CACHE: dict = {"at": 0.0, "status": None}
+_STATUS_TTL_SEC = 30.0
+
+
+def _invalidate_status_cache() -> None:
+    _STATUS_CACHE.update({"at": 0.0, "status": None})
 
 
 def get_api_keys_status() -> dict:
     """Presence only, per provider - never values."""
-    return {provider: bool(read_key_value(provider))
-            for provider in PROVIDER_FILES}
+    import time as _time
+    try:
+        keys_dir = str(_keys_dir())
+    except Exception:
+        keys_dir = ""
+    cached = _STATUS_CACHE.get("status")
+    if (cached is not None
+            and _STATUS_CACHE.get("dir") == keys_dir
+            and _time.monotonic() - float(_STATUS_CACHE.get("at", 0.0))
+            < _STATUS_TTL_SEC):
+        return dict(cached)
+    status = {provider: bool(read_key_value(provider))
+              for provider in PROVIDER_FILES}
+    _STATUS_CACHE.update({"at": _time.monotonic(), "status": dict(status),
+                          "dir": keys_dir})
+    return dict(status)
 
 
 def test_key(provider: str, timeout: float = _TEST_TIMEOUT) -> dict:

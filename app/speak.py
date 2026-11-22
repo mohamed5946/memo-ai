@@ -93,7 +93,8 @@ def _gemini_tts(text: str, voice_key: str) -> Path:
                 "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
             },
         },
-        timeout=60,
+        # v1.6.2 (B23): 30 s (was 60 s) -- the chain cap is 30/30/60.
+        timeout=30,
     )
     resp.raise_for_status()
     data = resp.json()
@@ -126,7 +127,8 @@ def _azure_tts(text: str, voice_key: str) -> Path:
             "X-Microsoft-OutputFormat": "riff-24khz-16bit-mono-pcm",
         },
         data=ssml.encode("utf-8"),
-        timeout=60,
+        # v1.6.2 (B23): 30 s (was 60 s).
+        timeout=30,
     )
     resp.raise_for_status()
     out = Path(tempfile.gettempdir()) / "memo-ai-azure.wav"
@@ -157,8 +159,9 @@ def _piper_tts(text: str) -> Path:
     proc = subprocess.run(
         [binary, "--model", str(model), "--output_file", str(out)],
         input=text.encode("utf-8"),
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=120,
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=60,
         # v1.4.3: piper is a console binary - never show its window.
+        # v1.6.2 (B23): 60 s (was 120 s) -- the chain cap is 30/30/60.
         **hidden_spawn.run_kwargs(),
     )
     if proc.returncode != 0 or not out.exists():

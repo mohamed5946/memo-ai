@@ -31,6 +31,11 @@
 ; the user WebView2 was not installed. It now checks all four registry
 ; views plus the runtime folder, and the warning tells a failed download
 ; apart from a missing runtime.
+; v1.6.2: nothing in PrepareToInstall or RemoveOldInstall may block
+; setup forever any more - the WebView2 download has a 60s timeout
+; and a non-empty-file check, and both the runtime installer and the
+; old uninstaller run with a ~120s bounded wait, after which setup
+; always continues (see the helpers above PrepareToInstall).
 
 #ifndef AppVersion
   #define AppVersion "1.4.1"
@@ -232,6 +237,93 @@ begin
   Result := V <> '';
 end;
 
+{ ---- v1.6.2: bounded waits - setup must never hang forever ---- }
+{ The v1.6.0 installer hung on "Preparing to install" on a slow
+  connection: the WebView2 download had no timeout and the runtime
+  installer was waited on forever, so a dead download or a stuck
+  installer blocked setup indefinitely. Every external program
+  started below runs with ewNoWait plus a wait loop that gives up
+  after a fixed timeout, and setup ALWAYS continues afterwards -
+  the app falls back gracefully without WebView2, and the old
+  install's leftovers are removed by hand below. }
+
+function FileSizeOf(const FileName: string): Int64;
+{ Size of FileName in bytes, or -1 when it cannot be read. A
+  download that "succeeded" but left a 0-byte file counts as failed. }
+var
+  Stream: TFileStream;
+begin
+  Result := -1;
+  if not FileExists(FileName) then
+    Exit;
+  Stream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyNone);
+  try
+    Result := Stream.Size;
+  finally
+    Stream.Free;
+  end;
+end;
+
+function WaitForProcessExit(const ImageName: string; TimeoutSeconds: Integer): Boolean;
+{ Polls tasklist once a second until no process named ImageName is
+  running, or TimeoutSeconds have passed. Returns True when the
+  process is gone, False on timeout (the caller continues anyway).
+  A tasklist failure counts as "gone" - never block on the check
+  itself. }
+var
+  ListPath: string;
+  Lines: TStringList;
+  I, Elapsed: Integer;
+  ResultCode: Integer;
+  Found: Boolean;
+begin
+  Result := False;
+  ListPath := ExpandConstant('{tmp}\lona-procwait.txt');
+  Elapsed := 0;
+  while Elapsed <= TimeoutSeconds do
+  begin
+    Found := False;
+    if Exec('cmd.exe', '/c tasklist.exe /FI "IMAGENAME eq ' + ImageName +
+       '" /FO CSV /NH > "' + ListPath + '"', '', SW_HIDE,
+       ewWaitUntilTerminated, ResultCode) and FileExists(ListPath) then
+    begin
+      Lines := TStringList.Create;
+      try
+        Lines.LoadFromFile(ListPath);
+        for I := 0 to Lines.Count - 1 do
+          if Pos('"' + ImageName + '"', Lines[I]) > 0 then
+          begin
+            Found := True;
+            Break;
+          end;
+      finally
+        Lines.Free;
+      end;
+    end;
+    if not Found then
+    begin
+      Result := True;
+      Exit;
+    end;
+    Sleep(1000);
+    Elapsed := Elapsed + 1;
+  end;
+end;
+
+function ExecWithTimeout(const FileName, Params: string; TimeoutSeconds: Integer): Boolean;
+{ Starts FileName with ewNoWait, then waits at most TimeoutSeconds
+  for its process to exit. Returns True only when the process exited
+  in time; False means "still running when the time ran out" - the
+  caller must carry on regardless, never wait again. }
+var
+  ResultCode: Integer;
+begin
+  Result := False;
+  if not Exec(FileName, Params, '', SW_HIDE, ewNoWait, ResultCode) then
+    Exit;
+  Result := WaitForProcessExit(ExtractFileName(FileName), TimeoutSeconds);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 { Runs BEFORE any app file is installed. Returning a non-empty string
   aborts the setup — this function always returns '' (continue). A
@@ -240,7 +332,12 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
   v1.6.1: the warning tells a failed DOWNLOAD apart from a missing
   runtime - a download failure must never be reported as "not
   installed", because the runtime may already be there (the detection
-  above is the only thing that decides "missing"). }
+  above is the only thing that decides "missing").
+  v1.6.2: nothing here may block setup forever. The download has a
+  60-second timeout and the downloaded file must be non-empty; the
+  runtime installer runs with ewNoWait and is waited on for at most
+  ~120 seconds. On any failure setup continues - the app falls back
+  gracefully without WebView2. }
 var
   SetupPath: string;
   PsCmd: string;
@@ -253,12 +350,14 @@ begin
     Exit;
   DownloadFailed := False;
   SetupPath := ExpandConstant('{tmp}\MicrosoftEdgeWebView2Setup.exe');
-  PsCmd := '-NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri ''https://go.microsoft.com/fwlink/p/?LinkId=2124703'' -OutFile ''' + SetupPath + ''' -UseBasicParsing; exit 0 } catch { exit 1 }"';
+  PsCmd := '-NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri ''https://go.microsoft.com/fwlink/p/?LinkId=2124703'' -OutFile ''' + SetupPath + ''' -UseBasicParsing -TimeoutSec 60; exit 0 } catch { exit 1 }"';
   if Exec('powershell.exe', PsCmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
-     and (ResultCode = 0) and FileExists(SetupPath) then
+     and (ResultCode = 0) and FileExists(SetupPath) and (FileSizeOf(SetupPath) > 0) then
   begin
-    if Exec(SetupPath, '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
-       and (ResultCode = 0) and WebView2IsPresent() then
+    { v1.6.2: bounded wait (~120s) instead of waiting forever -
+      a stuck runtime installer used to hang setup forever. Success
+      is judged by the runtime actually being present afterwards. }
+    if ExecWithTimeout(SetupPath, '/silent /install', 120) and WebView2IsPresent() then
       Exit;
   end
   else
@@ -446,8 +545,11 @@ begin
   if (UninstExe = '') or (not FileExists(UninstExe)) then
     UninstExe := OldDir + '\unins000.exe';
   if FileExists(UninstExe) then
-    Exec(UninstExe, '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES', '',
-         SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    { v1.6.2: bounded wait (~120s) instead of waiting forever -
+      a stuck old uninstaller used to hang setup forever. Whatever
+      happens, setup carries on and the leftovers are removed by
+      hand just below. }
+    ExecWithTimeout(UninstExe, '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES', 120);
   { No uninstaller, or it left files behind: remove the leftovers
     by hand, so exactly one entry - LONA - remains. The native-host
     registry key is re-written by this install afterwards, so

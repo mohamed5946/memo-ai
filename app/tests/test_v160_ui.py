@@ -74,11 +74,16 @@ def test_island_collapsed_and_expanded():
     assert "island-name" in ISLAND  # pill label shows the chosen name
     assert "Listening..." in ISLAND
     assert "green-dot" in ISLAND
-    assert "island-clock" in ISLAND  # live clock beside the island
+    # v1.6.2 (F4): NO clock on the collapsed pill — the time shows
+    # only inside the expanded island (#exp-clock).
+    assert "island-clock" not in ISLAND
+    assert "exp-clock" in ISLAND
     assert "expandIsland" in ISLAND
     assert "island-expanded" in ISLAND
-    assert "Quick Actions" in ISLAND and "Tools" in ISLAND
-    assert "Skills" in ISLAND and "More" in ISLAND
+    # v1.6.2 island redesign: Quick Actions / Tools / Skills / More
+    # are all removed.
+    assert "Quick Actions" not in ISLAND and "Tools" not in ISLAND
+    assert "Skills" not in ISLAND and "More" not in ISLAND
     assert "exp-robot" in ISLAND  # full-body robot on the side
     assert "60px" in ISLAND or "FULL_H = 60" in ISLAND  # compact collapsed height
     assert "reactJump" in ISLAND  # tapping the robot reacts, never toggles
@@ -86,17 +91,23 @@ def test_island_collapsed_and_expanded():
 
 
 def test_island_swipe_panels():
-    for panel in ("الجهاز دلوقتي", "معلومات الجهاز والتخزين",
-                  "التنظيف والملفات العميقة", "المتصفح"):
-        assert panel in ISLAND, "swipe panel missing: " + panel
-    assert "42" in ISLAND  # drag threshold 42px
-    assert "panel-dots" in ISLAND and "ArrowLeft" in ISLAND and "ArrowRight" in ISLAND
-    assert "نضّف الكاش بإذني" in ISLAND
-    assert "مقفولة — بإذنك بس" in ISLAND
+    # v1.6.2 island redesign (Mohamed 2026-11-22 10:32): the swipe
+    # panel system is REMOVED entirely — no panels, no drag, no
+    # arrows, no dots. The island is fixed, centered, click to expand.
+    for gone in ("الجهاز دلوقتي", "معلومات الجهاز والتخزين",
+                 "التنظيف والملفات العميقة", "المتصفح",
+                 "panel-dots", "panel-track", "showPanel",
+                 "نضّف الكاش بإذني"):
+        assert gone not in ISLAND, "swipe panel remnant: " + gone
+    assert "exp-panels" not in ISLAND
 
 
 def test_main_window_shell():
-    assert "window-bar" in HTML and "win-dot red" in HTML
+    # v1.6.2 (frameless): the fake .window-bar is REMOVED — the
+    # traffic lights are real buttons in the header (win-close/min/max).
+    assert "window-bar" not in HTML
+    assert 'id="win-close"' in HTML and 'id="win-min"' in HTML
+    assert 'id="win-max"' in HTML and 'id="app-header"' in HTML
     assert "sidebar" in HTML and "side-nav" in HTML
     for item in ("المحادثة", "حالة الجهاز", "الإعدادات", "مفاتيح API",
                  "لونا الآن", "سجل التشخيص"):
@@ -208,8 +219,10 @@ def test_island_has_no_window_control_buttons():
     assert "collapseIsland" in ISLAND
     assert "island-expanded" in ISLAND
     assert "e.target.closest" in ISLAND
-    # Mic + settings (not window controls) stay on the collapsed pill.
-    assert "island-mic" in ISLAND and "island-settings" in ISLAND
+    # v1.6.2 island redesign (Mohamed 2026-11-22 10:32): the mic +
+    # settings buttons are REMOVED from the pill too — it opens/closes
+    # by clicking it, nothing else sits on it.
+    assert "island-mic" not in ISLAND and "island-settings" not in ISLAND
 
 
 def test_customizable_ai_name():
@@ -237,9 +250,13 @@ def test_live_cards_refresh_wiring():
     # ...and runs again immediately after an action completes.
     action_section = JS.split("renderActionMessage")[1].split("UNDO UI")[0]
     assert "refreshLiveCards" in action_section
-    # Island panels poll live too, and re-read right after cleaning.
-    assert "setInterval(refreshDevicePanels, 5000)" in ISLAND
-    assert ISLAND.count("refreshDevicePanels()") >= 3
+    # v1.6.2 island redesign: the swipe panels are REMOVED entirely
+    # (no device panels on the island anymore). The live surface is
+    # the in-chat live device card (PARITY 3), refreshed every 5s.
+    assert "refreshDevicePanels" not in ISLAND
+    assert "exp-panels" not in ISLAND
+    assert "renderLiveDeviceCard" in JS
+    assert "setInterval(refreshLiveCards, 5000)" in JS
 
 
 def test_image_warning_card():

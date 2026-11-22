@@ -158,8 +158,9 @@ const I18N = {
     speaking: "بيتكلم...",
     hello: "أهلاً يا محمد! أنا LONA — اكتب أو اضغط المايك وتكلم.",
     heard_prefix: "سمعتك: ",
-    no_bridge: "مش قادر أوصل لمحرك البرنامج — اقفل البرنامج وافتحه تاني، ولو المشكلة فضلت ثبّت WebView2",
+    no_bridge: "محرك البرنامج مش بيرد — اقفل البرنامج وافتحه تاني",
     bridge_not_ready: "البرنامج لسه بيجهز — استنى ثانية ودوس تاني",
+    bridge_failed: "محرك البرنامج مش بيرد — اقفل البرنامج وافتحه تاني",
     bridge_files_missing: "ملفات محرك البرنامج ناقصة — حدّث البرنامج أو أعد تثبيته",
     log_unavailable: "السجل مش متاح دلوقتي",
     copied: "اتنسخ السجل",
@@ -313,8 +314,9 @@ const I18N = {
     speaking: "Speaking...",
     hello: "Hi Mohamed! I'm LONA — type or tap the mic and talk.",
     heard_prefix: "Heard: ",
-    no_bridge: "Can't reach the app engine — restart the app, and if it persists, install WebView2.",
+    no_bridge: "The app engine isn't responding — close the app and open it again.",
     bridge_not_ready: "The app is still starting — wait a second and tap again",
+    bridge_failed: "The app engine isn't responding — close the app and open it again",
     bridge_files_missing: "App engine files are missing — update or reinstall the app",
     log_unavailable: "Log isn't available right now",
     copied: "Log copied",
@@ -420,6 +422,84 @@ function t(key) { return (I18N[LANG] && I18N[LANG][key]) || I18N.ar[key] || key;
 // DOMContentLoaded, so a single capture at init stayed null forever.)
 function getApi() { return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null; }
 function $(id) { return document.getElementById(id); }
+
+// v1.6.2: bridge wait/retry (F2) — the bridge may arrive late, so a
+// missing bridge is polled every 250ms for up to ~10s before any
+// failure is shown. While waiting the honest "still starting" text
+// is shown; only after the timeout does the truthful failure appear
+// (no mention of WebView2 — the user cannot fix that from here).
+// window.__bridgeWaitMs is a test hook (default 10000).
+function waitForBridge(timeoutMs) {
+  const cap = (typeof window !== "undefined" && window.__bridgeWaitMs) || timeoutMs || 10000;
+  const t0 = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      const api = getApi();
+      if (api) { resolve(api); return; }
+      if (Date.now() - t0 >= cap) { resolve(null); return; }
+      setTimeout(tick, 250);
+    };
+    tick();
+  });
+}
+// v1.6.2 (A6/B21): race a bridge promise against a timeout; resolves
+// with {__v162_timeout: true} instead of hanging forever.
+function raceBridgeTimeout(promise, ms, hookName) {
+  const cap = (typeof window !== "undefined" && window[hookName]) || ms;
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ __v162_timeout: true }), cap);
+  });
+  return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+}
+// v1.6.2: generic pending/result poller (request_deep_file_access
+// pattern) — recursive setTimeout, so a slow bridge call can never
+// overlap the next poll. Resolves with the done result, or
+// {timed_out: true} at the cap.
+function waitForPendingResult(pollFn, isDone, capMs, intervalMs) {
+  const cap = capMs || 120000;
+  const interval = intervalMs || 1000;
+  const t0 = Date.now();
+  return new Promise((resolve) => {
+    const tick = async () => {
+      try {
+        const r = await pollFn();
+        if (r && isDone(r)) { resolve(r); return; }
+      } catch (e) { /* keep polling */ }
+      if (Date.now() - t0 >= cap) { resolve({ timed_out: true }); return; }
+      setTimeout(tick, interval);
+    };
+    tick();
+  });
+}
+// v1.6.2 (contract): poll Api.get_test_api_key_result(id) every 500ms
+// until pending is false, or a 30s cap. Returns the result, or
+// {timed_out: true}.
+function pollTestApiKeyResult(b, id) {
+  if (!b.get_test_api_key_result) return Promise.resolve({ timedOut: true });
+  return waitForPendingResult(
+    () => b.get_test_api_key_result(id),
+    (r) => r && r.pending === false,
+    30000, 500
+  );
+}
+// v1.6.2 (contract): poll the image-result getter every 1s until done,
+// or a 120s cap. The getter follows the get_deep_file_access_result
+// shape ({done, ...}); get_analyze_image_result is tried first.
+function pollImageResult(b, id) {
+  const getter = b.get_analyze_image_result || b.get_image_result;
+  if (!getter) return Promise.resolve({ timed_out: true });
+  return waitForPendingResult(
+    () => getter.call(b, id),
+    (r) => r && r.done === true,
+    120000, 1000
+  );
+}
+// v1.6.2 (F3/PARITY 3): a direct device question — the reply earns a
+// live device card in the chat (never an auto-open out of the chat).
+function isDeviceQuestion(text) {
+  return /برنامج|البرامج|حالة الجهاز|الجهاز|الرام|المعالج|البطارية|التخزين|استهلاك|الحرارة|السخون|المساحة|القرص|device|ram|cpu|battery/i.test(text || "");
+}
 
 // v1.2.2: report the browser engine to the diagnostics log, so we know
 // for sure whether the windows are drawn by WebView2 (UA has "Edg/")
@@ -537,8 +617,11 @@ async function addGeneratedImages(filenames) {
       const div = document.createElement("div");
       div.className = "msg ai gen-image";
       const img = document.createElement("img");
+      img.className = "gen-img";
       img.src = res.data_url;
       img.alt = "صورة مولّدة";
+      img.title = "دوس عشان تكبّرها";
+      img.addEventListener("click", () => openLightbox(res.data_url));
       div.appendChild(img);
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
@@ -588,9 +671,16 @@ async function sendText(text, _bubbleShown) {
   if (!_bubbleShown) addMsg(text, "user");
   flyHeroToHeader();   // v1.3.2: first message -> the hero cat flies to the header, chat grows
   $("text-input").value = "";
-  const bridge = getApi();
+  // v1.6.2 (F2): the bridge may still be starting — wait up to ~10s
+  // for it (lazy getApi() at call time, polled) instead of failing
+  // on the first null.
+  let bridge = getApi();
   if (!bridge) {
-    addMsg(t("no_bridge"), "ai", "LONA");
+    $("status").textContent = t("bridge_not_ready");
+    bridge = await waitForBridge(10000);
+  }
+  if (!bridge) {
+    addMsg(t("bridge_failed"), "ai", "LONA");
     busy = false;
     if (_sendQueue.length) { const next = _sendQueue.shift(); sendText(next, true); }
     return;
@@ -604,8 +694,14 @@ async function sendText(text, _bubbleShown) {
   showTyping();
   beginThinking();
   $("status").textContent = t("thinking");
+  // v1.6.2 (A6): the chat call must never hang forever — 30s and it
+  // fails loudly, frees busy, and drains the queue with a failure
+  // message instead of silently queuing behind a dead turn.
+  // window.__v162ChatTimeoutMs is a test hook (default 30000).
+  let chatTimedOut = false;
   try {
-    const res = await bridge.chat(text);
+    const res = await raceBridgeTimeout(bridge.chat(text), 30000, "__v162ChatTimeoutMs");
+    if (res && res.__v162_timeout) { chatTimedOut = true; throw { __v162_timeout: true }; }
     if (res && res.pending) {
       // v1.3.2: tool chat runs in a background thread (the bridge must
       // never block on a permission). Poll for the result; any
@@ -615,11 +711,14 @@ async function sendText(text, _bubbleShown) {
       stopPermPolling();
       addMsg(safeReply(done.reply), "ai", "LONA" + metaEngine(done.engine));
       await addGeneratedImages(done.images);
+      maybeShowDeviceCard(text);
     } else {
       addMsg(safeReply(res.reply), "ai", "LONA" + metaEngine(res.engine));
+      maybeShowDeviceCard(text);
     }
   } catch (e) {
-    addMsg("حصلت مشكلة، جرّب تاني.", "ai", "LONA");
+    if (e && e.__v162_timeout) addMsg("المحرك مش بيرد دلوقتي — جرّب تاني بعد شوية.", "ai", "LONA");
+    else addMsg("حصلت مشكلة، جرّب تاني.", "ai", "LONA");
   } finally {
     hideTyping();
     endThinking();
@@ -628,13 +727,25 @@ async function sendText(text, _bubbleShown) {
   busy = false;
   // v1.6.1 (item 21a): drain one queued message (its bubble is
   // already shown, so it re-enters with _bubbleShown=true).
-  if (_sendQueue.length) { const next = _sendQueue.shift(); sendText(next, true); }
+  if (_sendQueue.length) {
+    if (chatTimedOut) {
+      // v1.6.2 (A6): the turn died — queued bubbles already show, so
+      // the queue drains with one honest failure instead of being
+      // sent into another dead turn.
+      _sendQueue.length = 0;
+      addMsg("المحرك مش بيرد دلوقتي — جرّب تاني بعد شوية.", "ai", "LONA");
+    } else { const next = _sendQueue.shift(); sendText(next, true); }
+  }
 }
 
 // v1.3.2: poll chat_result() until the background tool chat finishes.
 function waitForChatResult(chatId) {
   return new Promise((resolve) => {
+    // v1.6.2 (B12): in-flight guard — a slow chat_result() never stacks.
+    let pollInFlight = false;
     const timer = setInterval(async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
       try {
         const res = await getApi().chat_result(chatId);
         if (res && res.done) {
@@ -643,6 +754,7 @@ function waitForChatResult(chatId) {
           resolve(res);
         }
       } catch (e) { /* keep polling */ }
+      finally { pollInFlight = false; }
     }, 1200);
     // v1.6.1 (item 21b): the 2.5 min cap NEVER returns "…" as a message -
     // that looked like a reply and hid the failure. On cap, resolve
@@ -725,7 +837,14 @@ function addPermCard(p) {
     denyBtn.disabled = true;
     const b = getApi();
     if (b) {
-      try { await b.resolve_permission(p.id, allowed); } catch (e) { /* timeout = deny */ }
+      try {
+        // v1.6.2 (B21): never leave the tap hanging — 15s and the
+        // answer finalizes as timeout, NEVER as allowed/denied.
+        // window.__v162PermTimeoutMs is a test hook (default 15000).
+        const r = await raceBridgeTimeout(b.resolve_permission(p.id, allowed), 15000, "__v162PermTimeoutMs");
+        if (r && r.__v162_timeout) { finalizePermCard(p.id, "timeout"); return; }
+        if (r && r.ok === false) { finalizePermCard(p.id, "timeout"); return; }
+      } catch (e) { finalizePermCard(p.id, "timeout"); return; }
     }
     finalizePermCard(p.id, allowed ? "allowed" : "denied");
   };
@@ -754,6 +873,10 @@ function finalizePermCard(id, status) {
   // A card that resolved without a tap here (timeout, cancelled, or
   // resolved from another channel) dims both -- nothing was picked.
   if (status === "timeout" || status === "cancelled") {
+    // v1.6.2 (B21): nothing was picked — the instant-feedback pick
+    // from the tap is undone too, so the card shows no choice at all.
+    card.allowBtn.classList.remove("picked");
+    card.denyBtn.classList.remove("picked");
     card.allowBtn.classList.add("dimmed");
     card.denyBtn.classList.add("dimmed");
   } else if (status === "allowed") {
@@ -772,9 +895,12 @@ function finalizePermCard(id, status) {
   card.el.appendChild(state);
 }
 
+let permPollInFlight = false;
 function startPermPolling() {
   stopPermPolling();
   permPollTimer = setInterval(async () => {
+    if (permPollInFlight) return;
+    permPollInFlight = true;
     try {
       const st = await getApi().get_pending_permission();
       if (!st) return;
@@ -786,18 +912,35 @@ function startPermPolling() {
         if (r && r.id && permCards[r.id]) finalizePermCard(r.id, r.status);
       });
     } catch (e) { /* keep polling */ }
+    finally { permPollInFlight = false; }
   }, 1000);
 }
-function stopPermPolling() {
+async function stopPermPolling() {
   if (permPollTimer) { clearInterval(permPollTimer); permPollTimer = null; }
+  // v1.6.2 (B21): one final poll so pending cards get their final
+  // state instead of freezing on the last polled one.
+  try {
+    const b = getApi();
+    if (!b || !b.get_pending_permission) return;
+    const st = await b.get_pending_permission();
+    if (!st) return;
+    (st.resolved || []).forEach(r => {
+      if (r && r.id && permCards[r.id]) finalizePermCard(r.id, r.status);
+    });
+  } catch (e) { /* cards keep their last state */ }
   // Cards intentionally stay: they are chat history now.
 }
 
 async function voiceChat() {
   if (busy) return;
-  const bridge = getApi();
+  // v1.6.2 (F2): wait for a late bridge like sendText does.
+  let bridge = getApi();
   if (!bridge) {
-    addMsg(t("no_bridge"), "ai", "LONA");
+    $("status").textContent = t("bridge_not_ready");
+    bridge = await waitForBridge(10000);
+  }
+  if (!bridge) {
+    addMsg(t("bridge_failed"), "ai", "LONA");
     return;
   }
   busy = true;
@@ -806,12 +949,19 @@ async function voiceChat() {
   $("status").textContent = t("listening");
   $("status").classList.add("listening");
   try {
-    const res = await bridge.voice_chat();
+    // v1.6.2 (contract): voice_chat() returns {"pending": true,
+    // "chat_id"} at once now; the 60s race + finally below clean the
+    // mic + status + busy even when the engine never answers.
+    // window.__v162VoiceTimeoutMs is a test hook (default 60000).
+    const res = await raceBridgeTimeout(bridge.voice_chat(), 60000, "__v162VoiceTimeoutMs");
+    if (res && res.__v162_timeout) {
+      addMsg("مقدرتش أسمعك — المحرك مش بيرد، جرّب تاني.", "ai", "LONA");
+      return;
+    }
     if (res.heard) { addMsg(res.heard, "user", t("heard_prefix").trim()); flyHeroToHeader(); }
     if (res && res.pending) {
-      // v1.3.2: tool chat - poll for the reply. v1.6.1: same as
-      // sendText - the 3-dot bubble + "بيفكر" mood stay up for the
-      // whole background wait, not just until the pending reply.
+      // Same as sendText: the 3-dot bubble + "بيفكر" mood stay up for
+      // the whole background wait, not just until the pending reply.
       showTyping();
       beginThinking();
       try {
@@ -820,20 +970,23 @@ async function voiceChat() {
         stopPermPolling();
         addMsg(safeReply(done.reply), "ai", "LONA" + metaEngine(done.engine));
         await addGeneratedImages(done.images);
+        maybeShowDeviceCard(res.heard || "");
       } finally {
         hideTyping();
         endThinking();
       }
     } else {
       addMsg(safeReply(res.reply), "ai", "LONA" + metaEngine(res.engine));
+      maybeShowDeviceCard(res.heard || "");
     }
   } catch (e) {
     addMsg("مقدرتش أسمعك — جرّب تاني.", "ai", "LONA");
+  } finally {
+    mic.classList.remove("recording");
+    $("status").textContent = "";
+    $("status").classList.remove("listening");
+    busy = false;
   }
-  mic.classList.remove("recording");
-  $("status").textContent = "";
-  $("status").classList.remove("listening");
-  busy = false;
 }
 
 // v1.5: wake word "يا لونا" — these are called FROM Python (via
@@ -916,9 +1069,12 @@ async function toggleVoiceOutput() {
   } catch (e) { /* keep the old state */ }
 }
 
+let _statusInFlight = false;
 async function refreshStatus() {
+  if (_statusInFlight) return;
   const bridge = getApi();
   if (!bridge) return;
+  _statusInFlight = true;
   try {
     const st = await bridge.get_status();
     LANG = (st.settings && st.settings.language) || "ar";
@@ -970,6 +1126,7 @@ async function refreshStatus() {
       if (vl && st.version) vl.textContent = t("version_label") + "v" + st.version;
     }
   } catch (e) { /* UI keeps working offline */ }
+  finally { _statusInFlight = false; }
   pollAlerts();
 }
 
@@ -1147,9 +1304,12 @@ async function refreshLogs() {
 // is open). The QR data URL changes on every re-issue, so the img src
 // is only replaced when it actually changed (avoids flicker).
 let lastWaQr = "";
+let _waInFlight = false;
 async function refreshWhatsApp() {
+  if (_waInFlight) return;
   const bridge = getApi();
   if (!bridge || !bridge.get_whatsapp_status) return;
+  _waInFlight = true;
   try {
     const st = await bridge.get_whatsapp_status();
     const el = $("wa-status"), wrap = $("wa-qr-wrap"), img = $("wa-qr");
@@ -1184,6 +1344,7 @@ async function refreshWhatsApp() {
       lastWaQr = "";
     }
   } catch (e) { /* status stays as-is */ }
+  finally { _waInFlight = false; }
 }
 
 // v1.4.3: Apple-style "What's new" slide + Install now / Install later.
@@ -1331,6 +1492,7 @@ function renderUpdateSlide(data, phase) {
   slide.appendChild(footer);
 }
 
+let updatePollInFlight = false;
 function pollUpdateProgress() {
   // v1.3.1: the download used to run ~90s with zero feedback, so it
   // looked dead. Poll the download progress and render the bar +
@@ -1338,6 +1500,9 @@ function pollUpdateProgress() {
   // v1.4.3: a "downloaded" state now ends the poll by showing the
   // Install-now / Install-later slide instead of installing.
   if (updatePollTimer) clearInterval(updatePollTimer);
+  // v1.6.2 (B14): a total poll timeout (10 min) stops the poll and
+  // says the download ran late.
+  const pollStartedAt = Date.now();
   const fmtMB = (n) => (n / 1048576).toFixed(1);
   const setBar = (pct, label) => {
     const fill = $("update-slide-progress-fill") || $("update-progress-fill");
@@ -1346,9 +1511,16 @@ function pollUpdateProgress() {
     if (lab) lab.textContent = label;
   };
   updatePollTimer = setInterval(async () => {
+    if (updatePollInFlight) return;
+    updatePollInFlight = true;
     try {
       const b = getApi();
       if (!b) return;
+      if (Date.now() - pollStartedAt > 600000) {
+        clearInterval(updatePollTimer); updatePollTimer = null;
+        setBar(null, "التحميل اتأخر");
+        return;
+      }
       const p = await b.get_update_progress();
       if (!p) return;
       if (p.state === "downloading") {
@@ -1379,9 +1551,56 @@ function pollUpdateProgress() {
       } else if (p.state === "error") {
         clearInterval(updatePollTimer); updatePollTimer = null;
         setBar(null, t("update_failed"));
+      } else {
+        // v1.6.2 (B14): ANY unexpected state stops the poll — a stuck
+        // "idle" or unknown state never spins forever.
+        clearInterval(updatePollTimer); updatePollTimer = null;
+        setBar(null, t("update_failed"));
       }
     } catch (e) { /* the app may restart mid-poll - that means success */ }
+    finally { updatePollInFlight = false; }
   }, 500);
+}
+
+// v1.6.2 (contract): render a check_updates result — shared by the
+// direct reply and the get_check_updates_result() poll.
+function renderCheckUpdatesResult(res, st) {
+  if (!res) { st.textContent = t("update_error"); return; }
+  if (res.status === "not_configured") st.textContent = t("update_not_configured");
+  else if (res.status === "up_to_date") st.textContent = t("update_up_to_date") + " (v" + res.current + ")";
+  else if (res.status === "update_available") {
+    st.textContent = "";
+    const dl = res.downloaded || {};
+    if (dl.downloaded && dl.valid && dl.version === res.version) {
+      renderUpdateSlide({ version: res.version, features: normalizeFeatures(res) }, "ready");
+    } else {
+      renderUpdateSlide({ version: res.version, features: normalizeFeatures(res) }, "available");
+    }
+  } else if (res.error) st.textContent = t("update_error") + " — " + res.error;
+  else st.textContent = t("update_error") + (res.message ? " — " + res.message : "");
+}
+// v1.6.2 (contract): poll Api.get_check_updates_result() every 500ms
+// until checking is false, or a 60s cap. The getter returns
+// {"checking": bool, "update": dict|None, "error": str|None}.
+function pollCheckUpdatesResult(b) {
+  if (!b.get_check_updates_result) {
+    return Promise.resolve({ timedOut: true });
+  }
+  return waitForPendingResult(
+    () => b.get_check_updates_result(),
+    (r) => r && r.checking === false,
+    60000, 500
+  ).then((r) => {
+    if (r && r.timed_out) return { timedOut: true };
+    if (r && r.error) return { status: "error", error: r.error };
+    if (r && r.update) {
+      const u = r.update;
+      return { status: "update_available", version: u.version,
+               features: u.features, notes: u.notes,
+               downloaded: u.downloaded || {} };
+    }
+    return { status: "up_to_date", current: (r && r.current) || "" };
+  });
 }
 
 async function startUpdateDownload() {
@@ -1490,14 +1709,25 @@ function init() {
   // The bridge may arrive late (MSHTML injects it after DOMContentLoaded):
   // re-probe then, and populate the UI as soon as it is available.
   window.addEventListener("pywebviewready", () => { logEngine(); logReady(); refreshStatus(); checkInviteGate(); });
-  // If the bridge still hasn't arrived a few seconds in, say so visibly
-  // in the status line instead of leaving dead buttons with no explanation.
-  setTimeout(() => { if (!getApi()) $("status").textContent = t("no_bridge"); }, 3000);
+  // v1.6.2 (F2): the bridge may arrive late — poll for it for ~10s
+  // (waitForBridge) while showing the honest "still starting" text,
+  // and only then show the truthful failure. No WebView2 mention.
   if (getApi()) {
     addMsg(t("hello"), "ai", "LONA");
     refreshStatus();
   } else {
-    addMsg(t("no_bridge"), "ai", "LONA");
+    addMsg(t("bridge_not_ready"), "ai", "LONA");
+    $("status").textContent = t("bridge_not_ready");
+    waitForBridge(10000).then((api) => {
+      if (api) {
+        $("status").textContent = "";
+        refreshStatus();
+        checkInviteGate();
+      } else {
+        $("status").textContent = t("bridge_failed");
+        addMsg(t("bridge_failed"), "ai", "LONA");
+      }
+    });
   }
   setInterval(refreshStatus, 15000);
 
@@ -1697,20 +1927,15 @@ function init() {
     hideUpdateSlide();
     try {
       const res = await b.check_updates();
-      if (res.status === "not_configured") st.textContent = t("update_not_configured");
-      else if (res.status === "up_to_date") st.textContent = t("update_up_to_date") + " (v" + res.current + ")";
-      else if (res.status === "update_available") {
-        // v1.4.3: no plain-text status line - the Apple-style slide
-        // shows the version + one card per feature. Already downloaded
-        // (Install later earlier)? Offer Install now straight away.
-        st.textContent = "";
-        const dl = res.downloaded || {};
-        if (dl.downloaded && dl.valid && dl.version === res.version) {
-          renderUpdateSlide({ version: res.version, features: normalizeFeatures(res) }, "ready");
-        } else {
-          renderUpdateSlide({ version: res.version, features: normalizeFeatures(res) }, "available");
-        }
-      } else st.textContent = t("update_error") + (res.message ? " — " + res.message : "");
+      // v1.6.2 (contract): check_updates() answers {"checking": true}
+      // at once now; the result arrives via get_check_updates_result().
+      if (res && res.checking) {
+        const done = await pollCheckUpdatesResult(b);
+        if (done.timedOut) { st.textContent = "التحقق اتأخر — جرّب تاني"; return; }
+        renderCheckUpdatesResult(done, st);
+        return;
+      }
+      renderCheckUpdatesResult(res, st);
     } catch (e) {
       st.textContent = t("update_error");
     }
@@ -1938,14 +2163,18 @@ function endThinking() {
   if (prev && MOODS[prev]) setMood(prev);
 }
 let moodFallbackTimer = null;
+let moodPollInFlight = false;
 function startMoodPolling() {
   const api = getApi();
   if (api && api.get_mood) {
     setInterval(async () => {
       // v1.6.1: while thinking, the local "بيفكر" override owns the
       // robot - a poll result must not clobber it mid-reply.
-      if (thinkingActive) return;
+      // v1.6.2 (B12): in-flight guard — a slow get_mood() never stacks.
+      if (moodPollInFlight || thinkingActive) return;
+      moodPollInFlight = true;
       try { const r = await api.get_mood(); if (r && r.mood) setMood(r.mood); } catch (e) {}
+      finally { moodPollInFlight = false; }
     }, 5000);
   } else {
     // Fallback ONLY when the bridge is absent (demo cycle, not the logic).
@@ -2014,6 +2243,11 @@ function animateCountUps() {
     // showing "—" instead of counting up to a fake 0%. setStat() marks
     // data-sampled="true" the moment a real psutil value arrives.
     if (el.dataset.sampled !== "true") return;
+    // v1.6.2 (freeze): never re-run the count-up for the same target —
+    // a window resize re-fires the observer and used to replay every
+    // animation + repaint the stats.
+    if (el.dataset.animatedTarget === el.dataset.target) return;
+    el.dataset.animatedTarget = el.dataset.target;
     const target = parseFloat(el.dataset.target || "0");
     const suffix = el.dataset.suffix || "";
     const t0 = performance.now();
@@ -2128,6 +2362,11 @@ async function refreshDeviceOverview() {
         const hl = $("temp-hint-link");
         if (hl && ov.temp_hint.url) hl.href = ov.temp_hint.url;
         hint.hidden = false;
+      } else if (!ov.temp_available && !tempHintDismissed) {
+        // v1.6.2 (clarity): the backend sent no hint text — show the
+        // hint anyway with its HTML default text (the sentence lives
+        // in index.html, never hardcoded here) + the LHM link.
+        hint.hidden = false;
       }
     }
   } catch (e) { /* stats keep "—" until a real sample arrives */ }
@@ -2184,6 +2423,11 @@ function renderActionMessage(suggestion, level, runFn) {
   dot.title = lv === "green" ? "آمن" : lv === "yellow" ? "محتاج إذن" : "إذن صريح بس";
   const state = document.createElement("span");
   state.className = "action-state";
+  // v1.6.2 (PARITY 2): the task status line, from the start — the
+  // preview's "مهمة صفرا — محتاجة إذنك، ولسه ما بدأتش" shape.
+  state.textContent = lv === "green" ? "مهمة خضرا — آمنة، ولسه ما بدأتش"
+    : lv === "yellow" ? "مهمة صفرا — محتاجة إذنك، ولسه ما بدأتش"
+    : "مهمة حمرا — مبتتعملش غير بإذن صريح";
   row.appendChild(doBtn); row.appendChild(dot); row.appendChild(state);
   div.appendChild(text); div.appendChild(row);
   chat.appendChild(div);
@@ -2337,7 +2581,17 @@ async function sendImageToGemini(dataUrl, fileName) {
     if (b && b.analyze_image) {
       const res = await b.analyze_image(dataUrl);
       looking.remove();
-      addMsg(safe(res && res.reply), "ai", currentAiName);
+      // v1.6.2 (contract): analyze_image follows the
+      // request_deep_file_access pending/poll pattern — a pending
+      // reply is polled (get_analyze_image_result) instead of
+      // hanging the chat.
+      if (res && res.pending && res.id) {
+        const done = await pollImageResult(b, res.id);
+        if (done && done.timed_out) addMsg("الصورة اتأخرت أوي — جرّب تاني.", "ai", currentAiName);
+        else addMsg(safe(done && (done.reply || done.result || done.text)), "ai", currentAiName);
+      } else {
+        addMsg(safe(res && res.reply), "ai", currentAiName);
+      }
     } else if (b) {
       const res = await b.chat("شوف الصورة دي وقولي فيها إيه [صورة مرفقة: " + (fileName || "صورة") + "]");
       looking.remove();
@@ -2409,9 +2663,25 @@ function wireApiKeys() {
     const input = $("api-key-" + p);
     if (input) input.addEventListener("input", () => apiKeyBadge(p));
     const showBtn = $("api-show-" + p);
-    if (showBtn) showBtn.addEventListener("click", () => {
+    if (showBtn) showBtn.addEventListener("click", async () => {
       if (!input) return;
       const show = input.type === "password";
+      // v1.6.2: "إظهار" must show the SAVED key, not an empty box —
+      // the field is never pre-filled (the status call returns
+      // presence only, never values). When the field is empty, fetch
+      // the saved value first; a user-typed value is only ever
+      // toggled, never overwritten or fetched over. "إخفاء" flips
+      // back to password. Pure JS toggle otherwise — no bridge call
+      // on focus, only on this tap.
+      if (show && !input.value) {
+        const b = getApi();
+        if (b && b.get_api_key_value) {
+          try {
+            const r = await b.get_api_key_value(p);
+            if (r && r.ok && r.value) { input.value = r.value; apiKeyBadge(p); }
+          } catch (e) { /* no saved value — plain toggle below */ }
+        }
+      }
       input.type = show ? "text" : "password";
       showBtn.textContent = show ? "إخفاء" : "إظهار";
     });
@@ -2438,7 +2708,16 @@ function wireApiKeys() {
       if (b && b.test_api_key) {
         try {
           const r = await b.test_api_key(p);
-          if (statusEl) statusEl.textContent = (r && r.ok) ? "الاتصال تمام" : "الاتصال فشل — اتأكد من المفتاح";
+          // v1.6.2 (contract): test_api_key() answers {"pending":
+          // true, "id"} at once now; poll get_test_api_key_result(id).
+          if (r && r.pending && r.id) {
+            const done = await pollTestApiKeyResult(b, r.id);
+            if (statusEl) statusEl.textContent = (done && done.timedOut)
+              ? "الاتصال اتأخر — جرّب تاني"
+              : (done && done.ok) ? "الاتصال تمام" : "الاتصال فشل — اتأكد من المفتاح";
+          } else if (statusEl) {
+            statusEl.textContent = (r && r.ok) ? "الاتصال تمام" : "الاتصال فشل — اتأكد من المفتاح";
+          }
         } catch (e) { if (statusEl) statusEl.textContent = "الاتصال فشل — شوف السجل"; }
       } else {
         // 1.1s simulated success when the bridge has no test method yet.
@@ -2447,6 +2726,27 @@ function wireApiKeys() {
       setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 4000);
     });
   });
+}
+
+// ---------- DEEP FILE ACCESS REQUEST (v1.6.2 clarity) ----------
+// The button in the self-view row: one tap asks for the explicit
+// permission; the normal 1s permission poll then shows the card.
+async function requestDeepFileAccess() {
+  const b = getApi();
+  if (!b || !b.request_deep_file_access) {
+    $("status").textContent = "مقدرتش أبعت طلب الإذن دلوقتي — جرّب تاني";
+    setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2500);
+    return;
+  }
+  try {
+    await b.request_deep_file_access();
+    startPermPolling(); // make sure the card poll is running
+    $("status").textContent = "بعت طلب الإذن — هتظهرلك بطاقة إذن";
+    setTimeout(() => { if (!busy) $("status").textContent = ""; }, 3000);
+  } catch (e) {
+    $("status").textContent = "مقدرتش أبعت طلب الإذن — جرّب تاني";
+    setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2500);
+  }
 }
 
 // ---------- SELF VIEW (LONA sees herself) ----------
@@ -2459,8 +2759,27 @@ async function refreshSelfView() {
   try {
     const v = await b.get_self_view();
     set("sv-mood", v.mood); set("sv-task", v.current_task); set("sv-last-action", v.last_action);
-    set("sv-usage", v.own_usage); set("sv-temp", v.temp_c != null ? v.temp_c + "°م" : v.temp);
-    set("sv-deep", v.deep_files_locked === false ? "مفتوحة بإذنك" : "مقفولة");
+    set("sv-usage", v.own_usage);
+    if (v.temp_c != null) { set("sv-temp", v.temp_c + "°م"); const tl = $("sv-temp-link"); if (tl) tl.hidden = true; }
+    else if (v.temp) { set("sv-temp", v.temp); const tl = $("sv-temp-link"); if (tl) tl.hidden = true; }
+    else {
+      // v1.6.2 (clarity): no reading at all — the #sv-temp HTML
+      // default already says so; just show the install link.
+      const tl = $("sv-temp-link");
+      if (tl) {
+        const hl = $("temp-hint-link");
+        if (hl && hl.href) tl.href = hl.href; // backend-provided URL when set
+        tl.hidden = false;
+      }
+    }
+    if (v.deep_files_locked === false) {
+      set("sv-deep", "مفتوحة بإذنك");
+      const rb = $("sv-deep-request"); if (rb) rb.hidden = true;
+    } else {
+      // v1.6.2 (clarity): locked is not silent — why + a clear action.
+      set("sv-deep", "مقفولة — محتاجة إذن صريح");
+      const rb = $("sv-deep-request"); if (rb) rb.hidden = false;
+    }
     set("sv-chrome", v.chrome_connected ? "متصل" : "مش متصل");
     set("sv-model", v.model_status || v.model);
     const task = $("stage-task"); if (task && v.current_task) task.textContent = v.current_task;
@@ -2718,9 +3037,12 @@ function wirePrivacyMode() {
 }
 
 // ---------- PROACTIVE FEED ----------
+let _proactiveInFlight = false;
 async function pollProactiveFeed() {
+  if (_proactiveInFlight) return;
   const b = getApi();
   if (!b || !b.get_proactive_feed) return;
+  _proactiveInFlight = true;
   try {
     const res = await b.get_proactive_feed();
     // v1.6.1 item 18: the bridge returns {feed, exam}, not an array --
@@ -2760,6 +3082,7 @@ async function pollProactiveFeed() {
       box.appendChild(div);
     });
   } catch (e) { /* feed stays empty until the next poll */ }
+  finally { _proactiveInFlight = false; }
 }
 
 // ---------- v1.6.0 init (own DOMContentLoaded listener) ----------
@@ -2792,8 +3115,24 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => { const q = $("quick-scan-text"); if (q && q.textContent === "بفحص...") q.textContent = "الجهاز تمام — مفيش حاجة محتاجة انتباه دلوقتي"; }, 1500);
   });
   initStatObserver();
+  // v1.6.2 (freeze): resize/reflow stays cheap — ONE debounced
+  // listener, no DOM rebuild, no count-up replay on resize. The
+  // layout (flex + the pinned composer) absorbs height changes in CSS.
+  let _resizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (_resizeTimer) clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => { _resizeTimer = null; }, 150);
+  });
   initProcScroll();
   initAttach();
+  wireModelPicker();
+  refreshModelOptions();
+  wireWindowControls();
+  wireLightbox();
+  const deepReq = $("sv-deep-request");
+  if (deepReq) deepReq.addEventListener("click", requestDeepFileAccess);
+  tickHeaderClock();
+  setInterval(tickHeaderClock, 15000);
   initDeepThink();
   loadDeepThink();
   wireApiKeys();
@@ -2852,13 +3191,284 @@ function wireAiNameField() {
   input.addEventListener("input", () => applyAiName(input.value));
 }
 
+// ---------- MODEL PICKER (v1.6.2) ----------
+// The chain used to be automatic only (Groq -> Gemini -> Ollama).
+// The picker offers 4 choices: auto (the current behaviour) / Groq
+// gpt-oss-120b / Gemini 2.5 Flash / local Ollama Qwen 2.5 3B. The
+// choice is saved (settings key `model_choice`, default "auto") and
+// applies to every reply after it. Unavailable options stay visible
+// but disabled, with their reason under them — never hidden. The
+// engine badge under each reply (LONA · groq / gemini / local) still
+// shows the model that ACTUALLY answered — it is never touched here.
+// Deep Think keeps working with the chosen model where it applies.
+// There is NO JS fallback: if the chosen model fails, the backend
+// answers with a clear failure naming it.
+let currentModelChoice = "auto";
+const MODEL_SHORT = { auto: "تلقائي", groq: "Groq", gemini: "Gemini", local: "محلي" };
+const MODEL_FALLBACK_OPTIONS = [
+  { id: "auto", label: "تلقائي", available: true, reason: "" },
+  { id: "groq", label: "Groq — gpt-oss-120b", available: false, reason: "غير متاح في النسخة دي" },
+  { id: "gemini", label: "Gemini 2.5 Flash", available: false, reason: "محتاج مفتاح Gemini" },
+  { id: "local", label: "محلي — Ollama Qwen 2.5 3B", available: false, reason: "Ollama مش متثبت" },
+];
+function applyModelChoice(choice) {
+  currentModelChoice = MODEL_SHORT[choice] ? choice : "auto";
+  const btn = $("model-btn");
+  if (btn) btn.textContent = MODEL_SHORT[currentModelChoice];
+  const ind = $("model-indicator");
+  if (ind) ind.textContent = MODEL_SHORT[currentModelChoice];
+}
+function renderModelMenu(options) {
+  const menu = $("model-menu");
+  if (!menu) return;
+  menu.innerHTML = "";
+  (options || []).forEach((opt) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.disabled = !opt.available;
+    if (opt.id === currentModelChoice) b.classList.add("selected");
+    const label = document.createElement("span");
+    label.textContent = opt.label || opt.id;
+    b.appendChild(label);
+    if (!opt.available && opt.reason) {
+      const reason = document.createElement("span");
+      reason.className = "model-reason";
+      reason.textContent = opt.reason;
+      b.appendChild(reason);
+    }
+    if (opt.available) {
+      b.addEventListener("click", async () => {
+        const bridge = getApi();
+        if (bridge && bridge.set_model_choice) {
+          try {
+            const r = await bridge.set_model_choice(opt.id);
+            if (r && r.ok === false) {
+              $("status").textContent = "مقدرتش أغيّر الموديل — جرّب تاني";
+              setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2500);
+              return;
+            }
+            applyModelChoice((r && r.choice) || opt.id);
+          } catch (e) {
+            $("status").textContent = "مقدرتش أغيّر الموديل — جرّب تاني";
+            setTimeout(() => { if (!busy) $("status").textContent = ""; }, 2500);
+            return;
+          }
+        } else {
+          // No bridge method yet: keep the choice locally so the
+          // button still reflects it; the backend applies it once
+          // the method lands.
+          applyModelChoice(opt.id);
+        }
+        menu.classList.remove("open");
+      });
+    }
+    menu.appendChild(b);
+  });
+}
+async function refreshModelOptions() {
+  const bridge = getApi();
+  if (bridge && bridge.get_model_options) {
+    try {
+      const r = await bridge.get_model_options();
+      if (r) {
+        if (r.choice) applyModelChoice(r.choice);
+        renderModelMenu(r.options || MODEL_FALLBACK_OPTIONS);
+        return;
+      }
+    } catch (e) { /* fall through to the fallback list */ }
+  }
+  renderModelMenu(MODEL_FALLBACK_OPTIONS);
+}
+function wireModelPicker() {
+  const btn = $("model-btn"), menu = $("model-menu");
+  if (!btn || !menu) return;
+  btn.addEventListener("click", async () => {
+    const open = menu.classList.toggle("open");
+    if (open) await refreshModelOptions();
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".model-wrap")) menu.classList.remove("open");
+  });
+}
+
+// ---------- IMAGE LIGHTBOX (v1.6.2) ----------
+// Generated images show capped at 320px in chat; a tap opens the full
+// image here. Click anywhere on the overlay or Esc closes it.
+function openLightbox(dataUrl) {
+  const box = $("lightbox"), img = $("lightbox-img");
+  if (!box || !img) return;
+  img.src = dataUrl;
+  box.hidden = false;
+}
+function closeLightbox() {
+  const box = $("lightbox");
+  if (box) box.hidden = true;
+}
+function wireLightbox() {
+  const box = $("lightbox"), closeBtn = $("lightbox-close");
+  if (box) box.addEventListener("click", closeLightbox);
+  if (closeBtn) closeBtn.addEventListener("click", (e) => { e.stopPropagation(); closeLightbox(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+}
+
+// ---------- FRAMELESS WINDOW (v1.6.2) ----------
+// The OS title bar is gone (backend makes the window frameless); the
+// header carries the traffic-light controls and is the drag region.
+// Drag: pointerdown records the grab offset (screen coords minus the
+// window's top-left), pointermove calls window_move_to() throttled
+// through rAF, pointerup ends it. Buttons/links/inputs never start a
+// drag; double-click on the drag region toggles maximize.
+let _dragOffX = 0, _dragOffY = 0, _dragging = false, _dragRaf = 0;
+function wireWindowControls() {
+  const header = $("app-header");
+  const b = getApi();
+  const minBtn = $("win-min"), maxBtn = $("win-max"), closeBtn = $("win-close");
+  if (minBtn) minBtn.addEventListener("click", () => { if (b && b.window_minimize) { try { b.window_minimize(); } catch (e) {} } });
+  if (maxBtn) maxBtn.addEventListener("click", async () => {
+    if (!b || !b.window_toggle_maximize) return;
+    try { const r = await b.window_toggle_maximize(); if (r && typeof r.maximized === "boolean") maxBtn.classList.toggle("maximized", r.maximized); } catch (e) {}
+  });
+  if (closeBtn) closeBtn.addEventListener("click", () => { if (b && b.window_close) { try { b.window_close(); } catch (e) {} } });
+  if (!header || !b || !b.window_move_to) return;
+  header.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button, input, a, .pill, .model-indicator")) return;
+    _dragging = true;
+    _dragOffX = e.screenX - window.screenX;
+    _dragOffY = e.screenY - window.screenY;
+  });
+  header.addEventListener("pointermove", (e) => {
+    if (!_dragging) return;
+    if (_dragRaf) return;
+    const x = e.screenX - _dragOffX, y = e.screenY - _dragOffY;
+    _dragRaf = requestAnimationFrame(() => {
+      _dragRaf = 0;
+      try { b.window_move_to(x, y); } catch (err) {}
+    });
+  });
+  const endDrag = () => { _dragging = false; if (_dragRaf) { cancelAnimationFrame(_dragRaf); _dragRaf = 0; } };
+  header.addEventListener("pointerup", endDrag);
+  header.addEventListener("pointerleave", endDrag);
+  header.addEventListener("dblclick", (e) => {
+    if (e.target.closest("button, input, a, .pill, .model-indicator")) return;
+    if (maxBtn) maxBtn.click();
+  });
+}
+
+// ---------- HEADER CLOCK (v1.6.2) ----------
+// The main window had no clock at all — the header now shows the time
+// (HH:MM, ticks every 15s), like the island's expanded clock.
+function tickHeaderClock() {
+  const d = new Date();
+  const el = $("header-clock");
+  if (el) el.textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
 // ---------- LIVE CARDS ----------
 // Every numeric card (RAM/CPU/battery/temp/storage/top processes) is
 // LIVE, not frozen at its sent value: refreshLiveCards() re-reads the
 // real current values from the bridge and updates them in place.
-function refreshLiveCards() {
-  refreshDeviceOverview();
-  refreshExamCountdown();
+let _liveCardsInFlight = false;
+async function refreshLiveCards() {
+  if (_liveCardsInFlight) return;
+  _liveCardsInFlight = true;
+  try {
+    await refreshDeviceOverview();
+    await refreshExamCountdown();
+    await refreshLiveDeviceCards();
+  } catch (e) { /* the next 5s tick retries */ }
+  finally { _liveCardsInFlight = false; }
+}
+
+// ---------- LIVE DEVICE CARD (v1.6.2 PARITY 3 + F3) ----------
+// When the user asks about the device, the reply earns a LIVE card in
+// the chat: header "دي حالة جهازك دلوقتي" + "آخر قراءة: مباشر
+// HH:MM:SS" re-read every 5s from the real get_device_overview()
+// readings (RAM/CPU/battery/storage + bars), flashing green on each
+// re-read, with the F3 "شوف قايمة البرامج" button opening the device
+// view. Real numbers only — a missing reading stays "—", never a
+// placeholder.
+let liveDeviceCards = [];
+function _fmtGB(mb) { return (mb / 1024).toFixed(1); }
+function renderLiveDeviceCard() {
+  const chat = $("chat");
+  if (!chat) return null;
+  const div = document.createElement("div");
+  div.className = "msg ai live-device-msg";
+  const head = document.createElement("div");
+  head.className = "live-head";
+  const liveDot = document.createElement("span");
+  liveDot.className = "live-dot";
+  const headTitle = document.createElement("span");
+  headTitle.textContent = "دي حالة جهازك دلوقتي";
+  const headTime = document.createElement("span");
+  headTime.className = "live-time";
+  headTime.textContent = "آخر قراءة: مباشر --:--:--";
+  head.appendChild(liveDot); head.appendChild(headTitle); head.appendChild(headTime);
+  div.appendChild(head);
+  const mkRow = (label, key) => {
+    const row = document.createElement("div");
+    row.className = "live-row";
+    const lb = document.createElement("span"); lb.textContent = label;
+    const val = document.createElement("b"); val.dataset.live = key; val.textContent = "—";
+    row.appendChild(lb); row.appendChild(val);
+    const bar = document.createElement("div"); bar.className = "bar";
+    const fill = document.createElement("i"); fill.dataset.liveBar = key; fill.style.width = "0%";
+    bar.appendChild(fill);
+    div.appendChild(row); div.appendChild(bar);
+    return { val, bar: fill };
+  };
+  const rec = { card: div, timeEl: headTime, rows: {
+    ram: mkRow("الرام", "ram"), cpu: mkRow("المعالج", "cpu"),
+    battery: mkRow("البطارية", "battery"), storage: mkRow("التخزين", "storage"),
+  }};
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "gold-btn btn-3d live-programs-btn";
+  btn.textContent = "شوف قايمة البرامج";
+  btn.addEventListener("click", () => showView("device"));
+  div.appendChild(btn);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  liveDeviceCards.push(rec);
+  refreshLiveDeviceCards();
+  return div;
+}
+async function refreshLiveDeviceCards() {
+  if (!liveDeviceCards.length) return;
+  const b = getApi();
+  if (!b || !b.get_device_overview) return;
+  try {
+    const d = await b.get_device_overview();
+    const ov = (d && d.overview) || {};
+    const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const setRow = (rec, key, text, pct) => {
+      const r = rec.rows[key]; if (!r) return;
+      if (text != null) r.val.textContent = text;
+      if (pct != null) r.bar.style.width = pct + "%";
+    };
+    liveDeviceCards.forEach((rec) => {
+      if (ov.ram && ov.ram.percent != null) {
+        const gb = (ov.ram.used_mb != null && ov.ram.total_mb != null)
+          ? _fmtGB(ov.ram.used_mb) + " / " + _fmtGB(ov.ram.total_mb) + " GB" : ov.ram.percent + "%";
+        setRow(rec, "ram", gb, ov.ram.percent);
+      }
+      if (ov.cpu && ov.cpu.percent != null) setRow(rec, "cpu", ov.cpu.percent + "%", ov.cpu.percent);
+      if (ov.battery && ov.battery.percent != null) setRow(rec, "battery", ov.battery.percent + "%", ov.battery.percent);
+      if (ov.disk && ov.disk.total_gb != null) {
+        const used = Math.round((ov.disk.total_gb - (ov.disk.free_gb || 0)) * 10) / 10;
+        const pct = ov.disk.percent_free != null ? Math.round((100 - ov.disk.percent_free) * 10) / 10 : null;
+        setRow(rec, "storage", used + " / " + ov.disk.total_gb + " GB", pct);
+      }
+      rec.timeEl.textContent = "آخر قراءة: مباشر " + now;
+      rec.card.classList.remove("flash");
+      void rec.card.offsetWidth;
+      rec.card.classList.add("flash");
+      setTimeout(() => rec.card.classList.remove("flash"), 600);
+    });
+  } catch (e) { /* the card keeps its last real reading */ }
+}
+function maybeShowDeviceCard(text) {
+  if (isDeviceQuestion(text)) renderLiveDeviceCard();
 }
 document.addEventListener("DOMContentLoaded", () => {
   wireAiNameField();

@@ -14,6 +14,8 @@ import json
 import re
 import shutil
 import socket
+import threading
+import time
 
 import requests
 from logger import error, info, warn
@@ -27,6 +29,16 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 OLLAMA_MODEL = "qwen2.5:3b"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "openai/gpt-oss-120b"
+
+# v1.6.2 (B10/B11): one total deadline for an ask_with_tools/ask cycle
+# (180 s); Deep Think gets 120-180 s per call, normal replies 60 s,
+# Ollama 60 s (was 120 s).
+_CHAT_DEADLINE_SEC = 180
+_DEEP_THINK_TIMEOUT_SEC = 150
+_GROQ_TIMEOUT_SEC = 60
+_OLLAMA_TIMEOUT_SEC = 60
+# v1.6.2 (B10): at most 5 tool calls executed per round.
+_MAX_TOOL_CALLS_PER_ROUND = 5
 
 _history: list = []
 
@@ -52,13 +64,162 @@ def set_memory_store(store) -> None:
     _memory_store = store
 
 
-def is_online(timeout: float = 2.0) -> bool:
-    """Cheap internet check (DNS socket, no HTTP)."""
+# v1.6.2 (B17): connectivity is state kept by a background thread,
+# never a socket on the caller's thread. is_online() reads the cache
+# only; the watcher probes 8.8.8.8:53 every ~10 s. Before the first
+# probe lands the cache says offline (honest: unknown, not "online").
+# start_online_watcher() is called early at app startup so the cache
+# is warm by the time the user chats; is_online() also starts it
+# lazily so standalone callers never hang on a first probe.
+_ONLINE_CACHE = {"at": 0.0, "value": False}
+_ONLINE_LOCK = threading.Lock()
+_ONLINE_WATCHER = None
+_ONLINE_INTERVAL_SEC = 10.0
+_ONLINE_STALE_SEC = 15.0
+
+
+def _online_probe(timeout: float = 2.0) -> bool:
+    """One cheap internet check (DNS socket, no HTTP)."""
     try:
         socket.create_connection(("8.8.8.8", 53), timeout=timeout).close()
         return True
     except OSError:
         return False
+
+
+def _online_watcher_loop() -> None:
+    while True:
+        try:
+            value = _online_probe()
+        except Exception:
+            value = False
+        with _ONLINE_LOCK:
+            _ONLINE_CACHE.update({"at": time.time(), "value": bool(value)})
+        time.sleep(_ONLINE_INTERVAL_SEC)
+
+
+def start_online_watcher() -> bool:
+    """Start the background connectivity watcher (daemon, idempotent).
+    Returns True when the watcher is running."""
+    global _ONLINE_WATCHER
+    with _ONLINE_LOCK:
+        if _ONLINE_WATCHER is not None and _ONLINE_WATCHER.is_alive():
+            return True
+        thread = threading.Thread(target=_online_watcher_loop,
+                                  daemon=True, name="memo-online-watch")
+        thread.start()
+        _ONLINE_WATCHER = thread
+        return True
+
+
+def is_online(timeout: float = 2.0) -> bool:
+    """Cached connectivity (v1.6.2 B17): reads the background
+    watcher's state, never opens a socket on the caller's thread --
+    the bridge (Api.get_status) calls this every poll. The timeout
+    argument is kept for callers that used to probe directly; a
+    stale/empty cache starts the watcher and reports the last known
+    value (False before the first probe lands)."""
+    start_online_watcher()
+    with _ONLINE_LOCK:
+        return bool(_ONLINE_CACHE["value"])
+
+
+def _online_cache_age() -> float:
+    with _ONLINE_LOCK:
+        return time.time() - float(_ONLINE_CACHE["at"])
+
+
+def ollama_available(timeout: float = 0.5) -> bool:
+    """True when a local Ollama server answers on localhost:11434.
+    Cheap local socket, never the network -- used by the model
+    picker to say honestly whether "local" can answer right now."""
+    try:
+        socket.create_connection(("127.0.0.1", 11434),
+                                 timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+# v1.6.2: model choice (Settings -> model picker). "auto" is the
+# Groq -> Gemini -> Ollama chain; anything else is STRICT -- that
+# model only, no silent fallback to another model, so the badge
+# under the reply always names the engine that really answered.
+_MODEL_CHOICES = ("auto", "groq", "gemini", "local")
+_MODEL_DISPLAY = {
+    "groq": "Groq (gpt-oss-120b)",
+    "gemini": "Gemini 2.5 Flash",
+    "local": "Ollama المحلي (Qwen 2.5 3B)",
+}
+
+
+def _normalize_model_choice(choice) -> str:
+    """Anything unknown (or blank) is "auto" -- the saved value is
+    validated again in Api.set_model_choice, this is the backstop."""
+    value = str(choice or "").strip().lower()
+    return value if value in _MODEL_CHOICES else "auto"
+
+
+def _explicit_model_failure(model: str, kind: str, lang: str,
+                            detail: str = "") -> str:
+    """Failure reply for a STRICT model choice: names the model the
+    user picked AND the reason it could not answer. No other model
+    is tried after this -- the reply IS the answer, so the engine
+    badge stays honest (empty = nobody answered)."""
+    reasons_ar = {
+        "offline": "مفيش نت دلوقتي",
+        "no-groq-key": ("مفيش مفتاح Groq محفوظ — دخّله من الإعدادات » "
+                        "مفاتيح API"),
+        "groq-429": "Groq وصل للحد المسموح — جرّب تاني كمان شوية",
+        "groq-429-tpm": "Groq وصل لحد التوكنز في الدقيقة — جرّب كمان دقيقة",
+        "groq-429-rpm": "Groq وصل لحد الطلبات في الدقيقة — جرّب كمان دقيقة",
+        "groq-429-tpd": ("Groq وصل للحد اليومي للتوكنز — بيتصفّر "
+                         "02:00 بتوقيت القاهرة"),
+        "groq-429-rpd": ("Groq وصل للحد اليومي للطلبات — بيتصفّر "
+                         "02:00 بتوقيت القاهرة"),
+        "no-gemini-chat-key": ("مفيش مفتاح Gemini للمحادثة محفوظ — دخّله "
+                               "من الإعدادات » مفاتيح API"),
+        "gemini-429": "Gemini وصل للحد — جرّب كمان دقيقة",
+        "gemini-key-rejected": "مفتاح Gemini مرفوض — اتأكد من المفتاح",
+        "gemini-failed": "Gemini فشل يرد",
+        "gemini-empty-reply": "Gemini رجّع رد فاضي",
+        "ollama_down": "Ollama مش شغال — شغّله الأول",
+        "failed": "حصل خطأ وهو بيرد",
+    }
+    reasons_en = {
+        "offline": "there is no internet right now",
+        "no-groq-key": ("no Groq key saved — add it in Settings » "
+                        "API keys"),
+        "groq-429": "Groq hit its limit — try again in a bit",
+        "groq-429-tpm": "Groq hit its per-minute token limit — try in a minute",
+        "groq-429-rpm": "Groq hit its per-minute request limit — try in a minute",
+        "groq-429-tpd": "Groq hit its daily token limit — it resets at 02:00 Cairo time",
+        "groq-429-rpd": "Groq hit its daily request limit — it resets at 02:00 Cairo time",
+        "no-gemini-chat-key": ("no Gemini chat key saved — add it in "
+                               "Settings » API keys"),
+        "gemini-429": "Gemini hit its limit — try again in a minute",
+        "gemini-key-rejected": "the Gemini key was rejected — check the key",
+        "gemini-failed": "Gemini failed to answer",
+        "gemini-empty-reply": "Gemini returned an empty reply",
+        "ollama_down": "Ollama is not running — start it first",
+        "failed": "something went wrong while it was answering",
+    }
+    kind = str(kind or "failed")
+    base_kind = kind if kind in reasons_ar else (
+        "groq-429" if kind.startswith("groq-429") else "failed")
+    display = _MODEL_DISPLAY.get(model, model)
+    if lang == "ar":
+        reason = reasons_ar.get(base_kind, reasons_ar["failed"])
+        text = (f"اخترت {display} بس مش قادر يرد دلوقتي ({reason}) — "
+                "ومش هبدّل لموديل تاني من غير ما تقولي.")
+    else:
+        reason = reasons_en.get(base_kind, reasons_en["failed"])
+        text = (f"You picked {display}, but it cannot answer right now "
+                f"({reason}) — I will not switch to another model "
+                "without you saying so.")
+    if detail:
+        text += " " + str(detail).strip()
+    return text
 
 
 def _capability_block(language: str) -> str:
@@ -458,7 +619,7 @@ def _clean_messages_for_local(messages: list) -> list:
     return out
 
 
-def _ollama(messages: list, timeout: int = 120) -> str:
+def _ollama(messages: list, timeout: int = _OLLAMA_TIMEOUT_SEC) -> str:
     # v1.4.1: the payload is cleaned first (see above) - the raw
     # tool-round history 400s on Ollama for the 3B model.
     resp = requests.post(
@@ -743,7 +904,8 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                    memory_enabled: bool = True,
                    deep_think: bool = False,
                    privacy_mode: bool | None = None,
-                   self_view: str = "") -> dict:
+                   self_view: str = "",
+                   model_choice: str = "auto") -> dict:
     """Brain WITH tools (v1.3.2: this is the NORMAL chat path now, not
     owner-only — v1.3.0 gated tools behind the secret code, so in normal
     chat Groq had no tools at all and refused 'open VS Code' in text.
@@ -795,7 +957,46 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
     # older turns are summarized into the memory file, not dropped.
     messages = [system] + hist[-memory_mod.HISTORY_KEEP:] + turn
 
+    # v1.6.2: STRICT model choice. "auto" falls through to the chain
+    # below; an explicit pick answers with that model ONLY -- Gemini
+    # and local are text-only (no tools), Deep Think rides along as a
+    # normal call there (reasoning_effort is a Groq-only param).
+    choice = _normalize_model_choice(model_choice)
+    if choice in ("gemini", "local"):
+        if choice == "gemini":
+            reply, engine, fail_kind = _ask_gemini_chat(messages, lang)
+            fail_kind = fail_kind or "gemini-failed"
+        else:
+            reply, engine = _ask_local(messages, lang)
+            fail_kind = "ollama_down"
+        if engine:
+            if _looks_like_action(user_text):
+                reply += ("\n\nالأدوات (فتح برامج، ملفات، أوامر) محتاجة "
+                          "Groq أونلاين — دلوقتي شغال على "
+                          + ("Gemini" if engine == "gemini"
+                             else "المخ المحلي")
+                          + " فأقدر أجاوب بس.")
+            _record_turn(user_text, reply, engine, hist,
+                         learn=memory_enabled, language=lang)
+            return {"reply": reply, "engine": engine, "tools_used": 0,
+                    "tools_disabled": True}
+        fail = _explicit_model_failure(choice, fail_kind, lang,
+                                       detail="" if choice == "gemini"
+                                       else reply)
+        _record_turn(user_text, fail, "", hist,
+                     learn=memory_enabled, language=lang)
+        return {"reply": fail, "engine": "", "tools_used": 0,
+                "tools_disabled": True}
+
     if not is_online():
+        # v1.6.2: a STRICT Groq pick never falls back to local when
+        # offline -- the failure names Groq and the reason.
+        if choice == "groq":
+            fail = _explicit_model_failure("groq", "offline", lang)
+            _record_turn(user_text, fail, "", hist,
+                         learn=memory_enabled, language=lang)
+            return {"reply": fail, "engine": "", "tools_used": 0,
+                    "tools_disabled": True}
         info("brain", "Offline - tools disabled, local Qwen 3B (chat only)")
         reply, engine = _ask_local(messages, lang)
         if not engine:
@@ -812,6 +1013,20 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                 "tools_disabled": True}
 
     tools_used = 0
+    # v1.6.2 (B10/B11): ONE total deadline for the whole ask cycle
+    # (180 s). Every later call gets the time that is LEFT, so a slow
+    # first round cannot stretch the turn past the deadline; Deep Think
+    # gets 120-180 s per call, normal replies 60 s, Ollama 60 s.
+    _deadline = time.monotonic() + _CHAT_DEADLINE_SEC
+    _warned_slow = False
+
+    def _remaining_timeout(base: int) -> int:
+        """Timeout for the next call: the base value, capped by the
+        time left on the cycle deadline (never below 5 s, so a call
+        that starts late still gets a real chance)."""
+        remaining = _deadline - time.monotonic()
+        return max(5, min(int(base), int(remaining)))
+
     # v1.6.0: deep_think / privacy_mode are passed only when they
     # differ from the defaults, so the call shape stays identical to
     # v1.5.0 when both are off (older callers/mocks that only accept
@@ -823,8 +1038,26 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         _groq_kwargs["privacy_mode"] = privacy_mode
     try:
         for _round in range(5):
+            # v1.6.2 (B10): the deadline is total -- a cycle that is
+            # already past it stops instead of starting another round.
+            if time.monotonic() >= _deadline:
+                warn("brain", "Chat cycle hit the 180s deadline - "
+                              "stopping the tool loop")
+                break
+            if (not _warned_slow
+                    and time.monotonic() > _deadline - _CHAT_DEADLINE_SEC + 60):
+                warn("brain", "Chat cycle passed 60s (deadline 180s)")
+                _warned_slow = True
+            _groq_kwargs["timeout"] = _remaining_timeout(
+                _DEEP_THINK_TIMEOUT_SEC if deep_think else _GROQ_TIMEOUT_SEC)
             msg = _groq_message(messages, use_tools=True, **_groq_kwargs)
             calls = msg.get("tool_calls") or []
+            # v1.6.2 (B10): at most 5 tool calls per round -- extra
+            # calls are dropped (the model may re-ask next round).
+            if len(calls) > _MAX_TOOL_CALLS_PER_ROUND:
+                warn("brain", f"Tool round asked for {len(calls)} calls - "
+                              f"capped at {_MAX_TOOL_CALLS_PER_ROUND}")
+                calls = calls[:_MAX_TOOL_CALLS_PER_ROUND]
             if not calls:
                 reply = (msg.get("content") or "").strip()
                 if not reply:
@@ -909,6 +1142,14 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                           f"tools disabled, local Qwen 3B")
             kind = "failed"
             retry_after = None
+        # v1.6.2: a STRICT Groq pick never falls back -- the failure
+        # names Groq and the reason, and nothing else answers.
+        if choice == "groq":
+            fail = _explicit_model_failure("groq", kind, lang)
+            _record_turn(user_text, fail, "", hist,
+                         learn=memory_enabled, language=lang)
+            return {"reply": fail, "engine": "", "tools_used": 0,
+                    "tools_disabled": True}
         reply, engine = _ask_fallback_chain(messages, lang, kind,
                                             retry_after)
         if _looks_like_action(user_text):
@@ -931,6 +1172,13 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
     except Exception as exc:
         warn("brain", f"Groq tool loop failed ({type(exc).__name__}: {exc}) "
                       f"- falling back to Gemini / local Qwen 3B")
+        # v1.6.2: STRICT Groq pick -- no fallback chain.
+        if choice == "groq":
+            fail = _explicit_model_failure("groq", "failed", lang)
+            _record_turn(user_text, fail, "", hist,
+                         learn=memory_enabled, language=lang)
+            return {"reply": fail, "engine": "", "tools_used": 0,
+                    "tools_disabled": True}
         reply, engine = _ask_fallback_chain(messages, lang, "failed")
         if _looks_like_action(user_text) and engine in ("gemini",
                                                         "ollama"):
@@ -998,7 +1246,7 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
         history: list | None = None, owner_unlocked: bool = False,
         memory_enabled: bool = True, deep_think: bool = False,
         privacy_mode: bool | None = None,
-        self_view: str = "") -> dict:
+        self_view: str = "", model_choice: str = "auto") -> dict:
     """Ask the brain. Returns {"reply": str, "engine": "groq"|"ollama"|""}.
 
     v1.4.0: `history` lets another channel (WhatsApp guests) keep its own
@@ -1025,12 +1273,37 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
                                        self_view=self_view)}
     messages = [system] + hist[-memory_mod.HISTORY_KEEP:] + [{"role": "user", "content": user_text}]
 
+    # v1.6.2: STRICT model choice (same contract as ask_with_tools).
+    choice = _normalize_model_choice(model_choice)
+    if choice in ("gemini", "local"):
+        if choice == "gemini":
+            reply, engine, fail_kind = _ask_gemini_chat(messages, lang)
+            fail_kind = fail_kind or "gemini-failed"
+        else:
+            reply, engine = _ask_local(messages, lang)
+            fail_kind = "ollama_down"
+        if not engine:
+            reply = _explicit_model_failure(
+                choice, fail_kind, lang,
+                detail="" if choice == "gemini" else reply)
+        _record_turn(user_text, reply, engine, hist,
+                     learn=memory_enabled, language=lang)
+        return {"reply": reply, "engine": engine}
+
     online = is_online()
+    if choice == "groq" and not online:
+        reply = _explicit_model_failure("groq", "offline", lang)
+        _record_turn(user_text, reply, "", hist,
+                     learn=memory_enabled, language=lang)
+        return {"reply": reply, "engine": ""}
     if online:
         try:
             # v1.6.0: same conditional-kwargs rule as ask_with_tools
             # (see above) - the default call shape is unchanged.
-            _groq_kwargs = {}
+            # v1.6.2 (B10/B11): the single call gets the cycle timeout
+            # directly -- 150 s for Deep Think, 60 s for a normal reply.
+            _groq_kwargs = {"timeout": (_DEEP_THINK_TIMEOUT_SEC
+                                        if deep_think else _GROQ_TIMEOUT_SEC)}
             if deep_think:
                 _groq_kwargs["deep_think"] = True
             if privacy_mode is not None:
@@ -1050,11 +1323,21 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
                 warn("brain", f"Groq failed ({type(exc).__name__}: {exc}) - falling back to Gemini / local Qwen 3B")
                 kind = "failed"
                 retry_after = None
-            reply, engine = _ask_fallback_chain(messages, lang, kind,
-                                                retry_after)
+            # v1.6.2: STRICT Groq pick -- no fallback chain.
+            if choice == "groq":
+                reply = _explicit_model_failure("groq", kind, lang)
+                engine = ""
+            else:
+                reply, engine = _ask_fallback_chain(messages, lang, kind,
+                                                    retry_after)
         except Exception as exc:
             warn("brain", f"Groq request failed ({type(exc).__name__}: {exc}) - falling back to Gemini / local Qwen 3B")
-            reply, engine = _ask_fallback_chain(messages, lang, "failed")
+            # v1.6.2: STRICT Groq pick -- no fallback chain.
+            if choice == "groq":
+                reply = _explicit_model_failure("groq", "failed", lang)
+                engine = ""
+            else:
+                reply, engine = _ask_fallback_chain(messages, lang, "failed")
     else:
         info("brain", "Offline - using local Qwen 3B")
         reply, engine = _ask_local(messages, lang)

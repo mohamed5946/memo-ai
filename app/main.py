@@ -350,6 +350,14 @@ try:
 except Exception:
     tempwatch_mod = None
 
+# v1.6.2: Chrome native host (extension bridge). Guarded like the
+# rest -- a missing module never blocks startup; the listener just
+# never starts and extension calls report "not connected" honestly.
+try:
+    import native_host as native_host_mod
+except Exception:
+    native_host_mod = None
+
 # v1.4.0: WhatsApp linking (Baileys sidecar, app/whatsapp.py). Guarded:
 # if the module fails to import (missing sidecar files), the app runs
 # fine without WhatsApp - nothing else in main.py depends on it.
@@ -366,11 +374,16 @@ try:
 except Exception:
     wakeword_mod = None
 
-VERSION = "1.6.1"
-MAIN_W, MAIN_H = 960, 720
+VERSION = "1.6.2"
+# v1.6.2: bigger default main window (was 960x720) -- more room for
+# the chat. Frameless since v1.6.2: the native title bar is gone and
+# the in-app header owns minimize/maximize/close + drag.
+MAIN_W, MAIN_H = 1280, 860
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
-ISLAND_IDLE_W, ISLAND_IDLE_H = 190, 52
+# v1.6.2 (F4): the idle pill is 380x60 -- the 190x52 numbers were the
+# old small-pill design; the pill is the full 380-wide island.
+ISLAND_IDLE_W, ISLAND_IDLE_H = 380, 60
 PET_SIZE = 150
 
 # Single-instance mutex (Windows named mutex, no admin needed).
@@ -406,6 +419,14 @@ OWNER_CODE_HASH = "900e5e36492a56eed142c11368b25b677487dec61cea264a0e4a1f64edeba
 _chats: dict = {}
 _chats_lock = threading.Lock()
 
+# v1.6.2 (A2/A4): background-check results, same shape as _chats.
+# check_updates() / test_api_key() return at once; the UI polls the
+# matching getter until "checking"/"pending" is False.
+_CHECK_UPDATES = {"checking": False, "update": None, "error": None}
+_CHECK_UPDATES_LOCK = threading.Lock()
+_TEST_KEY_RESULTS: dict = {}
+_TEST_KEY_LOCK = threading.Lock()
+
 # Result of the startup bridge-files self-check (None = not run yet).
 _BRIDGE_FILES_OK = None
 
@@ -413,6 +434,9 @@ _BRIDGE_FILES_OK = None
 # window regions (winshape) these colors are invisible - the region
 # clips everything outside the pill/cat silhouette - but if a region
 # ever failed to apply, the fallback is a dark color, never magenta.
+# v1.6.2 (F4): ISLAND_BG is the PILL's own CSS color only -- it is
+# no longer passed as the island window's background (the window is
+# created transparent, so only the pill paints).
 ISLAND_BG = "#0D121C"
 PET_BG = "#0A0A0A"
 
@@ -725,6 +749,7 @@ class Api:
     """
 
     # -- status ------------------------------------------------------------
+    @_log_slow
     def get_status(self):
         online = brain.is_online()
         with _READY_LOCK:
@@ -740,10 +765,12 @@ class Api:
             "owner_unlocked": _APP.owner_unlocked,
         }
 
+    @_log_slow
     def get_settings(self):
         return {k: v for k, v in _APP.settings.items()
                 if k != "owner_unlocked"}
 
+    @_log_slow
     def save_settings(self, new_values):
         try:
             data = json.loads(new_values) if isinstance(new_values, str) else new_values
@@ -758,7 +785,8 @@ class Api:
                     "deep_think_enabled", "focus_mode",
                     "quiet_hours_enabled", "companion_enabled",
                     "tempwatch_enabled", "morning_brief_enabled",
-                    "routine_learning_enabled", "privacy_mode", "exams"):
+                    "routine_learning_enabled", "privacy_mode", "exams",
+                    "model_choice"):  # v1.6.2: model picker
             if key in data:
                 _APP.settings[key] = data[key]
         ok = save_settings(_APP.settings)
@@ -776,6 +804,7 @@ class Api:
         return {"ok": ok}
 
     # -- chat --------------------------------------------------------------
+    @_log_slow
     def chat(self, text):
         text = (text or "").strip()
         if not text:
@@ -864,6 +893,7 @@ class Api:
         return {"reply": "", "engine": "groq", "pending": True,
                 "chat_id": chat_id}
 
+    @_log_slow
     def unlock_owner(self, code):
         """Owner-code unlock from the Settings General section (v1.4.1:
         same hash compare as chat() - the typed code is never logged,
@@ -901,39 +931,97 @@ class Api:
         return {"done": bool(entry["done"]), "reply": entry.get("reply", ""),
                 "engine": entry.get("engine", "groq"),
                 "tools_used": entry.get("tools_used", 0),
-                "images": entry.get("images", [])}
+                "images": entry.get("images", []),
+                # v1.6.2 (A1): voice turns carry what was heard.
+                "heard": entry.get("heard", "")}
 
+    @_log_slow
     def voice_chat(self):
-        """Record 5s -> transcribe -> answer -> speak. Returns heard + reply.
-        In owner mode the answer runs the tool loop in the background, so
-        this returns {"pending": True, "chat_id": ...} and the UI polls
-        chat_result() (same as chat).
-        v1.5: the wake-word listener is PAUSED while the turn-based mic
-        records (one mic, one owner - the two streams must never fight
-        over it, and the listener must not hear its own recording and
-        re-wake). It resumes in the finally, whatever happens."""
-        lang = _APP.settings.get("language", "ar")
-        _APP.pause_wakeword()
-        try:
-            heard = hear.listen(lang)
-        finally:
-            _APP.resume_wakeword()
-        if not heard["text"]:
-            return {"heard": "", "reply": heard.get("error", "مقدرتش أسمعك."),
-                    "engine": ""}
-        result = self.chat(heard["text"])
-        if result.get("pending"):
-            return {"heard": heard["text"], "reply": "", "engine": "groq",
-                    "pending": True, "chat_id": result["chat_id"],
-                    "hear_engine": heard["engine"]}
-        return {"heard": heard["text"], "reply": result["reply"],
-                "engine": result["engine"], "hear_engine": heard["engine"]}
+        """Record 5s -> transcribe -> answer -> speak. The recording
+        (5s sd.wait) and the transcription NEVER run on the bridge:
+        v1.6.2 (A1) starts a background daemon thread (same pattern
+        as chat) and returns {"pending": True, "chat_id": ...} at
+        once; the UI polls chat_result(chat_id), which now also
+        carries the heard text. The turn is stored in _chats like
+        run_tool_chat does (reply + heard text + engine)."""
+        chat_id = uuid.uuid4().hex[:8]
+        with _chats_lock:
+            _chats[chat_id] = {"done": False, "reply": "", "engine": "groq",
+                               "tools_used": 0, "images": [], "heard": "",
+                               "created": time.time()}
+            if len(_chats) > 50:  # prune oldest finished entries
+                for old_id in sorted(
+                        _chats, key=lambda i: _chats[i]["created"])[:10]:
+                    if _chats[old_id]["done"]:
+                        _chats.pop(old_id, None)
 
+        def _run():
+            lang = _APP.settings.get("language", "ar")
+            # v1.5: the wake-word listener is PAUSED while the
+            # turn-based mic records (one mic, one owner - the two
+            # streams must never fight over it, and the listener must
+            # not hear its own recording and re-wake). It resumes in
+            # the finally, whatever happens.
+            _APP.pause_wakeword()
+            try:
+                heard = hear.listen(lang)
+            finally:
+                _APP.resume_wakeword()
+            if not heard["text"]:
+                with _chats_lock:
+                    entry = _chats.get(chat_id)
+                    if entry is not None:
+                        entry.update({
+                            "done": True,
+                            "reply": heard.get(
+                                "error", "مقدرتش أسمعك."),
+                            "engine": "", "heard": ""})
+                return
+            # Reuse the normal chat path (rules / owner code / tool
+            # loop) and copy its result into THIS turn, so one poll
+            # shape (chat_result) serves text and voice alike.
+            inner = self.chat(heard["text"])
+            inner_id = inner.get("chat_id")
+            reply, engine, tools_used, images = "", "groq", 0, []
+            if inner_id:
+                deadline = time.time() + 300
+                while time.time() < deadline:
+                    with _chats_lock:
+                        inner_entry = _chats.get(inner_id)
+                        done = bool(inner_entry
+                                    and inner_entry.get("done"))
+                    if done:
+                        break
+                    time.sleep(0.2)
+                with _chats_lock:
+                    inner_entry = _chats.get(inner_id) or {}
+                reply = inner_entry.get("reply", "")
+                engine = inner_entry.get("engine", "groq")
+                tools_used = inner_entry.get("tools_used", 0)
+                images = inner_entry.get("images", [])
+            else:
+                # chat() answered synchronously (rule hit / owner code).
+                reply = inner.get("reply", "")
+                engine = inner.get("engine", "")
+            with _chats_lock:
+                entry = _chats.get(chat_id)
+                if entry is not None:
+                    entry.update({"done": True, "reply": reply,
+                                  "engine": engine,
+                                  "tools_used": tools_used,
+                                  "images": images,
+                                  "heard": heard["text"]})
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "chat_id": chat_id}
+
+    @_log_slow
     def stop_speaking(self):
         speak.stop()
         return {"ok": True}
 
     # -- voice output toggle (v1.3.0) --------------------------------------
+    @_log_slow
     def toggle_voice_output(self):
         """One-tap speaker toggle (OUTPUT only - the mic button is separate).
         When OFF, speak_async() never calls any TTS engine at all, so no
@@ -947,6 +1035,7 @@ class Api:
         return {"voice_output": new}
 
     # -- wake word "يا لونا" (v1.5) ---------------------------------------
+    @_log_slow
     def get_wakeword_status(self):
         """Wake-word listener state for the Settings UI (enabled,
         state, model readiness, wake count). Honest when the module
@@ -961,6 +1050,7 @@ class Api:
                     "bursts_discarded_noise": 0}
         return _APP.get_wakeword_status()
 
+    @_log_slow
     def set_wakeword_enabled(self, enabled):
         """Settings toggle for always-listening: applies at once
         (starts/stops the listener) and persists. Turning it off
@@ -986,10 +1076,12 @@ class Api:
         runs. (v1.4.2: no modal anymore - the card lives in the chat.)"""
         return tools.get_permission_state()
 
+    @_log_slow
     def resolve_permission(self, req_id, allowed):
         ok = tools.resolve_permission(str(req_id or ""), bool(allowed))
         return {"ok": ok}
 
+    @_log_slow
     def cancel_pending_permissions(self):
         """Cancel every still-pending permission (v1.6.1, item 21c):
         a new user message supersedes the old turn's unanswered
@@ -1004,6 +1096,7 @@ class Api:
         return {"ok": True, "cancelled": count}
 
     # -- generated images (v1.4.3) -----------------------------------------
+    @_log_slow
     def get_generated_image(self, filename):
         """Return a generated image as a data URL for the chat UI.
         The chat page is a local file, so a file:// path into
@@ -1034,6 +1127,7 @@ class Api:
     # -- v1.6.0: themes / device overview / self-view / API keys /
     # invite / deep think / proactive feed / fixing / browser / focus /
     # AI name / backup / undo ---------------------------------------
+    @_log_slow
     def get_themes(self):
         """Themes picker: the OLD theme is never deleted - it stays as
         "old" beside the new ones. Python only persists the id; the UI
@@ -1052,6 +1146,7 @@ class Api:
         current = _legacy.get(current, current)
         return {"themes": themes, "current": current}
 
+    @_log_slow
     def set_theme(self, theme_id):
         theme_id = str(theme_id or "").strip()
         theme_id = {"calm-light": "calm-space",
@@ -1110,16 +1205,34 @@ class Api:
 
     @_log_slow
     def get_self_view(self):
-        """LONA seeing herself inside her own program (8 rows)."""
+        """LONA seeing herself inside her own program (8 rows).
+        v1.6.2 (A5/B16): the overview is fetched ONCE here and passed
+        down as `status` -- the old code called get_mood() (which
+        re-read the monitor) and then selfview read the monitor a
+        second time."""
         if selfview_mod is None:
             return {"ok": False, "rows": []}
         try:
-            mood = self.get_mood().get("mood", "صاحي")
+            overview = self.get_device_overview().get("overview") or {}
+            mood = overview.get("mood", "صاحي")
+            # Thinking override (same rule as get_mood, without
+            # re-reading the monitor): a running turn shows "بيفكر".
+            try:
+                with _chats_lock:
+                    thinking = any(
+                        not e.get("done")
+                        and time.time() - float(e.get("created", 0)) < 180
+                        for e in _chats.values())
+                if thinking:
+                    mood = "بيفكر"
+            except Exception:
+                pass
             settings = dict(_APP.settings)
             settings["deep_file_access_granted"] = \
                 tools.is_deep_file_access_granted()
             rows = selfview_mod.get_self_view(
-                mood=mood, monitor=_APP._monitor, settings=settings)
+                mood=mood, monitor=_APP._monitor, settings=settings,
+                status=overview)
             return {"ok": True, "rows": rows}
         except Exception as exc:
             error("app", f"get_self_view failed: {exc}")
@@ -1138,6 +1251,28 @@ class Api:
             return {"ok": False, "groq": False, "gemini-voice": False,
                     "gemini-chat": False}
 
+    @_log_slow
+    def get_api_key_value(self, provider):
+        """Return the SAVED key value for one provider -- ONLY for the
+        explicit 'show' tap on an empty API-key field: the user's own
+        key, on his own device, on his own explicit tap (the same as
+        'show password' in any program). The value is NEVER logged
+        and NEVER returned by any other method: get_api_keys_status
+        stays presence-only by design, and get_status only reports
+        presence too."""
+        if apikeys_mod is None:
+            return {"ok": False, "value": None}
+        name = str(provider or "").strip().lower()
+        if name not in apikeys_mod.PROVIDER_FILES:
+            return {"ok": False, "value": None}
+        try:
+            value = apikeys_mod.read_key_value(name)
+        except Exception as exc:
+            error("app", f"get_api_key_value failed: {exc}")
+            return {"ok": False, "value": None}
+        return {"ok": True, "value": value or None}
+
+    @_log_slow
     def save_api_key(self, provider, value):
         """Save a Groq/Gemini key from Settings (never logged)."""
         if apikeys_mod is None:
@@ -1151,15 +1286,49 @@ class Api:
     @_log_slow
     def test_api_key(self, provider):
         """Tiny live validity check (15s timeout). Presence/validity
-        only - the key value is never returned or logged."""
+        only - the key value is never returned or logged. v1.6.2
+        (A4): runs in a background thread like chat() -- the bridge
+        returns {"pending": true, "id": ...} at once and the UI polls
+        get_test_api_key_result(id)."""
+        req_id = uuid.uuid4().hex[:8]
+        with _TEST_KEY_LOCK:
+            _TEST_KEY_RESULTS[req_id] = {"pending": True, "ok": False,
+                                         "valid": False, "detail": ""}
         if apikeys_mod is None:
-            return {"ok": False, "valid": False,
+            with _TEST_KEY_LOCK:
+                _TEST_KEY_RESULTS[req_id] = {
+                    "pending": False, "ok": False, "valid": False,
                     "detail": "unavailable"}
-        try:
-            return apikeys_mod.test_key(provider)
-        except Exception as exc:
-            error("app", f"test_api_key failed: {exc}")
-            return {"ok": False, "valid": False, "detail": str(exc)}
+            return {"pending": True, "id": req_id}
+
+        def _run():
+            try:
+                result = apikeys_mod.test_key(provider)
+            except Exception as exc:
+                error("app", f"test_api_key failed: {exc}")
+                result = {"ok": False, "valid": False, "detail": str(exc)}
+            with _TEST_KEY_LOCK:
+                _TEST_KEY_RESULTS[req_id] = {
+                    "pending": False,
+                    "ok": bool(result.get("ok")),
+                    "valid": bool(result.get("valid")),
+                    "detail": str(result.get("detail", ""))}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def get_test_api_key_result(self, req_id):
+        """Poll the result of a test_api_key() call."""
+        with _TEST_KEY_LOCK:
+            entry = _TEST_KEY_RESULTS.get(str(req_id or ""))
+        if not entry:
+            return {"pending": False, "ok": False, "valid": False,
+                    "detail": "unknown id"}
+        return {"pending": bool(entry.get("pending")),
+                "ok": bool(entry.get("ok")),
+                "valid": bool(entry.get("valid")),
+                "detail": str(entry.get("detail", ""))}
 
     @_log_slow
     def check_invite(self, code):
@@ -1176,6 +1345,7 @@ class Api:
             error("app", f"check_invite failed: {exc}")
             return {"ok": False, "activated": False}
 
+    @_log_slow
     def get_activation_state(self):
         if invite_mod is None:
             return {"activated": True}  # no gate when the module is missing
@@ -1184,6 +1354,7 @@ class Api:
         except Exception:
             return {"activated": False}
 
+    @_log_slow
     def set_deep_think(self, enabled):
         _APP.settings["deep_think_enabled"] = bool(enabled)
         ok = save_settings(_APP.settings)
@@ -1192,9 +1363,61 @@ class Api:
                 "deep_think_enabled": bool(_APP.settings.get(
                     "deep_think_enabled", False))}
 
+    @_log_slow
     def get_deep_think(self):
         return {"deep_think_enabled": bool(_APP.settings.get(
             "deep_think_enabled", False))}
+
+    # -- model choice (v1.6.2) -------------------------------------------
+    @_log_slow
+    def get_model_options(self):
+        """Model picker state: the saved choice + one option per
+        model with REAL availability (key present? Ollama reachable?).
+        "auto" is always available -- it is the Groq -> Gemini ->
+        Ollama chain."""
+        choice = str(_APP.settings.get("model_choice", "auto") or "auto")
+        choice = choice.strip().lower()
+        if choice not in ("auto", "groq", "gemini", "local"):
+            choice = "auto"
+        try:
+            present = keys_status()
+        except Exception:
+            present = {}
+        groq_ok = bool(present.get("groq"))
+        gemini_ok = bool(present.get("gemini-chat"))
+        try:
+            local_ok = bool(brain.ollama_available())
+        except Exception:
+            local_ok = False
+        options = [
+            {"id": "auto", "label": "تلقائي", "available": True,
+             "reason": ""},
+            {"id": "groq", "label": "Groq gpt-oss-120b",
+             "available": groq_ok,
+             "reason": "" if groq_ok else "محتاج مفتاح Groq"},
+            {"id": "gemini", "label": "Gemini 2.5 Flash",
+             "available": gemini_ok,
+             "reason": "" if gemini_ok else "محتاج مفتاح Gemini"},
+            {"id": "local", "label": "محلي Ollama Qwen 2.5 3B",
+             "available": local_ok,
+             "reason": "" if local_ok else "Ollama مش متثبت"},
+        ]
+        return {"choice": choice, "options": options}
+
+    @_log_slow
+    def set_model_choice(self, choice):
+        """Save the model choice (auto/groq/gemini/local). It applies
+        to every reply after this -- the brain reads it per turn, so
+        no restart is needed. An invalid value is refused."""
+        wanted = str(choice or "").strip().lower()
+        if wanted not in ("auto", "groq", "gemini", "local"):
+            return {"ok": False,
+                    "choice": str(_APP.settings.get("model_choice",
+                                                    "auto"))}
+        _APP.settings["model_choice"] = wanted
+        ok = save_settings(_APP.settings)
+        info("app", f"Model choice set to {wanted}")
+        return {"ok": bool(ok), "choice": wanted}
 
     @_log_slow
     def get_proactive_feed(self):
@@ -1222,19 +1445,39 @@ class Api:
         return {"set": False,
                 "detail": "مفيش موعد امتحان متسجل — ضيف مواعيدك من الإعدادات"}
 
+    @_log_slow
     def request_clean_cache(self):
         """Clean caches now (GREEN tier, user-initiated from the UI).
-        Returns the size freed. The very next device overview reflects
-        the real post-clean values (live readings, no cache)."""
-        if fixer_mod is None:
-            return {"ok": False, "error": "unavailable"}
-        try:
-            result = fixer_mod.clear_temp_files(dry_run=False)
-            return {"ok": True, **result}
-        except Exception as exc:
-            error("app", f"request_clean_cache failed: {exc}")
-            return {"ok": False, "error": str(exc)}
+        v1.6.2 (B19): runs in a background daemon thread -- the
+        bridge returns {"pending": True, "id": ...} at once and the UI
+        polls get_clean_cache_result(id). Returns the size freed."""
+        req_id = uuid.uuid4().hex[:8]
+        _APP._clean_cache_results[req_id] = {"done": False, "result": None}
 
+        def _run():
+            if fixer_mod is None:
+                out = {"ok": False, "error": "unavailable"}
+            else:
+                try:
+                    result = fixer_mod.clear_temp_files(dry_run=False)
+                    out = {"ok": True, **result}
+                except Exception as exc:
+                    error("app", f"request_clean_cache failed: {exc}")
+                    out = {"ok": False, "error": str(exc)}
+            _APP._clean_cache_results[req_id] = {"done": True,
+                                                 "result": out}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def get_clean_cache_result(self, req_id):
+        """Poll the result of a request_clean_cache() call."""
+        entry = _APP._clean_cache_results.get(str(req_id or ""), {})
+        result = entry.get("result") or {}
+        return {"done": bool(entry.get("done")), **result}
+
+    @_log_slow
     def request_deep_file_access(self, path):
         """Deep-file access (RED): starts the permission-card flow in
         a background thread (never blocks the bridge) and returns a
@@ -1253,11 +1496,13 @@ class Api:
         threading.Thread(target=_run, daemon=True).start()
         return {"pending": True, "id": req_id}
 
+    @_log_slow
     def get_deep_file_access_result(self, req_id):
         entry = _APP._deep_file_results.get(str(req_id or ""), {})
         return {"done": bool(entry.get("done")),
                 "result": entry.get("result", "")}
 
+    @_log_slow
     def browser_open_url(self, url):
         if browser_mod is None:
             return {"ok": False, "error": "unavailable"}
@@ -1268,6 +1513,7 @@ class Api:
             error("app", f"browser_open_url failed: {exc}")
             return {"ok": False, "error": str(exc)}
 
+    @_log_slow
     def focus_start(self, work_min=25, break_min=5):
         """Start focus mode: silences non-urgent alerts, runs Pomodoro,
         sets mood مركّز."""
@@ -1287,6 +1533,7 @@ class Api:
             error("app", f"focus_start failed: {exc}")
             return {"ok": False, "error": str(exc)}
 
+    @_log_slow
     def focus_stop(self):
         try:
             if _APP._companion is not None:
@@ -1302,6 +1549,7 @@ class Api:
             error("app", f"focus_stop failed: {exc}")
             return {"ok": False, "error": str(exc)}
 
+    @_log_slow
     def get_focus_state(self):
         if _APP._companion is not None:
             try:
@@ -1312,6 +1560,7 @@ class Api:
                 "phase": "", "remaining_sec": 0,
                 "work_min": 25, "break_min": 5}
 
+    @_log_slow
     def set_ai_name(self, name):
         """Rename the AI from Settings (customizable name, v1.6.0).
         The wake word re-syncs from the new name ("يا {name}") and
@@ -1333,6 +1582,7 @@ class Api:
         info("app", f"AI renamed to {cleaned} - wake phrase is now {phrase}")
         return {"ok": ok, "ai_name": cleaned, "wakeword_phrase": phrase}
 
+    @_log_slow
     def get_undoable(self):
         """Undoable autonomous-fix actions (killed processes +
         Recycle-Bin files)."""
@@ -1344,6 +1594,7 @@ class Api:
             error("app", f"get_undoable failed: {exc}")
             return {"ok": False, "entries": []}
 
+    @_log_slow
     def relaunch_undo(self, index):
         """Relaunch a killed process from the undo list."""
         if fixer_mod is None:
@@ -1359,6 +1610,7 @@ class Api:
             error("app", f"relaunch_undo failed: {exc}")
             return {"ok": False, "error": str(exc)}
 
+    @_log_slow
     def list_undoable(self):
         """Undo list, raw (the UI renders one button per entry and
         passes the entry INDEX back to relaunch_process /
@@ -1371,10 +1623,12 @@ class Api:
             error("app", f"list_undoable failed: {exc}")
             return []
 
+    @_log_slow
     def relaunch_process(self, index):
         """UI name for relaunch_undo (index into list_undoable)."""
         return self.relaunch_undo(index)
 
+    @_log_slow
     def restore_deleted(self, index):
         """Restore a file previously sent to the Recycle Bin (undo).
         Index into list_undoable()."""
@@ -1391,6 +1645,7 @@ class Api:
             error("app", f"restore_deleted failed: {exc}")
             return {"ok": False, "error": str(exc)}
 
+    @_log_slow
     def set_privacy_mode(self, enabled):
         """Privacy mode on/off (redact secrets before anything is
         sent to the AI). Persists in settings."""
@@ -1409,34 +1664,70 @@ class Api:
         """Send an attached image to Gemini 2.5 Flash (vision).
         The UI shows the 'this leaves the device' warning and the
         user confirms BEFORE calling this - that confirmation is
-        what confirmed=True means here. Returns {"ok", "reply"} so
-        the chat can show the answer (or the refusal reason)."""
+        what confirmed=True means here. v1.6.2 (A3): the Gemini call
+        (timeout=30) runs in a background daemon thread -- the bridge
+        returns {"pending": True, "id": ...} at once and the UI polls
+        get_analyze_image_result(id)."""
         try:
             import base64 as _b64
-            import image_understanding as _img
         except Exception as exc:
-            return {"ok": False, "reply": "مقدرتش أجهّز فهم الصور.",
-                    "error": str(exc)}
+            req_id = uuid.uuid4().hex[:8]
+            _APP._image_results[req_id] = {
+                "done": True,
+                "result": {"ok": False, "reply": "مقدرتش أجهّز فهم الصور.",
+                           "error": str(exc)}}
+            return {"pending": True, "id": req_id}
         try:
             raw = str(data_url or "")
             if ";base64," not in raw:
-                return {"ok": False,
-                        "reply": "الصورة مش بصيغة مفهومة — جرّب صورة تانية.",
-                        "reason": "invalid_data"}
+                req_id = uuid.uuid4().hex[:8]
+                _APP._image_results[req_id] = {
+                    "done": True,
+                    "result": {"ok": False,
+                               "reply": "الصورة مش بصيغة مفهومة — جرّب صورة تانية.",
+                               "reason": "invalid_data"}}
+                return {"pending": True, "id": req_id}
             payload = raw.split(";base64,", 1)[1]
             image_bytes = _b64.b64decode(payload, validate=False)
         except Exception as exc:
-            return {"ok": False,
-                    "reply": "مقدرتش أقرأ الصورة — جرّب صورة تانية.",
-                    "reason": "invalid_data", "error": str(exc)}
-        res = _img.send_image_to_gemini(
-            image_bytes, "اشرح اللي في الصورة دي بالعربي.",
-            confirmed=True)
-        if res.get("ok"):
-            return {"ok": True, "reply": res.get("text", "")}
-        return {"ok": False, "reply": res.get("detail", "مقدرتش أفهم الصورة."),
-                "reason": res.get("reason", "failed")}
+            req_id = uuid.uuid4().hex[:8]
+            _APP._image_results[req_id] = {
+                "done": True,
+                "result": {"ok": False,
+                           "reply": "مقدرتش أقرأ الصورة — جرّب صورة تانية.",
+                           "reason": "invalid_data", "error": str(exc)}}
+            return {"pending": True, "id": req_id}
+        req_id = uuid.uuid4().hex[:8]
+        _APP._image_results[req_id] = {"done": False, "result": None}
 
+        def _run():
+            try:
+                import image_understanding as _img
+                res = _img.send_image_to_gemini(
+                    image_bytes, "اشرح اللي في الصورة دي بالعربي.",
+                    confirmed=True)
+                if res.get("ok"):
+                    out = {"ok": True, "reply": res.get("text", "")}
+                else:
+                    out = {"ok": False,
+                           "reply": res.get("detail", "مقدرتش أفهم الصورة."),
+                           "reason": res.get("reason", "failed")}
+            except Exception as exc:
+                out = {"ok": False, "reply": "مقدرتش أجهّز فهم الصور.",
+                       "error": str(exc)}
+            _APP._image_results[req_id] = {"done": True, "result": out}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def get_analyze_image_result(self, req_id):
+        """Poll the result of an analyze_image() call."""
+        entry = _APP._image_results.get(str(req_id or ""), {})
+        result = entry.get("result") or {}
+        return {"done": bool(entry.get("done")), **result}
+
+    @_log_slow
     def export_backup(self, path, password):
         """Export settings + encrypted keys (password from the UI -
         never logged, never stored)."""
@@ -1447,6 +1738,7 @@ class Api:
             error("app", f"export_backup failed: {exc}")
             return {"ok": False, "detail": str(exc)}
 
+    @_log_slow
     def import_backup(self, path, password):
         """Import a settings backup (password from the UI - never
         logged). On success the live settings are reloaded."""
@@ -1463,22 +1755,42 @@ class Api:
     @_log_slow
     def understand_image(self, image_path, prompt, confirmed=False):
         """Image/screenshot understanding (Gemini vision). Refused
-        unless confirmed=True (the UI warning + the user's yes)."""
-        try:
-            result = tools.execute_tool("understand_image", {
-                "image_path": str(image_path or ""),
-                "prompt": str(prompt or ""),
-                "confirmed": bool(confirmed)})
-            return {"ok": True, "text": result}
-        except Exception as exc:
-            error("app", f"understand_image failed: {exc}")
-            return {"ok": False, "text": str(exc)}
+        unless confirmed=True (the UI warning + the user's yes).
+        v1.6.2 (A3): the Gemini call runs in a background daemon
+        thread -- the bridge returns {"pending": True, "id": ...} at
+        once and the UI polls get_understand_image_result(id)."""
+        req_id = uuid.uuid4().hex[:8]
+        _APP._image_results[req_id] = {"done": False, "result": None}
+
+        def _run():
+            try:
+                result = tools.execute_tool("understand_image", {
+                    "image_path": str(image_path or ""),
+                    "prompt": str(prompt or ""),
+                    "confirmed": bool(confirmed)})
+                out = {"ok": True, "text": result}
+            except Exception as exc:
+                error("app", f"understand_image failed: {exc}")
+                out = {"ok": False, "text": str(exc)}
+            _APP._image_results[req_id] = {"done": True, "result": out}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def get_understand_image_result(self, req_id):
+        """Poll the result of an understand_image() call."""
+        entry = _APP._image_results.get(str(req_id or ""), {})
+        result = entry.get("result") or {}
+        return {"done": bool(entry.get("done")), **result}
 
     # -- windows -----------------------------------------------------------
+    @_log_slow
     def open_main(self):
         _APP.show_main()
         return {"ok": True}
 
+    @_log_slow
     def island_resize(self, w, h):
         # v1.2.3: the island animates its window size (idle compact <->
         # full pill <-> expanded reply). Keep it centered at the top.
@@ -1494,6 +1806,7 @@ class Api:
             error("ui", f"Could not resize island: {exc}")
         return {"ok": True}
 
+    @_log_slow
     def minimize_to_island(self):
         # v1.4.1: the island is gone - this now hides the main window
         # to the system tray (MemoApp.hide_main branches on the flag).
@@ -1501,6 +1814,7 @@ class Api:
         _APP.hide_main()
         return {"ok": True}
 
+    @_log_slow
     def toggle_pet(self, visible=None):
         # v1.4.1: the pet is disabled - no pet window exists to show.
         if not _APP.settings.get("pet_enabled", False):
@@ -1512,6 +1826,7 @@ class Api:
         _APP.apply_pet_visibility()
         return {"visible": bool(visible)}
 
+    @_log_slow
     def set_pet_bubble(self, on):
         """The pet page shows/hides the "مياو!" bubble: the window region
         must include the bubble zone only while it is visible (v1.3.1)."""
@@ -1521,6 +1836,7 @@ class Api:
         _APP.set_pet_bubble(bool(on))
         return {"ok": True}
 
+    @_log_slow
     def park_pet(self):
         # v1.4.1: the pet is disabled - no-op.
         if not _APP.settings.get("pet_enabled", False):
@@ -1530,6 +1846,7 @@ class Api:
         _APP.park_pet()
         return {"ok": True}
 
+    @_log_slow
     def mark_parked(self):
         """Pet was dragged to a screen edge: save parked state (no move)."""
         # v1.4.1: the pet is disabled - no-op.
@@ -1541,6 +1858,7 @@ class Api:
         info("pet", "Pet parked at a screen edge - playing with the ball")
         return {"ok": True}
 
+    @_log_slow
     def unpark_pet(self):
         """Pet dragged away (or double-clicked) while parked: resume roaming."""
         # v1.4.1: the pet is disabled - no-op.
@@ -1552,6 +1870,7 @@ class Api:
         info("pet", "Pet unparked - roaming resumed")
         return {"ok": True}
 
+    @_log_slow
     def pet_interaction(self, kind):
         # v1.4.1: the pet is disabled - no-op (nothing to log).
         if not _APP.settings.get("pet_enabled", False):
@@ -1563,7 +1882,41 @@ class Api:
     # -- in-app updates (v1.2) ---------------------------------------------
     @_log_slow
     def check_updates(self):
-        return updater.check_update()
+        """v1.6.2 (A2): the manifest fetch (up to 3x15s + sleeps) runs
+        in a background thread -- this returns {"checking": true} at
+        once and never blocks the bridge. The UI polls
+        get_check_updates_result()."""
+        with _CHECK_UPDATES_LOCK:
+            if _CHECK_UPDATES["checking"]:
+                return {"checking": True}
+            _CHECK_UPDATES.update({"checking": True, "update": None,
+                                   "error": None})
+
+        def _run():
+            try:
+                result = updater.check_update()
+                with _CHECK_UPDATES_LOCK:
+                    _CHECK_UPDATES.update({"checking": False,
+                                           "update": result, "error": None})
+            except Exception as exc:
+                error("update", f"check_updates failed: {exc}")
+                with _CHECK_UPDATES_LOCK:
+                    _CHECK_UPDATES.update({"checking": False,
+                                           "update": None,
+                                           "error": str(exc)})
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"checking": True}
+
+    @_log_slow
+    def get_check_updates_result(self):
+        """Poll the result of a check_updates() call: {"checking",
+        "update" (the dict check_update() used to return, or None),
+        "error" (or None)}."""
+        with _CHECK_UPDATES_LOCK:
+            return {"checking": bool(_CHECK_UPDATES["checking"]),
+                    "update": _CHECK_UPDATES["update"],
+                    "error": _CHECK_UPDATES["error"]}
 
     @_log_slow
     def get_update_progress(self):
@@ -1571,6 +1924,7 @@ class Api:
         (downloaded/total/percent/state) to render the progress bar."""
         return updater.get_progress()
 
+    @_log_slow
     def download_update(self):
         """v1.4.3: download ONLY - the UI polls get_update_progress()
         until state is "downloaded", then shows the Install-now /
@@ -1581,11 +1935,13 @@ class Api:
         threading.Thread(target=_run, daemon=True).start()
         return {"ok": True, "downloading": True}
 
+    @_log_slow
     def get_downloaded_update(self):
         """v1.4.3: the saved downloaded-but-not-installed update
         (version/kind/path/valid/remind), or {"downloaded": False}."""
         return updater.get_downloaded_update()
 
+    @_log_slow
     def dismiss_update_reminder(self):
         """v1.4.3: "Install later" - record that the reminder was shown
         today so it pops at most once a day (the UI also keeps a
@@ -1593,6 +1949,7 @@ class Api:
         updater.mark_reminder_shown()
         return {"ok": True}
 
+    @_log_slow
     def install_update(self):
         """v1.4.3: "Install now" - installs ONLY an already-downloaded
         update (see updater.apply_downloaded). If the saved file is
@@ -1625,6 +1982,7 @@ class Api:
         threading.Thread(target=_run, daemon=True).start()
         return {"ok": True, "installing": True}
 
+    @_log_slow
     def move_pet(self, x, y):
         # v1.4.1: the pet is disabled - there is no pet window at all.
         if not _APP.settings.get("pet_enabled", False):
@@ -1642,22 +2000,80 @@ class Api:
             error("ui", f"Could not move pet window: {exc}")
         return {"ok": True}
 
+    @_log_slow
     def open_portfolio(self):
         webbrowser.open("https://mohamed5946.github.io/portfolio/")
         return {"ok": True}
 
+    @_log_slow
     def open_github(self):
         # v1.4.1: the About section's GitHub button (public info only,
         # same as the "who is the developer?" answer).
         webbrowser.open("https://github.com/mohamed5946")
         return {"ok": True}
 
+    # -- frameless main-window controls (v1.6.2 item 3) -------------------
+    # The main window is frameless (no native title bar); the in-app
+    # header owns these. The island is a separate window and is never
+    # touched by any of them.
+    @_log_slow
+    def window_minimize(self):
+        """Minimize the main window to the taskbar."""
+        try:
+            if _APP.main_window is not None:
+                _APP.main_window.minimize()
+            return {"ok": True}
+        except Exception as exc:
+            error("app", f"window_minimize failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    @_log_slow
+    def window_toggle_maximize(self):
+        """Toggle the main window between maximized and restored.
+        Returns {"maximized": bool} -- the state AFTER the toggle."""
+        try:
+            if _APP.main_window is not None:
+                if _APP._main_maximized:
+                    _APP.main_window.restore()
+                    _APP._main_maximized = False
+                else:
+                    _APP.main_window.maximize()
+                    _APP._main_maximized = True
+            return {"maximized": bool(_APP._main_maximized)}
+        except Exception as exc:
+            error("app", f"window_toggle_maximize failed: {exc}")
+            return {"maximized": bool(_APP._main_maximized),
+                    "ok": False, "error": str(exc)}
+
+    @_log_slow
+    def window_close(self):
+        """Close the program -- exactly the same path as the old
+        quit_app() (background quit thread, tray stopped first)."""
+        info("app", "Close requested from the frameless header")
+        threading.Thread(target=_APP.quit, daemon=True).start()
+        return {"ok": True}
+
+    @_log_slow
+    def window_move_to(self, x, y):
+        """Move the main window so its top-left corner lands at
+        (x, y) screen coordinates. The frontend header computes the
+        coordinates from the grab offset while dragging."""
+        try:
+            if _APP.main_window is not None:
+                _APP.main_window.move(int(x), int(y))
+            return {"ok": True, "x": int(x), "y": int(y)}
+        except Exception as exc:
+            error("app", f"window_move_to failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
+    @_log_slow
     def quit_app(self):
         info("app", "Quit requested from inside the app")
         threading.Thread(target=_APP.quit, daemon=True).start()
         return {"ok": True}
 
     # -- logs --------------------------------------------------------------
+    @_log_slow
     def log_js(self, message):
         # Browser-engine probe: the UI pages send navigator.userAgent on
         # load so the log shows which engine draws the windows (WebView2
@@ -1674,13 +2090,16 @@ class Api:
             pass
         return {"ok": True}
 
+    @_log_slow
     def get_logs(self):
         return {"logs": read_recent(200)}
 
+    @_log_slow
     def get_log_text(self):
         return {"text": log_text(200)}
 
     # -- long-term memory (v1.4.2) -----------------------------------------
+    @_log_slow
     def get_memory(self):
         """Everything the brain remembers (for the Settings Memory
         section): facts, learned rules, style profile, routines and the
@@ -1699,6 +2118,7 @@ class Api:
             return {"ok": False, "facts": [], "rules": [], "style": {},
                     "routines": [], "summary": ""}
 
+    @_log_slow
     def delete_memory_item(self, kind, item_id):
         """Delete one memory (kind: fact|rule|routine) from Settings."""
         try:
@@ -1717,6 +2137,7 @@ class Api:
             error("app", f"delete_memory_item failed: {exc}")
             return {"ok": False}
 
+    @_log_slow
     def clear_memory(self):
         """Wipe ALL memories (Settings Memory section)."""
         try:
@@ -1728,6 +2149,7 @@ class Api:
             return {"ok": False}
 
     # -- system alerts (v1.4.2) --------------------------------------------
+    @_log_slow
     def get_alerts(self):
         """Recent system/notification alerts for the in-app banner.
         The UI polls this and renders unseen ids."""
@@ -1761,36 +2183,61 @@ class Api:
                 "temp_available": bool((status or {}).get("temp_available")),
                 "settings": {k: _APP.settings.get(k) for k in keys}}
 
+    @_log_slow
     def save_monitor_settings(self, payload):
         """Save monitor thresholds/toggles from Settings; restart the
-        background monitor so the new thresholds apply at once."""
+        background monitor so the new thresholds apply at once.
+        v1.6.2 (B18): the monitor stop/start joins (up to ~4s) run in
+        a background thread -- the bridge returns {"pending": True,
+        "id": ...} at once and the UI polls get_settings_save_result(id)."""
         try:
             data = json.loads(payload) if isinstance(payload, str) else payload
         except Exception as exc:
             error("app", f"Bad monitor settings payload: {exc}")
-            return {"ok": False}
-        keys = ("monitor_enabled", "monitor_ram_free_mb",
-                "monitor_ram_percent", "monitor_disk_free_gb",
-                "monitor_disk_percent_free", "monitor_temp_warn_c",
-                "monitor_temp_critical_c", "monitor_cpu_sustained_percent",
-                "monitor_cpu_sustained_minutes",
-                "monitor_battery_warn_percent",
-                "monitor_battery_critical_percent", "monitor_cooldown_min",
-                "monitor_alert_in_app", "monitor_alert_toast")
-        for key in keys:
-            if key in data:
-                _APP.settings[key] = data[key]
-        ok = save_settings(_APP.settings)
-        try:
-            if _APP._monitor is not None:
-                _APP._monitor.stop()
-                _APP._monitor = None
-            _APP._start_monitor()
-        except Exception as exc:
-            warn("app", f"Monitor restart after save failed: {exc}")
-        return {"ok": ok}
+            req_id = uuid.uuid4().hex[:8]
+            _APP._settings_save_results[req_id] = {
+                "done": True, "result": {"ok": False}}
+            return {"pending": True, "id": req_id}
+        req_id = uuid.uuid4().hex[:8]
+        _APP._settings_save_results[req_id] = {"done": False, "result": None}
+
+        def _run():
+            keys = ("monitor_enabled", "monitor_ram_free_mb",
+                    "monitor_ram_percent", "monitor_disk_free_gb",
+                    "monitor_disk_percent_free", "monitor_temp_warn_c",
+                    "monitor_temp_critical_c", "monitor_cpu_sustained_percent",
+                    "monitor_cpu_sustained_minutes",
+                    "monitor_battery_warn_percent",
+                    "monitor_battery_critical_percent", "monitor_cooldown_min",
+                    "monitor_alert_in_app", "monitor_alert_toast")
+            for key in keys:
+                if key in data:
+                    _APP.settings[key] = data[key]
+            ok = save_settings(_APP.settings)
+            try:
+                if _APP._monitor is not None:
+                    _APP._monitor.stop()
+                    _APP._monitor = None
+                _APP._start_monitor()
+            except Exception as exc:
+                warn("app", f"Monitor restart after save failed: {exc}")
+            _APP._settings_save_results[req_id] = {
+                "done": True, "result": {"ok": bool(ok)}}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def get_settings_save_result(self, req_id):
+        """Poll the result of a save_monitor_settings() /
+        save_notification_settings() call."""
+        entry = _APP._settings_save_results.get(str(req_id or ""), {})
+        result = entry.get("result") or {}
+        return {"done": bool(entry.get("done")),
+                "ok": bool(result.get("ok"))}
 
     # -- important notifications (v1.4.2) -----------------------------------
+    @_log_slow
     def get_notification_status(self):
         """Notification-listener state for the Settings section: whether
         the listener is available, whether access was granted, and the
@@ -1806,32 +2253,48 @@ class Api:
                 "apps": list(_APP.settings.get("notifications_important_apps", [])),
                 "keywords": list(_APP.settings.get("notifications_keywords", []))}
 
+    @_log_slow
     def save_notification_settings(self, payload):
         """Save the notification filter lists / toggle; restart the
-        watcher so the new filters apply at once."""
+        watcher so the new filters apply at once. v1.6.2 (B18): the
+        watcher stop/start joins run in a background thread -- the
+        bridge returns {"pending": True, "id": ...} at once and the UI
+        polls get_settings_save_result(id)."""
         try:
             data = json.loads(payload) if isinstance(payload, str) else payload
         except Exception as exc:
             error("app", f"Bad notification settings payload: {exc}")
-            return {"ok": False}
-        if "enabled" in data:
-            _APP.settings["notifications_enabled"] = bool(data["enabled"])
-        if isinstance(data.get("apps"), list):
-            _APP.settings["notifications_important_apps"] = [
-                str(a).strip() for a in data["apps"] if str(a).strip()]
-        if isinstance(data.get("keywords"), list):
-            _APP.settings["notifications_keywords"] = [
-                str(k).strip() for k in data["keywords"] if str(k).strip()]
-        ok = save_settings(_APP.settings)
-        try:
-            if _APP._notif_watcher is not None:
-                _APP._notif_watcher.stop()
-                _APP._notif_watcher = None
-            _APP._start_notifications()
-        except Exception as exc:
-            warn("app", f"Notification watcher restart failed: {exc}")
-        return {"ok": ok}
+            req_id = uuid.uuid4().hex[:8]
+            _APP._settings_save_results[req_id] = {
+                "done": True, "result": {"ok": False}}
+            return {"pending": True, "id": req_id}
+        req_id = uuid.uuid4().hex[:8]
+        _APP._settings_save_results[req_id] = {"done": False, "result": None}
 
+        def _run():
+            if "enabled" in data:
+                _APP.settings["notifications_enabled"] = bool(data["enabled"])
+            if isinstance(data.get("apps"), list):
+                _APP.settings["notifications_important_apps"] = [
+                    str(a).strip() for a in data["apps"] if str(a).strip()]
+            if isinstance(data.get("keywords"), list):
+                _APP.settings["notifications_keywords"] = [
+                    str(k).strip() for k in data["keywords"] if str(k).strip()]
+            ok = save_settings(_APP.settings)
+            try:
+                if _APP._notif_watcher is not None:
+                    _APP._notif_watcher.stop()
+                    _APP._notif_watcher = None
+                _APP._start_notifications()
+            except Exception as exc:
+                warn("app", f"Notification watcher restart failed: {exc}")
+            _APP._settings_save_results[req_id] = {
+                "done": True, "result": {"ok": bool(ok)}}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
     def request_notification_access(self):
         """Ask Windows for notification-listener access (Settings
         button). Starts the watcher flow in a background thread and
@@ -1844,6 +2307,7 @@ class Api:
             return {"ok": False, "started": False, "detail": str(exc)}
 
     # -- WhatsApp linking (v1.4.0) ----------------------------------------
+    @_log_slow
     def get_whatsapp_status(self):
         """Link state for the Settings UI (status + QR + masked number).
         The brain reads the same state via whatsapp.get_state() to answer
@@ -1855,61 +2319,135 @@ class Api:
                     "error": "WhatsApp module not available in this build"}
         return whatsapp_mod.get_state()
 
+    @_log_slow
     def whatsapp_save(self, payload):
         """Save WhatsApp settings from the UI: {enabled, owner_phone}.
         Starts/stops the sidecar to match. (Api.save_settings and its
-        key whitelist are untouched by v1.4.0 - this is a separate path.)"""
+        key whitelist are untouched by v1.4.0 - this is a separate path.)
+        v1.6.2 (B18): the whole save -- including the disable path's
+        stop_service() (up to 5s) -- runs in a background thread; the
+        bridge returns {"pending": True, "id": ...} at once and the UI
+        polls get_whatsapp_save_result(id)."""
         if whatsapp_mod is None:
-            return {"ok": False, "error": "WhatsApp module not available"}
+            req_id = uuid.uuid4().hex[:8]
+            _APP._whatsapp_save_results[req_id] = {
+                "done": True,
+                "result": {"ok": False,
+                           "error": "WhatsApp module not available"}}
+            return {"pending": True, "id": req_id}
         try:
             data = json.loads(payload) if isinstance(payload, str) else payload
         except Exception as exc:
             error("app", f"Bad WhatsApp settings payload: {exc}")
-            return {"ok": False}
-        if "enabled" in data:
-            _APP.settings["whatsapp_enabled"] = bool(data["enabled"])
-        if "owner_phone" in data:
-            _APP.settings["whatsapp_owner_phone"] = \
-                whatsapp_mod.normalize_number(str(data["owner_phone"]))
-        ok = save_settings(_APP.settings)
-        if _APP.settings.get("whatsapp_enabled", False):
-            svc = whatsapp_mod.ensure_started(_APP.settings)
-            if svc is None or not svc.start():
-                return {"ok": False,
-                        "error": "could not start WhatsApp sidecar (see log)",
-                        "state": whatsapp_mod.get_state()}
-        else:
-            whatsapp_mod.stop_service()
-        return {"ok": ok, "state": whatsapp_mod.get_state()}
+            req_id = uuid.uuid4().hex[:8]
+            _APP._whatsapp_save_results[req_id] = {
+                "done": True, "result": {"ok": False}}
+            return {"pending": True, "id": req_id}
+        req_id = uuid.uuid4().hex[:8]
+        _APP._whatsapp_save_results[req_id] = {"done": False, "result": None}
 
+        def _run():
+            if "enabled" in data:
+                _APP.settings["whatsapp_enabled"] = bool(data["enabled"])
+            if "owner_phone" in data:
+                _APP.settings["whatsapp_owner_phone"] = \
+                    whatsapp_mod.normalize_number(str(data["owner_phone"]))
+            ok = save_settings(_APP.settings)
+            if _APP.settings.get("whatsapp_enabled", False):
+                svc = whatsapp_mod.ensure_started(_APP.settings)
+                if svc is None or not svc.start():
+                    out = {"ok": False,
+                           "error": "could not start WhatsApp sidecar (see log)",
+                           "state": whatsapp_mod.get_state()}
+                else:
+                    out = {"ok": ok, "state": whatsapp_mod.get_state()}
+            else:
+                whatsapp_mod.stop_service()
+                out = {"ok": ok, "state": whatsapp_mod.get_state()}
+            _APP._whatsapp_save_results[req_id] = {"done": True,
+                                                   "result": out}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def get_whatsapp_save_result(self, req_id):
+        """Poll the result of a whatsapp_save() call."""
+        entry = _APP._whatsapp_save_results.get(str(req_id or ""), {})
+        result = entry.get("result") or {}
+        return {"done": bool(entry.get("done")), **result}
+
+    @_log_slow
     def whatsapp_disconnect(self):
-        """Log out + wipe the session (fresh QR next time)."""
-        if whatsapp_mod is None:
-            return {"ok": False}
-        svc = whatsapp_mod.get_service()
-        if svc is not None:
-            svc.logout()
-        return {"ok": True}
+        """Log out + wipe the session (fresh QR next time). v1.6.2
+        (B18): logout waits on the sidecar (up to 15s), so it runs in
+        a background thread -- the bridge returns {"pending": True,
+        "id": ...} at once and the UI polls
+        get_whatsapp_action_result(id)."""
+        req_id = uuid.uuid4().hex[:8]
+        _APP._whatsapp_action_results[req_id] = {"done": False,
+                                                 "result": None}
 
+        def _run():
+            if whatsapp_mod is None:
+                out = {"ok": False}
+            else:
+                svc = whatsapp_mod.get_service()
+                if svc is not None:
+                    svc.logout()
+                out = {"ok": True}
+            _APP._whatsapp_action_results[req_id] = {"done": True,
+                                                     "result": out}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
     def whatsapp_relink(self):
         """v1.4.3: clean re-link in one click (used by the degraded
         WhatsApp state): log out + wipe the broken session keys, then
         start the sidecar again so a fresh QR appears. The old keys
         are gone either way — even if the restart itself fails, the
         next enable/start shows a fresh QR instead of reusing the
-        undecryptable session."""
-        if whatsapp_mod is None:
-            return {"ok": False, "error": "WhatsApp module not available"}
-        svc = whatsapp_mod.get_service()
-        if svc is not None:
-            svc.logout()
-        if _APP.settings.get("whatsapp_enabled", False):
-            svc = whatsapp_mod.ensure_started(_APP.settings)
-            if svc is None:
-                return {"ok": False,
-                        "error": "could not start WhatsApp sidecar (see log)",
-                        "state": whatsapp_mod.get_state()}
-        return {"ok": True, "state": whatsapp_mod.get_state()}
+        undecryptable session. v1.6.2 (B18): background thread + poll
+        (same shape as whatsapp_disconnect)."""
+        req_id = uuid.uuid4().hex[:8]
+        _APP._whatsapp_action_results[req_id] = {"done": False,
+                                                 "result": None}
+
+        def _run():
+            if whatsapp_mod is None:
+                out = {"ok": False,
+                       "error": "WhatsApp module not available"}
+            else:
+                svc = whatsapp_mod.get_service()
+                if svc is not None:
+                    svc.logout()
+                if _APP.settings.get("whatsapp_enabled", False):
+                    svc = whatsapp_mod.ensure_started(_APP.settings)
+                    if svc is None:
+                        out = {"ok": False,
+                               "error": "could not start WhatsApp sidecar (see log)",
+                               "state": whatsapp_mod.get_state()}
+                    else:
+                        out = {"ok": True,
+                               "state": whatsapp_mod.get_state()}
+                else:
+                    out = {"ok": True,
+                           "state": whatsapp_mod.get_state()}
+            _APP._whatsapp_action_results[req_id] = {"done": True,
+                                                     "result": out}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def get_whatsapp_action_result(self, req_id):
+        """Poll the result of a whatsapp_disconnect() /
+        whatsapp_relink() call."""
+        entry = _APP._whatsapp_action_results.get(str(req_id or ""), {})
+        result = entry.get("result") or {}
+        return {"done": bool(entry.get("done")), **result}
 
 
 class MemoApp:
@@ -1937,6 +2475,18 @@ class MemoApp:
         # (created in run() - best effort like the monitor).
         self._companion = None
         self._deep_file_results: dict = {}
+        # v1.6.2: background-task results for the async bridge methods
+        # (same pending/id + poll shape as _deep_file_results):
+        # image understanding, cache cleaning, settings saves,
+        # WhatsApp actions. Each entry: {"done": bool, "result": ...}.
+        self._image_results: dict = {}
+        self._clean_cache_results: dict = {}
+        self._settings_save_results: dict = {}
+        self._whatsapp_action_results: dict = {}
+        self._whatsapp_save_results: dict = {}
+        # v1.6.2: the Chrome native-host client (extension bridge),
+        # started in run() on a background thread (None = not started).
+        self._native_host_client = None
         # v1.5: wake-word listener (created in run() when enabled -
         # best effort like the monitor; None = never started / module
         # missing). _speaking_until is the mic guard: while the app is
@@ -1949,6 +2499,11 @@ class MemoApp:
         self.api = Api()
         self.main_window = None
         self.island_window = None
+        # v1.6.2: frameless main window -- pywebview exposes no
+        # "is maximized" query, so the toggle tracks it here. It can
+        # desync if the user maximizes some other way (Win+Up); the
+        # header button is the normal path, so this stays correct.
+        self._main_maximized = False
         self.pet_window = None
         self._quitting = False
         self._briefed = False
@@ -2313,7 +2868,10 @@ class MemoApp:
                 deep_think=bool(self.settings.get(
                     "deep_think_enabled", False)),
                 privacy_mode=self.settings.get("privacy_mode", True),
-                self_view=self_view)
+                self_view=self_view,
+                # v1.6.2: the saved model choice (auto = the chain,
+                # anything else = that model only, strict).
+                model_choice=self.settings.get("model_choice", "auto"))
         except Exception as exc:
             error("brain", f"Tool chat failed: {exc}")
             result = {"reply": "حصلت مشكلة وأنا بنفذ، جرّب تاني.",
@@ -2371,8 +2929,37 @@ class MemoApp:
         except Exception as exc:
             warn("app", f"Alert delivery failed: {exc}")
 
+    def _start_native_host(self) -> None:
+        """Chrome-extension native host (v1.6.2 re-wire). Starts the
+        listener on a background thread and hands the shared client
+        to native_host so browser_control.send_command() and
+        selfview's is_connected probe work end-to-end. Best effort:
+        a missing/broken native_host module never blocks startup."""
+        if native_host_mod is None:
+            return
+        if self._native_host_client is not None:
+            return
+
+        def _run():
+            try:
+                client = native_host_mod.start_native_host_listener()
+                if client is not None:
+                    native_host_mod.set_shared_client(client)
+                    self._native_host_client = client
+                    info("app", "Native host listener started "
+                                "(extension bridge live)")
+            except Exception as exc:
+                warn("app", f"Native host listener failed: {exc}")
+
+        threading.Thread(target=_run, daemon=True).start()
+
     def _start_monitor(self) -> None:
         """Background system monitor (v1.4.2). Best effort."""
+        # v1.6.2 (A5): idempotent -- run() warms the monitor BEFORE
+        # the first window, and the settings-save path restarts it;
+        # a second start while one is alive is a no-op.
+        if self._monitor is not None:
+            return
         if not self.settings.get("monitor_enabled", True):
             info("app", "System monitor disabled in settings")
             return
@@ -2772,6 +3359,14 @@ class MemoApp:
                 self._companion.stop()
             except Exception:
                 pass
+        # v1.6.2: close the Chrome-extension native-host client
+        # (best effort -- the listener thread is a daemon).
+        if self._native_host_client is not None:
+            try:
+                self._native_host_client.close()
+            except Exception:
+                pass
+            self._native_host_client = None
         # v1.5: stop the wake-word listener (closes the mic).
         try:
             self.stop_wakeword()
@@ -2850,6 +3445,26 @@ class MemoApp:
         if self.settings.get("pet_enabled", False):
             self._apply_pet_default_migration()
         autostart.apply_on_startup(self.settings.get("autostart", True))
+        # v1.6.2 (A5/B17): warm the background services BEFORE any
+        # window exists -- the monitor sampler feeds its cache and the
+        # connectivity watcher probes once, so the first paint already
+        # has live numbers and get_status() never samples on the
+        # bridge. Neither may block startup (both are best-effort).
+        try:
+            self._start_monitor()
+        except Exception as exc:
+            warn("app", f"System monitor did not start: {exc}")
+        try:
+            brain.start_online_watcher()
+        except Exception:
+            pass
+        # v1.6.2: Chrome-extension native host (re-wire) -- the
+        # listener runs on its own thread; the shared client lets
+        # browser_control.send_command() reach the extension.
+        try:
+            self._start_native_host()
+        except Exception as exc:
+            warn("app", f"Native host did not start: {exc}")
         # v1.3.1 second-launch focus: create the named event FIRST, so a
         # second instance can signal the running one to show its window
         # instead of exiting silently (which made the user think the app
@@ -2894,8 +3509,12 @@ class MemoApp:
             self.island_window = webview.create_window(
                 "LONA", str(ui_dir / "island.html"),
                 width=ISLAND_IDLE_W, height=ISLAND_IDLE_H, x=island_x, y=12,
-                frameless=True, transparent=False, on_top=True,
-                resizable=False, background_color=ISLAND_BG, js_api=self.api)
+                # v1.6.2 (F4): transparent window -- only the pill
+                # shows, no dark rectangle around it. ISLAND_BG is the
+                # pill's own CSS color (in island.html), never the
+                # window background. NEVER a chroma-key color here.
+                frameless=True, transparent=True, on_top=True,
+                resizable=False, js_api=self.api)
         # v1.4.1: the main window opens DIRECTLY at startup (hidden only
         # while the island is enabled - the old morph opened it from the
         # pill). min_size=(640,520): the morph to a 190x52 pill is gone
@@ -2907,6 +3526,12 @@ class MemoApp:
             width=MAIN_W, height=MAIN_H,
             hidden=self.settings.get("island_enabled", False)
             and not not_activated,
+            # v1.6.2: frameless main window (item 3) -- no native
+            # title bar; the in-app header owns the window controls
+            # (window_minimize / window_toggle_maximize / window_close)
+            # and dragging (window_move_to). The island is a separate
+            # window and is untouched by this.
+            frameless=True, resizable=True,
             min_size=(640, 520), js_api=self.api)
         if not self.settings.get("island_enabled", False) or not_activated:
             # The window starts visible: _main_visible must agree, or
@@ -2944,12 +3569,9 @@ class MemoApp:
             warn("app", f"Could not start system tray: {exc}")
 
         threading.Thread(target=self.morning_briefing, daemon=True).start()
-        # v1.4.2: background system monitor + important-notification
-        # watcher (best effort - neither may block startup or crash it).
-        try:
-            self._start_monitor()
-        except Exception as exc:
-            warn("app", f"System monitor did not start: {exc}")
+        # v1.4.2: important-notification watcher (best effort - it may
+        # not block startup or crash it). The system monitor already
+        # started above, before the first window (v1.6.2 A5).
         try:
             self._start_notifications()
         except Exception as exc:

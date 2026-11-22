@@ -5,6 +5,7 @@
 # option on 8 GB RAM until a bigger model / RAM upgrade).
 
 import tempfile
+import threading
 import wave
 from pathlib import Path
 
@@ -14,6 +15,25 @@ from settings_store import read_key
 DURATION = 5
 RATE = 16000
 LOCAL_MODEL = "small"
+# v1.6.2 (A1): explicit timeout for the Groq Whisper call (was unbounded).
+_GROQ_TIMEOUT_SEC = 30.0
+
+# v1.6.2 (A1): ONE cached local Whisper model for the process lifetime.
+# Rebuilding WhisperModel per call re-loaded the weights every time;
+# the cache is built once, on the background thread that calls listen().
+_LOCAL_MODEL_LOCK = threading.Lock()
+_LOCAL_MODEL = None
+
+
+def _get_local_model():
+    """The shared faster-whisper model (built once, lazily)."""
+    global _LOCAL_MODEL
+    with _LOCAL_MODEL_LOCK:
+        if _LOCAL_MODEL is None:
+            from faster_whisper import WhisperModel
+            _LOCAL_MODEL = WhisperModel(LOCAL_MODEL, device="cpu",
+                                        compute_type="int8")
+        return _LOCAL_MODEL
 
 
 def _record_wav(seconds: int = DURATION) -> Path:
@@ -38,7 +58,7 @@ def _groq_transcribe(wav_path: Path, language: str = "ar") -> str:
     api_key = read_key("groq-key.txt")
     if not api_key:
         raise RuntimeError("no-groq-key")
-    client = Groq(api_key=api_key)
+    client = Groq(api_key=api_key, timeout=_GROQ_TIMEOUT_SEC)
     with open(wav_path, "rb") as f:
         result = client.audio.transcriptions.create(
             file=("memo-ai-voice.wav", f.read()),
@@ -51,14 +71,14 @@ def _groq_transcribe(wav_path: Path, language: str = "ar") -> str:
 
 def _local_transcribe(wav_path: Path, language: str = "ar") -> str:
     import numpy as np
-    from faster_whisper import WhisperModel
 
     info("hear", "Transcribing locally with faster-whisper small...")
     # Pass the raw samples directly (skips the av/PyAV decoder path).
     with wave.open(str(wav_path), "rb") as wf:
         frames = wf.readframes(wf.getnframes())
     audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-    model = WhisperModel(LOCAL_MODEL, device="cpu", compute_type="int8")
+    # v1.6.2 (A1): the cached model, never rebuilt per call.
+    model = _get_local_model()
     segments, _info = model.transcribe(audio, language=language)
     return "".join(seg.text for seg in segments).strip()
 

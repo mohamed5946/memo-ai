@@ -90,7 +90,7 @@ class TestLidSenderIdentification(unittest.TestCase):
             captured = {}
 
             def fake_ask(text, ai_name, user_name, lang, history=None,
-                         owner_unlocked=False):
+                         owner_unlocked=False, model_choice="auto"):
                 captured["owner_unlocked"] = owner_unlocked
                 return {"reply": "تمام.", "engine": "groq",
                         "tools_used": 0, "tools_disabled": False}

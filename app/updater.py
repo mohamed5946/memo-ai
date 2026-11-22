@@ -286,6 +286,122 @@ def _sha256_file(path: Path) -> str | None:
         return None
 
 
+# v1.6.2 (A8): SHA recompute happens at most once per file version.
+# The download stores verified:true + size + mtime; a later read
+# compares size/mtime on disk ONLY and trusts the stored SHA when
+# they match. When they differ, the SHA is recomputed ONCE on a
+# background thread and cached here (and persisted back into the
+# state file when it matches), so the bridge never waits on a hash
+# of a multi-MB file.
+_SHA_CACHE: dict = {"path": "", "size": None, "mtime": None, "sha": None}
+_SHA_LOCK = threading.Lock()
+_SHA_RECOMPUTE_RUNNING: set = set()
+
+
+def _stat_matches(state: dict, path: Path) -> bool:
+    """True when the file on disk still has the size + mtime the
+    download recorded -- i.e. it is byte-for-byte the verified file."""
+    try:
+        st = path.stat()
+    except Exception:
+        return False
+    size = state.get("size")
+    mtime = state.get("mtime")
+    if size is None or mtime is None:
+        return False
+    try:
+        return (int(size) == st.st_size
+                and abs(float(mtime) - st.st_mtime) < 0.001)
+    except Exception:
+        return False
+
+
+def _cached_sha_valid(path: Path, expected_sha: str) -> bool | None:
+    """Cached recompute result for this exact file version, or None
+    when no cached SHA applies to the file on disk right now."""
+    with _SHA_LOCK:
+        if _SHA_CACHE.get("path") != str(path) or not _SHA_CACHE.get("sha"):
+            return None
+        try:
+            st = path.stat()
+        except Exception:
+            return None
+        if (_SHA_CACHE.get("size") != st.st_size
+                or abs(float(_SHA_CACHE.get("mtime") or 0) - st.st_mtime)
+                >= 0.001):
+            return None
+        return str(_SHA_CACHE["sha"]).lower() == str(expected_sha).lower()
+
+
+def _store_sha_cache(path: Path, sha: str) -> None:
+    try:
+        st = path.stat()
+    except Exception:
+        return
+    with _SHA_LOCK:
+        _SHA_CACHE.update({"path": str(path), "size": st.st_size,
+                           "mtime": st.st_mtime, "sha": sha})
+
+
+def _recompute_sha_async(path: Path, expected_sha: str) -> None:
+    """Recompute the SHA on a background thread (one in flight per
+    path). When it matches the expected hash the fresh fingerprint
+    is persisted, so the next read is instant."""
+    key = str(path)
+    with _SHA_LOCK:
+        if key in _SHA_RECOMPUTE_RUNNING:
+            return
+        _SHA_RECOMPUTE_RUNNING.add(key)
+
+    def _run():
+        try:
+            sha = _sha256_file(Path(key))
+            if sha is None:
+                return
+            _store_sha_cache(Path(key), sha)
+            if sha == str(expected_sha).lower():
+                try:
+                    state = load_downloaded()
+                    if state.get("path") == key:
+                        st = Path(key).stat()
+                        state["sha256"] = sha
+                        state["size"] = st.st_size
+                        state["mtime"] = st.st_mtime
+                        state["verified"] = True
+                        _save_downloaded(state)
+                except Exception:
+                    pass
+        finally:
+            with _SHA_LOCK:
+                _SHA_RECOMPUTE_RUNNING.discard(key)
+
+    threading.Thread(target=_run, daemon=True,
+                     name="memo-sha-recompute").start()
+
+
+def _downloaded_file_valid(state: dict, path: Path) -> bool | None:
+    """Validity of a downloaded file WITHOUT a forced SHA recompute.
+
+    True -- the stored fingerprint still matches the file on disk
+    (verified download, size + mtime unchanged, or a cached
+    recompute agrees). False -- the file is gone, has no expected
+    hash, or a cached recompute disagrees. None -- unknown: the
+    fingerprint changed and no cached SHA applies (the caller either
+    recomputes on a background thread or verifies synchronously,
+    depending on its thread)."""
+    if not path.is_file():
+        return False
+    expected = str(state.get("sha256") or "").strip().lower()
+    if not expected:
+        return False
+    if state.get("verified") and _stat_matches(state, path):
+        return True
+    cached = _cached_sha_valid(path, expected)
+    if cached is not None:
+        return cached
+    return None
+
+
 def get_downloaded_update() -> dict:
     """What the UI needs about a downloaded-but-not-installed update.
 
@@ -302,9 +418,14 @@ def get_downloaded_update() -> dict:
                 "kind": "", "path": "", "size": 0, "features": [],
                 "remind": False}
     path = Path(str(state.get("path") or ""))
-    valid = bool(path.is_file())
-    if valid and state.get("sha256"):
-        valid = _sha256_file(path) == str(state["sha256"]).lower()
+    # v1.6.2 (A8): size/mtime on disk only -- the SHA is recomputed
+    # only when they changed, on a background thread, and cached.
+    # While that recompute is running the file reports not-valid
+    # (the UI offers a re-download); the next poll sees the result.
+    valid = _downloaded_file_valid(state, path)
+    if valid is None:
+        _recompute_sha_async(path, str(state.get("sha256") or ""))
+        valid = False
     today = date.today().isoformat()
     remind = bool(valid and state.get("reminder_shown_date") != today)
     return {"downloaded": True, "valid": valid,
@@ -407,6 +528,9 @@ def check_update() -> dict:
     info("update", f"Update available: v{VERSION} -> v{remote}")
     setup_url = str(manifest.get("setup_url", "") or "").strip()
     kind = "setup" if (getattr(sys, "frozen", False) and setup_url) else "zip"
+    # v1.6.2 (A8): the downloaded-update record is NOT part of the
+    # check response anymore -- the UI reads it from
+    # get_downloaded_update() (size/mtime only, no SHA on the bridge).
     return {"status": "update_available", "current": VERSION,
             "version": remote, "notes": str(manifest.get("notes", "")),
             "features": parse_features(manifest),
@@ -414,11 +538,7 @@ def check_update() -> dict:
             "sha256": str(manifest.get("sha256", "")),
             "setup_url": setup_url,
             "setup_sha256": str(manifest.get("setup_sha256", "")),
-            "kind": kind,
-            # v1.4.3: if this version was already downloaded (Install
-            # later), the UI can offer "Install the downloaded update"
-            # instead of downloading it again.
-            "downloaded": get_downloaded_update()}
+            "kind": kind}
 
 
 def _download_file(url: str, dest: Path, version: str,
@@ -446,14 +566,24 @@ def _download_file(url: str, dest: Path, version: str,
     return sha.hexdigest()
 
 
-def _safe_extract(zip_path: Path, dest: Path):
-    """Extract a zip without zip-slip (no absolute paths, no '..')."""
+def _safe_extract(zip_path: Path, dest: Path, on_file=None):
+    """Extract a zip without zip-slip (no absolute paths, no '..').
+    on_file(done, total) is called after each member (v1.6.2 B26:
+    install progress per file)."""
     with zipfile.ZipFile(zip_path) as zf:
-        for member in zf.infolist():
+        members = zf.infolist()
+        for member in members:
             name = member.filename.replace("\\", "/")
             if name.startswith("/") or ".." in Path(name).parts:
                 raise ValueError(f"Unsafe zip entry: {member.filename}")
-        zf.extractall(dest)
+        total = max(1, len(members))
+        for i, member in enumerate(members, 1):
+            zf.extract(member, dest)
+            if on_file is not None:
+                try:
+                    on_file(i, total)
+                except Exception:
+                    pass
 
 
 def _pick_download(manifest: dict) -> dict | None:
@@ -543,8 +673,12 @@ def download_update() -> dict:
         _save_downloaded({
             "version": remote, "kind": pick["kind"], "path": str(dest),
             "sha256": got_sha, "size": dest.stat().st_size,
+            # v1.6.2 (A8): verified at download + the fingerprint --
+            # later reads trust size/mtime instead of re-hashing.
+            "mtime": dest.stat().st_mtime, "verified": True,
             "downloaded_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "features": features, "reminder_shown_date": None})
+        _store_sha_cache(dest, got_sha)
         _set_progress(state="downloaded", version=remote)
         info("update", f"Update v{remote} downloaded and ready "
                        f"({dest}, {dest.stat().st_size / 1048576:.1f} MB) - "
@@ -557,43 +691,61 @@ def download_update() -> dict:
         return {"ok": False, "error": str(exc)}
 
 
-def _apply_zip(zip_path: Path, version: str) -> bool:
+def _apply_zip(zip_path: Path, version: str, on_progress=None) -> bool:
     """Extract a verified zip over the app folder (keys/ + app/data/
-    preserved). Returns True on success."""
+    preserved). Returns True on success. on_progress(percent) is
+    called as the install advances (v1.6.2 B26): extraction 0-50%,
+    copying 50-100% -- the bar moves per file instead of freezing
+    while the zip extracts."""
     tmp = Path(tempfile.mkdtemp(prefix="memo-ai-update-"))
     try:
         extract_dir = tmp / "extracted"
         extract_dir.mkdir(parents=True, exist_ok=True)
-        _safe_extract(zip_path, extract_dir)
+
+        def _extract_progress(done, total):
+            if on_progress is not None:
+                on_progress(int(50 * done / max(1, total)))
+
+        _safe_extract(zip_path, extract_dir, on_file=_extract_progress)
         # Our zips contain a single top-level memo-ai/ folder.
         children = [p for p in extract_dir.iterdir() if p.is_dir()]
         root = children[0] if len(children) == 1 else extract_dir
         if not (root / "app" / "main.py").exists():
             error("update", "Update zip has no app/main.py - aborting, nothing changed")
             return False
-        copied = 0
+        # Copy entries, reporting progress per top-level entry.
+        copy_items = []
         for item in root.iterdir():
             if item.name in PRESERVE_TOP:
                 continue
-            dest = BASE_DIR / item.name
+            if item.name == "app" and PRESERVE_DATA:
+                for sub in item.iterdir():
+                    if sub.name != "data":
+                        copy_items.append(sub)
+            else:
+                copy_items.append(item)
+        total_copy = max(1, len(copy_items))
+        copied = 0
+        for item in copy_items:
+            # v1.6.2: an app/ sub-item lands under BASE_DIR/app/,
+            # a top-level item directly under BASE_DIR.
+            if (item.parent.name == "app"
+                    and item.parent.parent == root):
+                dest = BASE_DIR / "app" / item.name
+            else:
+                dest = BASE_DIR / item.name
             if item.is_dir():
-                if item.name == "app" and PRESERVE_DATA:
-                    # Copy app/ but keep the existing app/data/ untouched.
-                    for sub in item.iterdir():
-                        if sub.name == "data":
-                            continue
-                        sub_dest = dest / sub.name
-                        if sub.is_dir():
-                            shutil.copytree(sub, sub_dest, dirs_exist_ok=True)
-                        else:
-                            shutil.copy2(sub, sub_dest)
-                        copied += 1
+                if item.parent.name == "app":
+                    shutil.copytree(item, dest, dirs_exist_ok=True)
                 else:
                     shutil.copytree(item, dest, dirs_exist_ok=True)
-                    copied += 1
             else:
+                if item.parent.name == "app":
+                    dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, dest)
-                copied += 1
+            copied += 1
+            if on_progress is not None:
+                on_progress(50 + int(50 * copied / total_copy))
         info("update", f"Update v{version} installed ({copied} entries copied over, "
                        f"keys/ and app/data/ preserved)")
         return True
@@ -682,14 +834,24 @@ def apply_downloaded() -> dict:
                         "will re-download instead of installing")
         clear_downloaded()
         return {"ok": False, "error": "missing", "redownload": True}
+    # v1.6.2 (A8/B26): the SHA check runs BEFORE "installing" is set
+    # (a bad file never shows the installing state), and it REUSES
+    # the stored validity when the fingerprint still matches -- no
+    # re-hash of a file that was already verified at download. Only
+    # when the fingerprint changed is the SHA computed here, and this
+    # runs on the install background thread, never the bridge.
     expected = str(state.get("sha256") or "").strip().lower()
-    if expected:
+    validity = _downloaded_file_valid(state, path)
+    if validity is None and expected:
         got = _sha256_file(path)
-        if got != expected:
-            error("update", "Downloaded update SHA-256 mismatch - "
-                            "file discarded, will re-download")
-            clear_downloaded()
-            return {"ok": False, "error": "corrupt", "redownload": True}
+        if got is not None:
+            _store_sha_cache(path, got)
+        validity = (got == expected) if got is not None else False
+    if expected and validity is False:
+        error("update", "Downloaded update SHA-256 mismatch - "
+                        "file discarded, will re-download")
+        clear_downloaded()
+        return {"ok": False, "error": "corrupt", "redownload": True}
     kind = str(state.get("kind", "zip"))
     # v1.6.0: the UI shows "بيتثبّت دلوقتي" and locks the button from
     # this moment on (state "installing", with the version).
@@ -700,7 +862,18 @@ def apply_downloaded() -> dict:
         if kind == "setup":
             ok = _launch_setup(path)
         else:
-            ok = _apply_zip(path, remote)
+            # v1.6.2 (B26): progress per file (every 5% at most) so
+            # the bar moves during the install instead of freezing.
+            _last_pct = {"v": -1}
+
+            def _on_apply_progress(pct: int):
+                pct = max(0, min(100, int(pct)))
+                if pct == 100 or pct - _last_pct["v"] >= 5:
+                    _last_pct["v"] = pct
+                    _set_progress(state="installing", percent=pct,
+                                  version=remote)
+
+            ok = _apply_zip(path, remote, on_progress=_on_apply_progress)
         if not ok:
             _set_progress(state="error")
             return {"ok": False, "error": "apply_failed", "redownload": False}

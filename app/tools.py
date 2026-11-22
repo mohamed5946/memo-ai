@@ -262,6 +262,14 @@ _WRITE_BLOCKED_NAMES = {"windows", "program files", "program files (x86)",
 
 MAX_READ_CHARS = 8000
 MAX_READ_BYTES = 5 * 1024 * 1024
+# v1.6.2 (B25): list_dir shows at most this many entries (lazy).
+_LIST_DIR_LIMIT = 100
+# v1.6.2 (B20): web search gives up after this long (was unbounded).
+_WEB_SEARCH_TIMEOUT_SEC = 18.0
+# v1.6.2 (B19): one browser-cache clean touches at most this many
+# files or runs this long, then reports how many files remain.
+_BROWSER_CACHE_MAX_FILES = 500
+_BROWSER_CACHE_MAX_SEC = 10.0
 
 
 def _resolve_path(raw: str) -> Path:
@@ -478,6 +486,13 @@ def _tool_edit_file(args: dict) -> str:
         return err
     if not path.exists():
         return f"الملف مش موجود: {path}"
+    # v1.6.2 (B25): the same 5MB cap as _tool_read_file -- editing a
+    # huge file used to read it fully into memory first.
+    try:
+        if path.stat().st_size > MAX_READ_BYTES:
+            return "الملف كبير أوي (أكتر من 5MB) — مش هقدر أعدّله."
+    except Exception:
+        pass
     try:
         text = path.read_text(encoding="utf-8")
     except Exception as exc:
@@ -536,12 +551,21 @@ def _tool_list_dir(args: dict) -> str:
     if not path.is_dir():
         return f"ده ملف مش مجلد: {path}"
     try:
-        entries = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        # v1.6.2 (B25): LAZY -- take only the first 101 entries
+        # instead of sorted() over the whole directory (a folder with
+        # tens of thousands of files used to sort them all). The 101st
+        # entry only proves "there is more", its count is not computed.
+        import itertools
+        it = path.iterdir()
+        first = list(itertools.islice(it, _LIST_DIR_LIMIT + 1))
+        has_more = len(first) > _LIST_DIR_LIMIT
+        entries = sorted(first[:_LIST_DIR_LIMIT],
+                         key=lambda p: (not p.is_dir(), p.name.lower()))
     except Exception as exc:
         return f"مقدرتش أفتح المجلد: {exc}"
     info("tools", f"list_dir: {path} (read-only)")
     lines = [f"{path}"]
-    for entry in entries[:100]:
+    for entry in entries:
         try:
             if entry.is_dir():
                 lines.append(f"  [مجلد] {entry.name}")
@@ -549,8 +573,8 @@ def _tool_list_dir(args: dict) -> str:
                 lines.append(f"  {entry.name} ({entry.stat().st_size} بايت)")
         except Exception:
             lines.append(f"  {entry.name}")
-    if len(entries) > 100:
-        lines.append(f"  … وفي {len(entries) - 100} عنصر كمان")
+    if has_more:
+        lines.append("  … وفي عناصر كمان")
     return "\n".join(lines)
 
 
@@ -742,6 +766,34 @@ def _tool_send_whatsapp(args: dict) -> str:
             f"{detail_err or 'السبب في السجل'}.")
 
 
+def _ddgs_text(query: str, count: int,
+               timeout: float = _WEB_SEARCH_TIMEOUT_SEC) -> list:
+    """DDGS text search in a worker thread (v1.6.2 B20): the library
+    call has no reliable timeout of its own, so the thread is joined
+    with a timeout instead -- a hung search fails fast and says so
+    instead of blocking the brain thread forever."""
+    outcome: dict = {}
+
+    def _run():
+        try:
+            from ddgs import DDGS
+            with DDGS() as ddgs:
+                outcome["results"] = list(
+                    ddgs.text(query, max_results=count))
+        except Exception as exc:
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=_run, daemon=True,
+                              name="memo-ddgs-search")
+    thread.start()
+    thread.join(timeout=timeout)
+    if thread.is_alive():
+        raise TimeoutError(f"web search timed out after {timeout:.0f}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("results", [])
+
+
 def _tool_web_search(args: dict) -> str:
     """Free web search (DuckDuckGo via the ddgs library - no API key, no
     account; chosen because it is a maintained pure-Python client that
@@ -759,9 +811,7 @@ def _tool_web_search(args: dict) -> str:
     except Exception:
         count = 5
     try:
-        from ddgs import DDGS
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=count))
+        results = _ddgs_text(query, count)
     except Exception as exc:
         error("tools", f"web_search failed ({query[:80]}): {exc}")
         return (f"مقدرتش أدور على النت دلوقتي ({exc}) — "
@@ -881,11 +931,23 @@ def _tool_system_status(args: dict) -> str:
 # drops the watermark. The prompt is sent as-is (the brain translates
 # the user's Arabic description to English when calling the tool -
 # the image model understands English prompts far better).
+# v1.6.2 CORRECTION (verified live 2026-11-22, two real images):
+# nologo=true NO LONGER removes the logo without a token - the service
+# still stamps "pollinations.ai" (white text + flower mark) in the
+# bottom-right corner, inside the bottom ~5% of the image. The URL
+# keeps nologo=true (harmless, may help on other models) AND
+# _save_generated_image() crops the bottom strip at save time, so the
+# image reaching the user has no watermark at all.
 _IMAGE_GEN_URL = "https://image.pollinations.ai/prompt/{prompt}"
 _IMAGE_GEN_TIMEOUT = 90.0  # seconds; generation is slow, be patient
 _IMAGE_GEN_MAX_DIM = 1280
 _IMAGE_GEN_MIN_DIM = 256
 _IMAGE_GEN_MAX_PROMPT = 500
+# Bottom fraction cropped off every generated image at save time:
+# the Pollinations watermark lives in the bottom ~5% (verified live
+# on a 768x768 square and a 512x768 portrait); 7% clears it with
+# margin while costing only a thin strip of picture.
+_WATERMARK_CROP_FRACTION = 0.07
 _IMAGE_DIRNAME = "images"
 
 # Images generated during this process, in order (filenames only).
@@ -952,6 +1014,14 @@ def _save_generated_image(data: bytes, out_dir: Path) -> tuple:
         if im.format not in ("JPEG", "PNG", "WEBP"):
             return None, None
         im = im.convert("RGB")
+        # v1.6.2: crop the bottom strip carrying the Pollinations
+        # watermark ("pollinations.ai", bottom-right, bottom ~5% -
+        # verified live 2026-11-22; nologo=true no longer removes it
+        # without a token). Cropping BEFORE the thumbnail keeps the
+        # saved image watermark-free at any returned size.
+        w, h = im.size
+        cut = max(1, int(h * _WATERMARK_CROP_FRACTION))
+        im = im.crop((0, 0, w, h - cut))
         im.thumbnail((1024, 1024), Image.LANCZOS)
         path = out_dir / name
         im.save(path, "JPEG", quality=85)
@@ -1090,17 +1160,31 @@ def _tool_clean_cache(args: dict) -> str:
         extra = _clear_browser_caches(dry_run=dry_run)
         text += (f"\nكاش المتصفح: {extra['files_removed']} ملف، "
                  f"وفّرت {extra['bytes_freed_mb']} ميجا.")
+        # v1.6.2 (B19): the cap leaves files behind -- say how many,
+        # instead of stopping silently.
+        if extra.get("files_remaining"):
+            text += (f"\nباقي {extra['files_remaining']} ملف من كاش "
+                     "المتصفح — نضّف تاني عشان تكملهم.")
     info("tools", f"clean_cache OK: freed {freed_mb} MB "
                   f"(dry_run={dry_run}, browser={browser_cache})")
     return text
 
 
-def _clear_browser_caches(dry_run: bool = False) -> dict:
+def _clear_browser_caches(dry_run: bool = False,
+                          max_files: int = _BROWSER_CACHE_MAX_FILES,
+                          max_seconds: float = _BROWSER_CACHE_MAX_SEC
+                          ) -> dict:
     """Delete files inside the Chrome/Edge cache folders (files only,
-    locked files skipped). Windows paths; elsewhere nothing to clear."""
-    removed, freed = 0, 0
+    locked files skipped). Windows paths; elsewhere nothing to clear.
+    v1.6.2 (B19): CAPPED -- at most `max_files` files or `max_seconds`
+    per run. Anything left over is COUNTED and reported as
+    "files_remaining" (never stopped silently): the next clean picks
+    up where this one stopped."""
+    removed, freed, remaining = 0, 0, 0
     if sys.platform != "win32":
-        return {"files_removed": 0, "bytes_freed_mb": 0.0}
+        return {"files_removed": 0, "bytes_freed_mb": 0.0,
+                "files_remaining": 0}
+    deadline = time.monotonic() + float(max_seconds)
     local = os.environ.get("LOCALAPPDATA", "")
     candidates = [
         Path(local) / "Google" / "Chrome" / "User Data" / "Default" / "Cache",
@@ -1108,22 +1192,31 @@ def _clear_browser_caches(dry_run: bool = False) -> dict:
     ]
     for base in candidates:
         try:
-            entries = list(base.iterdir())
+            it = os.scandir(base)
         except Exception:
             continue
-        for entry in entries:
-            try:
-                if not entry.is_file():
+        with it:
+            for entry in it:
+                try:
+                    if not entry.is_file():
+                        continue
+                except Exception:
                     continue
-                size = entry.stat().st_size
-                if not dry_run:
-                    entry.unlink()
-                removed += 1
-                freed += size
-            except Exception:
-                continue
+                # Cap hit (files or time): count the rest, delete none.
+                if removed >= max_files or time.monotonic() >= deadline:
+                    remaining += 1
+                    continue
+                try:
+                    size = entry.stat().st_size
+                    if not dry_run:
+                        Path(entry.path).unlink()
+                    removed += 1
+                    freed += size
+                except Exception:
+                    continue
     return {"files_removed": removed,
-            "bytes_freed_mb": round(freed / (1024 * 1024), 2)}
+            "bytes_freed_mb": round(freed / (1024 * 1024), 2),
+            "files_remaining": remaining}
 
 
 def _tool_deep_file_access(args: dict) -> str:

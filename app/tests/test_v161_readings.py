@@ -227,11 +227,21 @@ def _composer_rule():
 
 
 def test_composer_is_sticky_at_bottom():
+    # v1.6.2 (F1): the sticky-inside-the-scroll-area bar is GONE — the
+    # field bug showed cards rendering BELOW it. The composer is now a
+    # direct flex child of .app, pinned at the very bottom by the flex
+    # column, outside the scroll area entirely.
     rule = _composer_rule()
-    assert "position: sticky" in rule
-    assert "bottom: 0" in rule
+    assert "position: sticky" not in rule
+    assert "flex-shrink: 0" in rule
     # Content scrolling under the bar must not show through it.
     assert "background:" in rule
+    main_col = HTML.split('id="main-col"')[1]
+    composer_at = main_col.index('<div class="composer"')
+    # The main-col closes (</div> for main-col, </div> for shell)
+    # BEFORE the composer starts: the composer is not inside it.
+    assert main_col[:composer_at].rstrip().endswith("</div>\n</div>"), (
+        "composer must sit outside .main-col, as a direct child of .app")
 
 
 def test_chat_scroll_area_clears_the_composer():
@@ -327,22 +337,22 @@ def test_temp_hint_dom_behaviour():
 
 
 def test_island_panels_read_nested_overview_shape():
-    # Coordinator integration fix: island.html refreshDevicePanels()
-    # had the identical v1.6.0 bug shape as the main window — flat
-    # d.ram_percent / d.cpu_percent / d.battery_percent / d.temp_c /
-    # d.disk_percent reads the API never returns, so the island device
-    # panels stayed "—" forever. They must read d.overview.* instead.
+    # v1.6.2 island redesign: the island device panels are REMOVED
+    # entirely (refreshDevicePanels is gone). The nested-shape read
+    # now lives in the main window's live device card
+    # (refreshLiveDeviceCards in app.js) — it must read d.overview.*,
+    # never the flat keys the API never returns.
     island = (UI / "island.html").read_text(encoding="utf-8")
-    m = re.search(r"async function refreshDevicePanels\(\) \{(.*?)\n  \}",
-                  island, re.S)
-    assert m, "refreshDevicePanels() missing from island.html"
+    assert "refreshDevicePanels" not in island
+    assert "exp-panels" not in island
+    m = re.search(r"async function refreshLiveDeviceCards\(\) \{(.*?)\n\}",
+                  JS, re.S)
+    assert m, "refreshLiveDeviceCards() missing from app.js"
     body = m.group(1)
     assert "d.overview" in body
     assert "ov.ram.percent" in body and "ov.cpu.percent" in body
     assert "ov.battery.percent" in body
-    assert "ov.temp_c" in body
     assert "ov.disk.percent_free" in body
     for flat in ("d.ram_percent", "d.cpu_percent", "d.battery_percent",
-                 "d.temp_c", "d.disk_percent", "d.cache_mb",
-                 "d.current_tab"):
+                 "d.disk_percent"):
         assert flat not in body, "flat read still present: " + flat

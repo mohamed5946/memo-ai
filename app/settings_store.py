@@ -127,6 +127,11 @@ DEFAULTS = {
     "theme": "old",
     # v1.6.0: Deep Think (Groq reasoning_effort="high" when on).
     "deep_think_enabled": False,
+    # v1.6.2: model choice ("auto" = Groq -> Gemini -> Ollama chain,
+    # "groq" / "gemini" / "local" = that model only, strict -- no
+    # silent fallback). Added to DEFAULTS so load/save_settings keep
+    # it (both filter to DEFAULTS keys).
+    "model_choice": "auto",
     # v1.6.0: proactive companion / focus mode.
     "focus_mode": False,
     "quiet_hours_enabled": True,

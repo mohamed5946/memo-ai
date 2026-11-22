@@ -68,15 +68,19 @@ def _model_status() -> str:
 
 
 def get_self_view(mood: str = "", monitor=None, settings: dict | None = None,
-                  current_task: str = "") -> list:
+                  current_task: str = "", status: dict | None = None) -> list:
     """8 rows, each {"label", "value"} (Arabic labels, user-facing).
     `monitor` is a SystemMonitor (or None - the rows then say the value
     is unavailable instead of guessing). `settings` carries the deep
-    file grant flag + privacy mode; missing settings default to locked."""
+    file grant flag + privacy mode; missing settings default to locked.
+    `status` is a monitor status ALREADY fetched by the caller
+    (v1.6.2 A5/B16: the bridge must not read the monitor twice -- the
+    caller passes the overview it already has; only when status is
+    None AND a monitor is given is get_status() read here, for
+    background-thread callers like run_tool_chat)."""
     settings = dict(settings or {})
     mood = (mood or "").strip() or "صاحي"
-    status = None
-    if monitor is not None:
+    if status is None and monitor is not None:
         try:
             status = monitor.get_status()
         except Exception:

@@ -354,9 +354,20 @@ class TestWhatsAppSettings(unittest.TestCase):
             with mock.patch.object(main, "whatsapp_mod", fake_mod), \
                     mock.patch.object(main, "save_settings",
                                       return_value=True):
+                # v1.6.2 (B18): whatsapp_save runs in a background
+                # thread -- poll get_whatsapp_save_result until each
+                # save completes before asserting on it.
                 res = api.whatsapp_save(
                     {"enabled": True, "owner_phone": "01557887719"})
-                self.assertTrue(res["ok"])
+                self.assertTrue(res["pending"])
+                final = None
+                for _ in range(100):
+                    final = api.get_whatsapp_save_result(res["id"])
+                    if final.get("done"):
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(final["done"])
+                self.assertTrue(final["ok"])
                 self.assertEqual(
                     app.settings["whatsapp_owner_phone"], "201557887719")
                 # Reload (restart) - the number is still there.
@@ -365,7 +376,15 @@ class TestWhatsAppSettings(unittest.TestCase):
                 # The "+20 ... spaces" form normalizes the same way.
                 res = api.whatsapp_save(
                     {"enabled": True, "owner_phone": "+20 155 788 7719"})
-                self.assertTrue(res["ok"])
+                self.assertTrue(res["pending"])
+                final = None
+                for _ in range(100):
+                    final = api.get_whatsapp_save_result(res["id"])
+                    if final.get("done"):
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(final["done"])
+                self.assertTrue(final["ok"])
                 self.assertEqual(
                     app.settings["whatsapp_owner_phone"], "201557887719")
                 self.assertEqual(started.get("n"), 2,
@@ -562,7 +581,9 @@ class TestOwnerMode(unittest.TestCase):
             captured = {}
 
             def fake_ask(text, ai_name, user_name, lang, history=None,
-                         owner_unlocked=False):
+                         owner_unlocked=False, model_choice="auto",
+                         deep_think=False, privacy_mode=None,
+                         self_view=""):
                 captured["owner_unlocked"] = owner_unlocked
                 captured["text"] = text
                 return {"reply": "السورس مكتوب بـ Python وpywebview.",
@@ -627,8 +648,9 @@ class TestOwnerMode(unittest.TestCase):
         sends = []
 
         def fake_ask(text, ai_name, user_name, lang, history=None,
-                     owner_unlocked=False):
+                     owner_unlocked=False, model_choice="auto"):
             captured["owner_unlocked"] = owner_unlocked
+            captured["model_choice"] = model_choice
             return {"reply": "تمام.", "engine": "groq",
                     "tools_used": 0, "tools_disabled": False}
 
@@ -847,17 +869,17 @@ class TestVersionAndInstaller(unittest.TestCase):
 
     def test_version_consistency_v141(self):
         import main
-        self.assertEqual(main.VERSION, "1.6.1")
-        self.assertIn("v1.6.1", _read("app/ui/index.html"))
-        self.assertIn("1, 6, 1, 0",
+        self.assertEqual(main.VERSION, "1.6.2")
+        self.assertIn("v1.6.2", _read("app/ui/index.html"))
+        self.assertIn("1, 6, 2, 0",
                       _read("installer/file_version_info.txt"))
-        self.assertIn("'1.6.1'", _read("installer/file_version_info.txt"))
+        self.assertIn("'1.6.2'", _read("installer/file_version_info.txt"))
         # v1.4.2: the manifest is updated by the post-release commit
         # (af85c62 did this for v1.4.1) - so it must EQUAL the app
         # version now, not lag one behind. Checked after that commit.
         manifest = json.loads(_read("version.json"))
         self.assertEqual(manifest["version"], main.VERSION)
-        self.assertIn("1.6.1", manifest["notes"])
+        self.assertIn("1.6.2", manifest["notes"])
 
 
 if __name__ == "__main__":

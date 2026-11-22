@@ -46,18 +46,20 @@ class _FakeProc:
 
 
 def _fake_ps_run_factory(outputs):
-    """subprocess.run replacement: dispatch on the PowerShell script.
-
-    outputs: list of (substring, stdout) - the first substring found
-    in the script decides the stdout; anything else yields "".
+    """subprocess.run replacement simulating the v1.6.2 single-script
+    behaviour: the script tries every source in order and emits the
+    first source's values, already converted to Celsius by the script
+    itself. outputs: list of (stage, stdout) in script order; the
+    first non-empty stdout wins (the script's `if ($out.Count -eq 0)`
+    chain); anything else yields "".
     """
     calls = []
 
     def _run(argv, **kwargs):
         script = argv[4] if len(argv) > 4 else ""
         calls.append(script)
-        for needle, stdout in outputs:
-            if needle in script:
+        for _stage, stdout in outputs:
+            if stdout:
                 return _FakeProc(stdout)
         return _FakeProc("")
 
@@ -137,7 +139,7 @@ class TestPowerShellTempPaths(unittest.TestCase):
 
     def test_get_counter_kelvin_to_celsius(self):
         temps = self._run_with([
-            ("Get-Counter", "310.15\n298.15\n"),
+            ("Get-Counter", "37.0\n25.0\n"),
         ])
         self.assertEqual(len(temps), 2)
         self.assertAlmostEqual(temps[0], 37.0, 2)
@@ -145,7 +147,7 @@ class TestPowerShellTempPaths(unittest.TestCase):
 
     def test_win32_temperature_probe_tenths_kelvin(self):
         temps = self._run_with([
-            ("Win32_TemperatureProbe", "2982\n"),
+            ("Win32_TemperatureProbe", "25.05\n"),
         ])
         self.assertEqual(len(temps), 1)
         self.assertAlmostEqual(temps[0], 25.05, 2)
@@ -160,7 +162,7 @@ class TestPowerShellTempPaths(unittest.TestCase):
         # DCIM_ThermalSensor empty -> CIM_TemperatureSensor is tried.
         temps = self._run_with([
             ("DCIM_ThermalSensor", ""),
-            ("CIM_TemperatureSensor", "3100\n"),
+            ("CIM_TemperatureSensor", "36.85\n"),
         ])
         self.assertEqual(len(temps), 1)
         self.assertAlmostEqual(temps[0], 36.85, 2)
@@ -170,16 +172,35 @@ class TestPowerShellTempPaths(unittest.TestCase):
 
     def test_msacpi_still_wins_first(self):
         temps = self._run_with([
-            ("MSAcpi_ThermalZoneTemperature", "3100\n"),
-            ("Get-Counter", "400.0\n"),
+            ("MSAcpi_ThermalZoneTemperature", "36.85\n"),
+            ("Get-Counter", "126.85\n"),
         ])
         self.assertEqual(len(temps), 1)
         self.assertAlmostEqual(temps[0], 36.85, 2)
 
+    def test_script_converts_units_and_orders_stages(self):
+        # v1.6.2 B24: the conversion lives in the single PowerShell
+        # script now (the mock above only simulates its already-
+        # converted output), so pin the script's conversions and
+        # stage order here, against the real code.
+        import inspect
+        src = inspect.getsource(monitor_mod._powershell_temps)
+        # Only the script itself, not the docstring above it (the
+        # docstring names some stages in a different order).
+        src = src[src.index('script = r"""'):]
+        self.assertIn("/ 10 - 273.15", src)  # tenths-Kelvin -> C
+        self.assertIn("- 273.15", src)  # Kelvin -> C
+        self.assertLess(src.index("MSAcpi_ThermalZoneTemperature"),
+                        src.index("Get-Counter"))
+        self.assertLess(src.index("Get-Counter"),
+                        src.index("Win32_TemperatureProbe"))
+        self.assertLess(src.index("Win32_TemperatureProbe"),
+                        src.index("DCIM_ThermalSensor"))
+
     def test_libre_monitor_still_wins_over_perf_counters(self):
         temps = self._run_with([
             ("LibreHardwareMonitor", "61.5\n"),
-            ("Get-Counter", "400.0\n"),
+            ("Get-Counter", "126.85\n"),
         ])
         self.assertEqual(temps, [61.5])
 
@@ -223,7 +244,7 @@ class TestWmiTempPaths(unittest.TestCase):
 
 class TestReadCpuTemp(unittest.TestCase):
     def test_counter_reading_is_reported(self):
-        fake = _fake_ps_run_factory([("Get-Counter", "310.15\n")])
+        fake = _fake_ps_run_factory([("Get-Counter", "37.0\n")])
         with mock.patch("subprocess.run", fake), \
                 mock.patch.object(sys, "platform", "win32"), \
                 mock.patch.object(monitor_mod, "_wmi_temps",

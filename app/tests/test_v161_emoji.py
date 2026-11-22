@@ -261,9 +261,9 @@ class TestIconWiring(unittest.TestCase):
 
     def test_island_buttons_use_their_icons(self):
         html = ISLAND.read_text(encoding="utf-8")
-        for btn_id, icon in (("island-mic", "mic"),
-                             ("island-settings", "settings"),
-                             ("exp-send", "send")):
+        # v1.6.2 island redesign: mic + settings are removed from the
+        # pill; only the expanded composer's send button remains.
+        for btn_id, icon in (("exp-send", "send"),):
             m = re.search(r'id="' + btn_id + r'"[^>]*>(.*?)</button>', html,
                           flags=re.S)
             self.assertIsNotNone(m, f"{btn_id} missing")

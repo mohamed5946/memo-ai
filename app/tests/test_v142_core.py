@@ -564,7 +564,17 @@ class TestMonitorNotificationApi(unittest.TestCase):
         res = self.api.save_monitor_settings(
             json.dumps({"monitor_ram_free_mb": 400,
                         "monitor_cooldown_min": 15}))
-        self.assertTrue(res["ok"])
+        # v1.6.2 (B18): the save runs in a background thread --
+        # poll get_settings_save_result until it completes.
+        self.assertTrue(res["pending"])
+        final = None
+        for _ in range(100):
+            final = self.api.get_settings_save_result(res["id"])
+            if final.get("done"):
+                break
+            time.sleep(0.05)
+        self.assertTrue(final["done"])
+        self.assertTrue(final["ok"])
         after = self.api.get_monitor_status()
         self.assertEqual(after["settings"]["monitor_ram_free_mb"], 400)
         self.assertEqual(after["settings"]["monitor_cooldown_min"], 15)
@@ -581,7 +591,17 @@ class TestMonitorNotificationApi(unittest.TestCase):
         res = self.api.save_notification_settings(
             json.dumps({"apps": ["WhatsApp", "Mail"],
                         "keywords": ["عاجل", "مهم"]}))
-        self.assertTrue(res["ok"])
+        # v1.6.2 (B18): the save runs in a background thread --
+        # poll get_settings_save_result until it completes.
+        self.assertTrue(res["pending"])
+        final = None
+        for _ in range(100):
+            final = self.api.get_settings_save_result(res["id"])
+            if final.get("done"):
+                break
+            time.sleep(0.05)
+        self.assertTrue(final["done"])
+        self.assertTrue(final["ok"])
         after = self.api.get_notification_status()
         self.assertEqual(after["apps"], ["WhatsApp", "Mail"])
         self.assertEqual(after["keywords"], ["عاجل", "مهم"])

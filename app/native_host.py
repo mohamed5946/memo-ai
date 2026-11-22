@@ -673,6 +673,95 @@ def start_native_host_listener() -> NativeHostClient:
     return client
 
 
+# ---------------------------------------------------------------------------
+# v1.6.2: module-level shared client (the extension re-wire).
+#
+# browser_control.py used to call getattr(native_host, "send_command")
+# and selfview.py getattr(native_host, "is_connected") -- neither
+# existed at module level (only NativeHostClient.send / .is_connected
+# on an instance), so every extension call silently reported
+# "not connected" even when the host was up. The shared client fixes
+# that: the app starts ONE listener at startup (main.py, background
+# thread) and registers it here; send_command() / is_connected()
+# use it, and send_command() starts the listener on demand when the
+# app never registered one (voice "play El-Daheeh" from a fresh
+# process still works).
+# ---------------------------------------------------------------------------
+_SHARED_CLIENT: NativeHostClient | None = None
+_SHARED_LOCK = threading.Lock()
+
+# browser_control's action names -> native-host command names.
+_ACTION_TO_CMD = {
+    "play_first_youtube_result": "play_first_youtube",
+}
+
+
+def set_shared_client(client) -> None:
+    """Register the app's listener client (called once at startup).
+    A None client clears the registration."""
+    global _SHARED_CLIENT
+    with _SHARED_LOCK:
+        _SHARED_CLIENT = client
+
+
+def get_shared_client():
+    """The registered client, or None when the app never started one."""
+    with _SHARED_LOCK:
+        return _SHARED_CLIENT
+
+
+def is_connected() -> bool:
+    """True while the shared native-host client is alive. Cheap and
+    non-blocking: it never starts a listener -- False simply means
+    "no client registered (yet)". Whether the EXTENSION executed
+    anything is a separate question, answered per-reply."""
+    client = get_shared_client()
+    if client is None:
+        return False
+    try:
+        return bool(client.is_connected())
+    except Exception:
+        return False
+
+
+def send_command(cmd: dict, timeout: float = 15.0) -> dict:
+    """Send one command to the extension via the shared client.
+
+    Accepts the native {"cmd": ...} shape AND browser_control's
+    {"action": "play_first_youtube_result", "query": ...} shape
+    (translated here). Starts the listener on demand when the app
+    never registered one. Never raises -- failures are dicts, so
+    callers can report them honestly."""
+    if not isinstance(cmd, dict):
+        return {"ok": False, "error": "bad_message"}
+    normalized = dict(cmd)
+    if "cmd" not in normalized and "action" in normalized:
+        action = str(normalized.pop("action") or "")
+        mapped = _ACTION_TO_CMD.get(action)
+        if mapped is None:
+            return {"ok": False, "error": "unknown_command",
+                    "cmd": action}
+        normalized["cmd"] = mapped
+    client = get_shared_client()
+    if client is None or not client.is_connected():
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+        try:
+            client = start_native_host_listener()
+        except Exception as exc:
+            return {"ok": False, "error": "extension_not_connected",
+                    "detail": str(exc)}
+        set_shared_client(client)
+    try:
+        return dict(client.send(normalized, timeout=timeout) or {})
+    except Exception as exc:
+        return {"ok": False, "error": "extension_not_connected",
+                "detail": str(exc)}
+
+
 if __name__ == "__main__":
     if "--standalone" in sys.argv:
         sys.exit(_run_standalone())

@@ -175,95 +175,72 @@ def _wmi_temps() -> list:
 
 
 def _powershell_temps() -> list:
-    """Temperatures via PowerShell Get-CimInstance (no extra packages).
-    Same three sources as _wmi_temps, in the same order, plus (v1.6.1)
-    three more built-in Windows paths that need no install, driver or
-    admin: Thermal Zone perf counters (Get-Counter, Kelvin -> Celsius),
-    Win32_TemperatureProbe (root\\cimv2), and the Dell DCIM thermal
-    sensors (root\\dcim\\sysman, when Dell Command Monitor is present).
-    Each stage is a cheap no-op when its source does not exist; the
-    first stage that yields a value wins."""
+    """Temperatures via ONE PowerShell spawn (v1.6.2 B24): a single
+    script tries every source in order (MSAcpi thermal zones,
+    Libre/OpenHardwareMonitor sensors, Thermal Zone perf counters,
+    Win32_TemperatureProbe, Dell DCIM sensors) and emits the first
+    source's Celsius values, one per line. The old code spawned up to
+    7 separate powershell.exe processes, one per source. Each stage is
+    a cheap no-op when its source does not exist; the first stage that
+    yields a value wins."""
     import subprocess
 
+    script = r"""
+$out = @()
+try { $t = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop | Select-Object -ExpandProperty CurrentTemperature; foreach ($v in $t) { $out += ($v / 10 - 273.15) } } catch {}
+if ($out.Count -eq 0) {
+  try { foreach ($ns in 'root/LibreHardwareMonitor','root/OpenHardwareMonitor') { $vals = Get-CimInstance -Namespace $ns -ClassName Sensor -ErrorAction Stop | Where-Object { $_.SensorType -eq 'Temperature' -and $_.Value -ne $null } | Select-Object -ExpandProperty Value; foreach ($v in $vals) { $out += [double]$v }; if ($out.Count -gt 0) { break } } } catch {}
+}
+if ($out.Count -eq 0) {
+  try { $c = Get-Counter '\Thermal Zone Information(*)\Temperature' -ErrorAction Stop | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue; foreach ($v in $c) { $out += ([double]$v - 273.15) } } catch {}
+}
+if ($out.Count -eq 0) {
+  try { $r = Get-CimInstance -Namespace root/cimv2 -ClassName Win32_TemperatureProbe -ErrorAction Stop | Select-Object -ExpandProperty CurrentReading; foreach ($v in $r) { $c = $null; if ($v -gt 200) { $c = $v / 10 - 273.15 } elseif ($v -ge 0 -and $v -le 125) { $c = [double]$v }; if ($null -ne $c) { $out += $c } } } catch {}
+}
+if ($out.Count -eq 0) {
+  try { foreach ($cls in 'DCIM_ThermalSensor','CIM_TemperatureSensor') { $r = Get-CimInstance -Namespace root/dcim/sysman -ClassName $cls -ErrorAction Stop | Select-Object -ExpandProperty CurrentReading; foreach ($v in $r) { $c = $null; if ($v -gt 200) { $c = $v / 10 - 273.15 } elseif ($v -ge 0 -and $v -le 125) { $c = [double]$v }; if ($null -ne $c) { $out += $c } }; if ($out.Count -gt 0) { break } } } catch {}
+}
+$out | ForEach-Object { "$_" }
+"""
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive",
+             "-Command", script],
+            capture_output=True, text=True, timeout=15,
+            **hidden_spawn.run_kwargs())
+        out = proc.stdout or ""
+    except Exception:
+        return []
     temps = []
-
-    def _run(script: str) -> str:
-        try:
-            proc = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive",
-                 "-Command", script],
-                capture_output=True, text=True, timeout=10,
-                **hidden_spawn.run_kwargs())
-            return proc.stdout or ""
-        except Exception:
-            return ""
-
-    out = _run("Get-CimInstance -Namespace root/wmi "
-               "-ClassName MSAcpi_ThermalZoneTemperature "
-               "| Select-Object -ExpandProperty CurrentTemperature")
     for line in out.splitlines():
         try:
-            temps.append(float(line.strip()) / 10.0 - 273.15)
+            temps.append(float(line.strip()))
         except (TypeError, ValueError):
             pass
-    if temps:
-        return temps
-    for namespace in ("root/LibreHardwareMonitor",
-                      "root/OpenHardwareMonitor"):
-        out = _run(f"Get-CimInstance -Namespace {namespace} "
-                   "-ClassName Sensor "
-                   "| Where-Object { $_.SensorType -eq 'Temperature' "
-                   "-and $_.Value -ne $null } "
-                   "| Select-Object -ExpandProperty Value")
-        for line in out.splitlines():
-            try:
-                temps.append(float(line.strip()))
-            except (TypeError, ValueError):
-                pass
-        if temps:
-            return temps
-    # v1.6.1 (1): Thermal Zone perf counters. CookedValue is Kelvin.
-    out = _run("Get-Counter "
-               "'\\Thermal Zone Information(*)\\Temperature' "
-               "-ErrorAction SilentlyContinue "
-               "| Select-Object -ExpandProperty CounterSamples "
-               "| Select-Object -ExpandProperty CookedValue")
-    for line in out.splitlines():
-        try:
-            temps.append(float(line.strip()) - 273.15)
-        except (TypeError, ValueError):
-            pass
-    if temps:
-        return temps
-    # v1.6.1 (2): Win32_TemperatureProbe - CurrentReading is usually
-    # tenths of Kelvin, sometimes Celsius; the shared helper decides.
-    out = _run("Get-CimInstance -Namespace root/cimv2 "
-               "-ClassName Win32_TemperatureProbe "
-               "| Select-Object -ExpandProperty CurrentReading")
-    for line in out.splitlines():
-        try:
-            celsius = _probe_value_to_celsius(float(line.strip()))
-        except (TypeError, ValueError):
-            celsius = None
-        if celsius is not None:
-            temps.append(celsius)
-    if temps:
-        return temps
-    # v1.6.1 (3): Dell DCIM thermal sensors (Dell Command Monitor).
-    for cls in ("DCIM_ThermalSensor", "CIM_TemperatureSensor"):
-        out = _run(f"Get-CimInstance -Namespace root/dcim/sysman "
-                   f"-ClassName {cls} "
-                   "| Select-Object -ExpandProperty CurrentReading")
-        for line in out.splitlines():
-            try:
-                celsius = _probe_value_to_celsius(float(line.strip()))
-            except (TypeError, ValueError):
-                celsius = None
-            if celsius is not None:
-                temps.append(celsius)
-        if temps:
-            return temps
     return temps
+
+
+def _read_cpu_temp_capped(timeout: float = 15.0) -> tuple:
+    """read_cpu_temp() in a worker thread (v1.6.2 B24): a stuck WMI /
+    PowerShell probe can never block the caller past `timeout` --
+    on timeout this is (None, False), never a hang."""
+    result: dict = {}
+
+    def _run():
+        try:
+            result["value"] = read_cpu_temp()
+        except Exception:
+            result["value"] = (None, False)
+
+    thread = threading.Thread(target=_run, daemon=True,
+                              name="memo-temp-probe")
+    thread.start()
+    thread.join(timeout=timeout)
+    if thread.is_alive():
+        warn("monitor", "CPU temperature probe timed out "
+                        f"({timeout:.0f}s) - reporting unavailable")
+        return None, False
+    return result.get("value", (None, False))
 
 
 def read_cpu_temp() -> tuple:
@@ -712,9 +689,11 @@ class SystemMonitor:
             return (self._temp_cache["temp_c"],
                     self._temp_cache["available"])
         # v1.4.3: the probe must never raise - a failed probe is
-        # "unavailable", not a dead monitor.
+        # "unavailable", not a dead monitor. v1.6.2 (B24): capped at
+        # 15 s in a worker thread, so a stuck probe never blocks the
+        # sampler either.
         try:
-            temp_c, available = read_cpu_temp()
+            temp_c, available = _read_cpu_temp_capped()
         except Exception as exc:
             warn("monitor", f"CPU temperature probe failed: {exc}")
             temp_c, available = None, False
@@ -726,11 +705,19 @@ class SystemMonitor:
         return temp_c, available
 
     def _sample_fast(self) -> dict:
-        """psutil-only reading (RAM/disk/CPU/battery/top processes).
+        """psutil-only reading (RAM/disk/CPU/battery).
         Never spawns a subprocess, so it is safe on any thread --
         including a one-off seed on the first get_status() call. The
-        slow fields (temp/GPU/storage) are NOT in here; they arrive
-        from the background sampler via _sample_slow()."""
+        slow fields (temp/GPU/storage/top_processes) are NOT in here;
+        they arrive from the background sampler via _sample_slow().
+        v1.6.2 (A5): top_processes is NOT read here either -- the
+        process scan is the slow part, so it runs on the sampler
+        thread only (see _sample_slow). The key is ABSENT here on
+        purpose: a fast partial carrying "top_processes": [] would
+        wipe the slow-delivered list out of the merged cache on
+        every 5 s sample (dict.update clobbers it), so the process
+        list would flicker to empty forever. get_status() reports
+        [] until the sampler delivers (reading.get() -> None -> [])."""
         # v1.4.3: each source is read on its own - one failing source
         # must NEVER kill the whole sample (v1.4.2 field report: the
         # brain said it "couldn't fetch" RAM too, because a single
@@ -738,8 +725,7 @@ class SystemMonitor:
         # source is None (never a fake 0), and the reason is logged.
         if psutil is None:
             return {"ram": None, "disk": None, "cpu_percent": None,
-                    "battery": None, "top_processes": [],
-                    "battery_drain": {}}
+                    "battery": None, "battery_drain": {}}
         ram = None
         try:
             vm = psutil.virtual_memory()
@@ -772,25 +758,27 @@ class SystemMonitor:
             battery = {"percent": int(raw.percent),
                        "charging": bool(raw.power_plugged)}
         top_processes = []
-        try:
-            top_processes = _read_top_processes()
-        except Exception as exc:
-            warn("monitor", f"Top-processes reading failed: {exc}")
+        # v1.6.2 (A5): the process scan left the fast seed -- it is
+        # the slow part, so it runs on the sampler thread only (see
+        # _sample_slow). The key stays OUT of this dict on purpose:
+        # merging a fast partial that carries "top_processes": []
+        # would wipe the slow-delivered list from the cache on every
+        # 5 s sample. Only the drain estimate needs a (currently
+        # empty) process list here.
         return {
             "ram": ram,
             "disk": disk,
             "cpu_percent": cpu_pct,
             "battery": battery,
-            "top_processes": top_processes,
             "battery_drain": battery_drain_estimate(battery, top_processes),
         }
 
     def _sample_slow(self) -> dict:
         """Slow fields only: temperature (already 10-min cached),
-        GPU (a PowerShell subprocess, up to 10 s) and all-drive
-        storage. Runs ONLY on the background sampler thread -- never
-        on the UI thread, so a slow PowerShell start can never freeze
-        the window."""
+        GPU (a PowerShell subprocess, up to 10 s), all-drive storage
+        and the top-process scan. Runs ONLY on the background sampler
+        thread -- never on the UI thread, so a slow PowerShell start
+        or a full process scan can never freeze the window."""
         temp_c, temp_available = self._read_temp_cached()
         gpu = {"available": False, "percent": None, "detail": ""}
         try:
@@ -802,11 +790,17 @@ class SystemMonitor:
             storage = read_storage()
         except Exception as exc:
             warn("monitor", f"Storage reading failed: {exc}")
+        top_processes = []
+        try:
+            top_processes = _read_top_processes()
+        except Exception as exc:
+            warn("monitor", f"Top-processes reading failed: {exc}")
         return {
             "temp_c": temp_c,
             "temp_available": temp_available,
             "gpu": gpu,
             "storage": storage,
+            "top_processes": top_processes,
         }
 
     def _sample_real(self) -> dict:
@@ -878,11 +872,14 @@ class SystemMonitor:
             self._sampler_thread = None
 
     def _sample_loop(self):
-        # Seed immediately with one full sample so the slow fields exist
-        # early, then fast every 5 s, slow every 60 s. A slow sample
+        # v1.6.2 (A5): seed with the FAST sample only, then one
+        # one-shot slow sample on this same background thread -- the
+        # slow fields exist early without ever blocking the UI thread.
+        # After that: fast every 5 s, slow every 60 s. A slow sample
         # only delays the next one -- it never blocks the UI thread.
         try:
-            self._merge_into_cache(self._sample_real())
+            self._merge_into_cache(self._sample_fast())
+            self._merge_into_cache(self._sample_slow())
         except Exception as exc:
             warn("monitor", f"Sampler seed failed: {exc}")
         slow_at = self._clock()
@@ -935,28 +932,21 @@ class SystemMonitor:
                        "temp_available": False}
         cpu_pct = reading.get("cpu_percent")
         self._record_cpu(cpu_pct if cpu_pct is not None else 0.0)
-        # v1.6.0 additions: top processes / GPU / storage / battery drain
-        # come from the reading when the sampler provides them (the real
-        # sampler does); injected test readings omit them, so they are
-        # read live here instead of failing or faking a value.
+        # v1.6.2 (A5): NO live fallbacks here. When the sampler has
+        # not delivered a field yet, the honest answer is "not
+        # available yet" (gpu unavailable / empty lists) or the last
+        # stored value from the cache -- get_status() NEVER samples
+        # synchronously, so it can never spawn a subprocess or scan
+        # processes on the bridge thread.
         top_processes = reading.get("top_processes")
         if top_processes is None:
-            try:
-                top_processes = _read_top_processes()
-            except Exception:
-                top_processes = []
+            top_processes = []
         gpu = reading.get("gpu")
         if gpu is None:
-            try:
-                gpu = read_gpu_usage()
-            except Exception:
-                gpu = {"available": False, "percent": None, "detail": ""}
+            gpu = {"available": False, "percent": None, "detail": ""}
         storage = reading.get("storage")
         if storage is None:
-            try:
-                storage = read_storage()
-            except Exception:
-                storage = []
+            storage = []
         battery = reading.get("battery")
         drain = reading.get("battery_drain")
         if drain is None:

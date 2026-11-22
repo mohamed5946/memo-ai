@@ -274,7 +274,10 @@ class TestTypingIndicatorJS(unittest.TestCase):
 
     def test_mood_poll_never_clobbers_thinking(self):
         src = _fn_source(JS, "function startMoodPolling()")
-        self.assertIn("if (thinkingActive) return;", src)
+        self.assertIn("thinkingActive) return;", src)
+        # v1.6.2 (B12): the guard shares its line with the in-flight
+        # guard — the poll still never clobbers an active "بيفكر".
+        self.assertIn("if (moodPollInFlight || thinkingActive) return;", src)
 
     def test_robot_tap_keeps_thinking_mood(self):
         src = _fn_source(JS, "function robotReact()")

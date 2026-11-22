@@ -33,25 +33,25 @@
     --m-glass:rgba(13,18,28,.72);
   }
   body, .island, .island-expanded { transition: background-color .45s ease, color .45s ease, border-color .45s ease; }
-  /* Live clock beside the island (HH:MM, ticks every 15s). Hidden when expanded. */
-  .island-clock { position: fixed; top: 14px; inset-inline-start: 12px; font-size: 15px; font-weight: 700;
-    color: var(--m-text); text-shadow: 0 1px 8px rgba(0,0,0,.5); letter-spacing: .5px; z-index: 3; }
-  body.expanded .island-clock { display: none; }
+  /* v1.6.2 (F4): NO clock on the collapsed pill at all — the time
+     shows only inside the expanded island (.exp-clock). */
+  .exp-clock { font-size: 13px; font-weight: 700; color: var(--m-text);
+    text-align: end; letter-spacing: .5px; }
   /* Collapsed island: SMALL compact gold glass pill, ~56-64px tall,
      like the TOP of the reference image. Robot head in a bubble on the
      left, overlapping the pill edge. */
   .island {
-    position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
-    width: 380px; max-width: calc(100vw - 16px); height: 60px;
+    position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+    width: 380px; height: 60px;
     background: linear-gradient(180deg, rgba(24,32,46,.92), rgba(13,18,28,.92));
     border: 1px solid rgba(232,201,122,.55);
     border-radius: 999px; display: flex; align-items: center; gap: 8px;
-    padding: 6px 10px 6px 46px; cursor: pointer;
+    padding: 6px 10px 6px 58px; cursor: pointer;
     box-shadow: 0 8px 26px rgba(0,0,0,.5), 0 0 22px rgba(232,201,122,.18), inset 0 1px 0 rgba(255,255,255,.12);
     transition: border-radius .4s cubic-bezier(.22,1,.36,1), height .45s ease, width .45s ease;
   }
   .island .robot-bubble {
-    position: absolute; inset-inline-start: -6px; top: 50%; transform: translateY(-50%);
+    position: absolute; inset-inline-start: 0; top: 50%; transform: translateY(-50%);
     width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
     background: radial-gradient(circle at 35% 30%, #2a3648, #0d121c 70%);
     border: 1px solid rgba(232,201,122,.6);
@@ -120,8 +120,8 @@
     font-size: 13px; font-weight: 700; animation: z-float 3.6s ease-in-out infinite; }
   @keyframes z-float { 0% { opacity: 0; transform: translateY(4px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-8px); } }
   /* Expanded island: big glass window like the BOTTOM of the reference image. */
-  .island-expanded { display: none; position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
-    width: 720px; max-width: calc(100vw - 16px); height: 400px;
+  .island-expanded { display: none; position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+    width: 720px; height: 400px;
     background: linear-gradient(180deg, rgba(24,32,46,.94), rgba(13,18,28,.94));
     border: 1px solid rgba(232,201,122,.55); border-radius: 26px;
     box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 30px rgba(232,201,122,.16), inset 0 1px 0 rgba(255,255,255,.12);
@@ -138,19 +138,12 @@
   @keyframes ring-pulse { 0%,100% { opacity: .35; } 50% { opacity: .9; } }
   .exp-robot svg.robot-body { width: 140px; height: 172px; position: relative; z-index: 1; }
   .exp-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-  .exp-top { display: flex; justify-content: flex-end; gap: 8px; }
-  .exp-top .round-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2);
     background: rgba(255,255,255,.08); color: #EDF2F7; font-size: 15px; cursor: pointer; }
   .exp-greet { display: flex; align-items: center; gap: 10px; }
   .exp-greet .avatar-dot { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1);
     border: 1px solid rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
   .exp-greet .greet-bubble { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
     border-radius: 18px; padding: 10px 14px; font-size: 14.5px; line-height: 1.5; }
-  .exp-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  .exp-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 999px;
-    border: 1px solid rgba(232,201,122,.45); background: rgba(232,201,122,.1); color: #EDF2F7; font-size: 13.5px;
-    font-weight: 700; cursor: pointer; transition: transform .18s cubic-bezier(.22,1,.36,1), background .25s ease; }
-  .exp-actions button:active { transform: scale(.95); }
   .exp-composer { display: flex; align-items: center; gap: 8px; margin-top: auto; }
   .exp-composer .plus-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2);
     background: rgba(255,255,255,.08); color: #EDF2F7; font-size: 20px; cursor: pointer; flex-shrink: 0;
@@ -165,32 +158,12 @@
   .exp-attach.open { display: flex; }
   .exp-attach button { padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16);
     background: rgba(255,255,255,.07); color: #EDF2F7; font-size: 12.5px; cursor: pointer; }
-  /* Swipe panels (4) inside the expanded island. */
-  .exp-panels { position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,.1);
-    background: rgba(0,0,0,.25); border-radius: 16px; padding: 12px; min-height: 108px; }
-  .exp-panels .track { display: flex; transition: transform .4s cubic-bezier(.22,1,.36,1); }
-  .exp-panel { flex: 0 0 100%; min-width: 0; font-size: 13.5px; line-height: 1.7; }
-  .exp-panel h4 { font-size: 14px; color: #E8C97A; margin-bottom: 6px; }
-  .exp-panel .bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,.1); overflow: hidden; margin: 6px 0; }
-  .exp-panel .bar i { display: block; height: 100%; background: linear-gradient(90deg, #d4af6a, #f0d48a); border-radius: 999px; }
-  .exp-panel .rowline { display: flex; justify-content: space-between; gap: 8px; }
-  .exp-panel .locked { color: #8FA5B8; }
-  .exp-panel button { margin-top: 6px; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(232,201,122,.45);
-    background: rgba(232,201,122,.12); color: #EDF2F7; font-size: 13px; font-weight: 700; cursor: pointer; }
-  .exp-dots { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; }
-  .exp-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.3); cursor: pointer; }
-  .exp-dots i.on { background: #E8C97A; box-shadow: 0 0 6px rgba(232,201,122,.8); }
-  .exp-arrows { position: absolute; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,.2); background: rgba(0,0,0,.4); color: #EDF2F7; cursor: pointer; font-size: 14px; z-index: 2; }
-  .exp-arrows.prev { inset-inline-start: 6px; } .exp-arrows.next { inset-inline-end: 6px; }
   .reply-line { font-size: 13px; line-height: 1.6; color: #dbe2ec; max-height: 52px; overflow: hidden; }
 </style>
 </head>
 <body data-theme="night-glass">
-<div class="island-clock" id="island-clock">--:--</div>
-
 <!-- Collapsed island -->
-<div class="island" id="island" data-panel="0">
+<div class="island" id="island">
   <div class="robot-bubble robot-wrap" id="island-robot" title="لونا">
     <span class="zzz">Z</span>
     <span id="island-robot-svg"></span>
@@ -200,8 +173,6 @@
     <div class="agent-line"><span class="green-dot"></span><span id="island-name">LONA</span><span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;transform:rotate(90deg)"><use href="assets/lona-icons-sprite.svg#back"/></svg></span></div>
     <div class="listen-line"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span class="listen-text" id="listen-text">Listening...</span></div>
   </div>
-  <button class="round-btn" id="island-mic" title="تحدث"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#mic"/></svg></button>
-  <button class="round-btn" id="island-settings" title="الإعدادات"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#settings"/></svg></button>
 </div>
 
 <!-- Expanded island -->
@@ -217,54 +188,15 @@
     <span class="robot-bubble-say" id="exp-say"></span>
   </div>
   <div class="exp-side">
+    <div class="exp-clock" id="exp-clock">--:--</div>
     <div class="exp-greet">
       <div class="avatar-dot"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#avatar"/></svg></div>
       <div class="greet-bubble" id="exp-greet">أهلاً يا محمد! أقدر أساعدك في إيه النهاردة؟</div>
     </div>
     <div class="reply-line" id="exp-reply"></div>
-    <div class="exp-actions">
-      <button data-action="quick" type="button">Quick Actions</button>
-      <button data-action="tools" type="button">Tools</button>
-      <button data-action="skills" type="button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#memory"/></svg> Skills</button>
-      <button data-action="more" type="button">More</button>
-    </div>
-    <div class="exp-panels" id="exp-panels">
-      <button class="exp-arrows prev" id="panel-prev" type="button" aria-label="السابق">‹</button>
-      <button class="exp-arrows next" id="panel-next" type="button" aria-label="التالي">›</button>
-      <div class="track" id="panel-track">
-        <div class="exp-panel" data-panel="0">
-          <h4>الجهاز دلوقتي</h4>
-          <div class="rowline"><span>الرام</span><b id="p-ram">—</b></div><div class="bar"><i id="p-ram-bar" style="width:0%"></i></div>
-          <div class="rowline"><span>المعالج</span><b id="p-cpu">—</b></div>
-          <div class="rowline"><span>البطارية</span><b id="p-batt">—</b></div>
-          <div class="rowline"><span>الحرارة</span><b id="p-temp">—</b></div>
-        </div>
-        <div class="exp-panel" data-panel="1">
-          <h4>معلومات الجهاز والتخزين</h4>
-          <div class="rowline"><span>التخزين</span><b id="p-disk">—</b></div><div class="bar"><i id="p-disk-bar" style="width:0%"></i></div>
-          <div class="rowline"><span>الرام</span><b id="p-ram2">—</b></div>
-          <div class="rowline"><span>النظام</span><b>Windows 11</b></div>
-          <div class="rowline"><span>المعالج</span><b id="p-cpu2">—</b></div>
-        </div>
-        <div class="exp-panel" data-panel="2">
-          <h4>التنظيف والملفات العميقة</h4>
-          <div class="rowline"><span>الكاش</span><b id="p-cache">—</b></div>
-          <div class="rowline"><span>الملفات العميقة</span><b class="locked">مقفولة — بإذنك بس</b></div>
-          <button type="button" id="clean-cache-btn">نضّف الكاش بإذني</button>
-          <span id="clean-status" style="font-size:12px;color:#8FA5B8"></span>
-        </div>
-        <div class="exp-panel" data-panel="3">
-          <h4>المتصفح</h4>
-          <div class="rowline"><span>إضافة Chrome</span><b id="p-ext">متصلة</b></div>
-          <div class="rowline"><span>التبويب الحالي</span><b id="p-tab">—</b></div>
-          <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="browser-control-toggle" checked> التحكم بالماوس والكيبورد</label>
-        </div>
-      </div>
-      <div class="exp-dots" id="panel-dots"><i class="on"></i><i></i><i></i><i></i></div>
-    </div>
     <div class="exp-composer">
       <button class="plus-btn" id="exp-plus" type="button" title="إضافة">+</button>
-      <input id="exp-input" type="text" placeholder="Type a message...">
+      <input id="exp-input" type="text" placeholder="Type a message..." virtualkeyboardpolicy="manual">
       <button class="send-btn" id="exp-send" type="button" title="إرسال"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#send"/></svg></button>
     </div>
     <div class="exp-attach" id="exp-attach">
@@ -346,11 +278,22 @@
      A timer cycle is a demo only — it runs ONLY as a fallback when
      the bridge is absent. */
   let moodTimer = null;
+  let moodPollTimer = null, moodPollInFlight = false, moodPollingStarted = false;
   function startMoodPolling() {
+    // v1.6.2 (B13): get_mood is polled EXACTLY once per 5s — the old
+    // code called startMoodPolling() twice (load + pywebviewready)
+    // and never stored the first interval id. The started guard +
+    // stored id make a second call a no-op; the pywebviewready
+    // handler below only restarts when the bridge was absent at load.
+    if (moodPollingStarted) return;
+    moodPollingStarted = true;
     const api = getApi();
     if (api && api.get_mood) {
-      setInterval(async () => {
+      moodPollTimer = setInterval(async () => {
+        if (moodPollInFlight) return; // v1.6.2 (B12): never stack polls
+        moodPollInFlight = true;
         try { const r = await api.get_mood(); if (r && r.mood) setMood(r.mood); } catch (e) {}
+        finally { moodPollInFlight = false; }
       }, 5000);
     } else {
       const names = Object.keys(MOODS);
@@ -372,18 +315,28 @@
     const el = $("island-name");
     if (el) el.textContent = name;
   }
-  loadAiName();
-  setInterval(loadAiName, 5000);
-  window.addEventListener("pywebviewready", loadAiName);
-  /* LIVE CARDS: re-read the real device values every 5s so every
-     number on the panels moves with reality, never frozen. */
-  setInterval(refreshDevicePanels, 5000);
-  window.addEventListener("pywebviewready", () => { if (moodTimer) { clearInterval(moodTimer); moodTimer = null; } startMoodPolling(); });
+  let aiNameTimer = null, aiNameInFlight = false;
+  async function loadAiNameGuarded() {
+    if (aiNameInFlight) return; // v1.6.2 (B12): never stack name reads
+    aiNameInFlight = true;
+    try { await loadAiName(); } finally { aiNameInFlight = false; }
+  }
+  loadAiNameGuarded();
+  aiNameTimer = setInterval(loadAiNameGuarded, 5000);
+  window.addEventListener("pywebviewready", loadAiNameGuarded);
+  window.addEventListener("pywebviewready", () => {
+    // The bridge was absent at load, so only the demo mood cycle runs:
+    // stop it and start the real get_mood() poll instead.
+    if (moodTimer) { clearInterval(moodTimer); moodTimer = null; moodPollingStarted = false; }
+    startMoodPolling();
+  });
 
-  /* Live clock beside the island (HH:MM, ticks every 15s). */
+  /* v1.6.2 (F4): the clock lives ONLY inside the expanded island
+     (#exp-clock, HH:MM, ticks every 15s) — never on the collapsed pill. */
   function tickClock() {
     const d = new Date();
-    $("island-clock").textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    const el = $("exp-clock");
+    if (el) el.textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
   }
   tickClock(); setInterval(tickClock, 15000);
 
@@ -420,13 +373,12 @@
     animateSize(IDLE_W, IDLE_H);
   }
   function expandIsland() {
-    /* Clicking the island expands it: the clock DISAPPEARS (CSS hides
-       .island-clock under body.expanded) and the full-body robot
-       appears on the side with widgets beside it. */
+    /* Clicking the island expands it: the full-body robot appears on
+       the side, with the greeting + composer beside it. The time
+       shows only here (inside the expanded island, never on the pill). */
     document.body.classList.add("expanded");
     clearTimeout(idleTimer);
     animateSize(EXPANDED_W, EXPANDED_H);
-    refreshDevicePanels();
   }
   function collapseIsland() { document.body.classList.remove("expanded"); goActive(); }
   function expandWithReply(text) {
@@ -453,66 +405,16 @@
   $("island-robot").addEventListener("click", e => { e.stopPropagation(); robotReact($("island-robot"), $("island-say")); });
   $("exp-robot").addEventListener("click", e => { e.stopPropagation(); robotReact($("exp-robot"), $("exp-say")); });
 
-  /* Swipeable panels: drag threshold 42px, arrows, 4 dots, ArrowLeft/Right keys. */
-  let panelIdx = 0; const PANEL_COUNT = 4;
-  function showPanel(i) {
-    panelIdx = Math.max(0, Math.min(PANEL_COUNT - 1, i));
-    $("panel-track").style.transform = "translateX(" + (-panelIdx * 100) + "%)";
-    document.querySelectorAll("#panel-dots i").forEach((d, k) => d.classList.toggle("on", k === panelIdx));
-  }
-  $("panel-prev").addEventListener("click", e => { e.stopPropagation(); showPanel(panelIdx - 1); });
-  $("panel-next").addEventListener("click", e => { e.stopPropagation(); showPanel(panelIdx + 1); });
-  document.querySelectorAll("#panel-dots i").forEach((d, k) => d.addEventListener("click", e => { e.stopPropagation(); showPanel(k); }));
-  document.addEventListener("keydown", e => {
-    if (!document.body.classList.contains("expanded")) return;
-    if (e.key === "ArrowLeft") showPanel(panelIdx - 1);
-    if (e.key === "ArrowRight") showPanel(panelIdx + 1);
-  });
-  let dragX0 = null;
-  const panelsEl = $("exp-panels");
-  panelsEl.addEventListener("pointerdown", e => { dragX0 = e.clientX; });
-  panelsEl.addEventListener("pointerup", e => {
-    if (dragX0 == null) return;
-    const dx = e.clientX - dragX0; dragX0 = null;
-    if (Math.abs(dx) >= 42) showPanel(panelIdx + (dx < 0 ? 1 : -1));
-  });
-
-  async function refreshDevicePanels() {
-    const api = getApi();
-    if (!api || !api.get_device_overview) return;
-    try {
-      const d = await api.get_device_overview();
-      // v1.6.1: the API returns {ok, overview:{ram:{percent}, ...}} —
-      // the old flat reads never matched, so the panels stayed "—"
-      // forever. Read the nested shape (same fix as the main
-      // window's refreshDeviceOverview).
-      const ov = (d && d.overview) || {};
-      if (ov.ram && ov.ram.percent != null) { $("p-ram").textContent = ov.ram.percent + "%"; $("p-ram-bar").style.width = ov.ram.percent + "%"; $("p-ram2").textContent = ov.ram.percent + "%"; }
-      if (ov.cpu && ov.cpu.percent != null) { $("p-cpu").textContent = ov.cpu.percent + "%"; $("p-cpu2").textContent = ov.cpu.percent + "%"; }
-      if (ov.battery && ov.battery.percent != null) $("p-batt").textContent = ov.battery.percent + "%";
-      if (ov.temp_c != null) $("p-temp").textContent = ov.temp_c + "°م";
-      if (ov.disk && ov.disk.percent_free != null) { const used = Math.round((100 - ov.disk.percent_free) * 10) / 10; $("p-disk").textContent = used + "% مستخدم"; $("p-disk-bar").style.width = used + "%"; }
-      // p-cache / p-tab have no source in get_device_overview — left as
-      // "—" (pre-existing placeholders, never invented).
-    } catch (e) { /* panels keep their placeholders */ }
-  }
-
   function logClick(msg) { try { const a = getApi(); if (a && a.log_js) a.log_js(msg); } catch (e) {} }
   $("island").addEventListener("pointerdown", () => logClick("Island pill pointerdown"));
   $("island").addEventListener("click", () => { logClick("Island pill clicked - expanding"); expandIsland(); });
-  $("island-settings").addEventListener("click", e => { e.stopPropagation(); const api = getApi(); if (api && api.open_main) { try { api.open_main(); } catch (err) {} } });
   $("island-expanded").addEventListener("click", e => {
     // No window-control buttons on the island: tap the island itself
     // to close it. Taps on controls (buttons, inputs, panels,
     // composer) keep working and do NOT collapse it.
-    if (e.target.closest("button, input, .exp-panels, .exp-composer, .exp-actions, .exp-greet")) return;
+    if (e.target.closest("button, input, .exp-composer, .exp-greet")) return;
     collapseIsland();
   });
-  document.querySelectorAll(".exp-actions button").forEach(b => b.addEventListener("click", () => {
-    const api = getApi();
-    if (api && api.open_main) { try { api.open_main(); } catch (err) {} }
-    else { $("exp-greet").textContent = "افتح النافذة الرئيسية عشان " + b.textContent.trim(); }
-  }));
   $("exp-plus").addEventListener("click", () => {
     const m = $("exp-attach"); m.classList.toggle("open"); $("exp-plus").classList.toggle("open", m.classList.contains("open"));
   });
@@ -520,17 +422,20 @@
     $("exp-greet").textContent = "اختار " + b.dataset.kind + " من جهازك — هبعتها للونا.";
     $("exp-attach").classList.remove("open"); $("exp-plus").classList.remove("open");
   }));
-  $("clean-cache-btn").addEventListener("click", async () => {
-    const api = getApi(); const st = $("clean-status");
-    if (api && api.request_clean_cache) {
-      st.textContent = "بنضّف...";
-      try { const r = await api.request_clean_cache(); st.textContent = (r && r.ok) ? "اتنضّف" : "محتاج إذنك الأول"; if (r && r.ok) refreshDevicePanels(); }
-      catch (e) { st.textContent = "محتاج إذنك الأول"; }
-    } else st.textContent = "التنظيف من النافذة الرئيسية";
-  });
-  $("browser-control-toggle").addEventListener("change", e => {
-    $("p-ext").textContent = e.target.checked ? "متصلة" : "التحكم مقفول";
-  });
+  /* v1.6.2 (A7): one shared pending poll — the cap timer is stored
+     and cleared on success; at the 150s cap it resolves with a FAILURE
+     message that is WRITTEN into exp-reply (never {reply: ""} leaving
+     "بيفكّر..." forever). window.__islandCapMs is a test hook. */
+  function waitForIslandChatResult(chatId) {
+    const api = getApi();
+    return new Promise((resolve) => {
+      const timer = setInterval(async () => {
+        try { const r = await api.chat_result(chatId); if (r && r.done) { clearInterval(timer); clearTimeout(capTimer); resolve(r); } } catch (err) {}
+      }, 1200);
+      const capMs = (typeof window !== "undefined" && window.__islandCapMs) || 150000;
+      const capTimer = setTimeout(() => { clearInterval(timer); resolve({ reply: "الرد اتأخر أوي — المخ مش بيرد دلوقتي، جرّب تاني.", engine: "", timed_out: true }); }, capMs);
+    });
+  }
   async function sendIslandText() {
     const input = $("exp-input"); const text = input.value.trim();
     if (!text) return;
@@ -541,43 +446,13 @@
     try {
       const res = await api.chat(text);
       if (res && res.pending) {
-        const done = await new Promise(resolve => {
-          const timer = setInterval(async () => {
-            try { const r = await api.chat_result(res.chat_id); if (r && r.done) { clearInterval(timer); resolve(r); } } catch (err) {}
-          }, 1200);
-          setTimeout(() => { clearInterval(timer); resolve({ reply: "" }); }, 150000);
-        });
-        if (done.reply) $("exp-reply").textContent = done.reply;
+        const done = await waitForIslandChatResult(res.chat_id);
+        $("exp-reply").textContent = (done && done.reply) || "حصلت مشكلة، جرّب تاني.";
       } else if (res && res.reply) $("exp-reply").textContent = res.reply;
     } catch (e) { $("exp-reply").textContent = "حصلت مشكلة، جرّب تاني."; }
   }
   $("exp-send").addEventListener("click", sendIslandText);
   $("exp-input").addEventListener("keydown", e => { if (e.key === "Enter") sendIslandText(); });
-  $("island-mic").addEventListener("click", async e => {
-    e.stopPropagation();
-    const api = getApi(); if (!api) return;
-    const mic = $("island-mic");
-    mic.classList.add("recording");
-    $("listen-text").textContent = "بسمعك...";
-    goActive();
-    try {
-      const res = await api.voice_chat();
-      $("exp-greet").textContent = res.heard ? "سمعتك: " + res.heard : "أهلاً يا محمد!";
-      if (res && res.pending) {
-        $("exp-reply").textContent = "بيفكّر...";
-        const done = await new Promise(resolve => {
-          const timer = setInterval(async () => {
-            try { const r = await api.chat_result(res.chat_id); if (r && r.done) { clearInterval(timer); resolve(r); } } catch (err) {}
-          }, 1200);
-          setTimeout(() => { clearInterval(timer); resolve({ reply: "" }); }, 150000);
-        });
-        if (done.reply) expandWithReply(done.reply); else goActive();
-      } else if (res.reply) expandWithReply(res.reply);
-      else goActive();
-    } catch (err) { $("listen-text").textContent = "مقدرتش أسمعك — جرّب تاني"; armIdleTimer(); }
-    mic.classList.remove("recording");
-    $("listen-text").textContent = "Listening...";
-  });
   // Start collapsed.
   animateSize(IDLE_W, IDLE_H);
 </script>

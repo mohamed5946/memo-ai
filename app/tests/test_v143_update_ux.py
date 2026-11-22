@@ -245,8 +245,11 @@ class TestDownloadOnly(_UpdaterCase):
         self.assertEqual(len(result["features"]), 2)
         self.assertEqual(result["features"][0]["title"],
                          "إصلاح الرد على الواتساب")
-        self.assertIn("downloaded", result)
-        self.assertFalse(result["downloaded"]["downloaded"])
+        # v1.6.2 (A8): the downloaded-update record is NOT part of
+        # the check response anymore -- the UI reads it from
+        # get_downloaded_update() instead (size/mtime only, no SHA
+        # on the bridge).
+        self.assertNotIn("downloaded", result)
 
 
 class TestInstallLaterReminder(_UpdaterCase):

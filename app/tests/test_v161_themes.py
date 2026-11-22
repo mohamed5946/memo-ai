@@ -258,13 +258,18 @@ def _user_bubble_first_stops():
 
 
 def test_user_bubbles_differ_per_theme():
-    stops = _user_bubble_first_stops()
-    assert sorted(stops) == sorted(THEME_IDS), (
-        "each theme needs its own .msg.user paint; old uses the base "
-        f"v1.5.0 blue rule, got overrides for: {sorted(stops)}")
-    for a, b in itertools.combinations(THEME_IDS, 2):
-        assert _dist(stops[a], stops[b]) >= MIN_DIST, (
-            f"user bubble: {a} ({stops[a]}) vs {b} ({stops[b]}) too close")
+    # v1.6.2 (PARITY 2): the user bubble is GOLD in every theme — the
+    # theme accent with dark text, bold (the preview's gold bubble).
+    # The v1.6.1 per-theme blue/orange/green paints are gone by design.
+    base = re.search(r"\.msg\.user\s*\{([^}]*)\}", CSS)
+    assert base, ".msg.user base rule missing"
+    rule = base.group(1)
+    assert "background: var(--m-accent)" in rule
+    assert "color: var(--m-on-accent)" in rule
+    assert "font-weight: 700" in rule
+    assert not re.search(
+        r'body\[data-theme="[^"]+"\]\s*\.msg\.user\s*\{', CSS), (
+        "no per-theme .msg.user override may survive the gold bubble")
 
 
 def _send_btn_first_stops():

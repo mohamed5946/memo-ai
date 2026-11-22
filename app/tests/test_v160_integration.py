@@ -130,12 +130,12 @@ class TestApiContract(unittest.TestCase):
         self.assertIn('chrome-extension://', src)
         self.assertIn('from native_host import run_host_main', src)
 
-    def test_version_is_1_6_1_everywhere(self):
+    def test_version_is_1_6_2_everywhere(self):
         src = self._main_source()
-        self.assertIn('VERSION = "1.6.1"', src)
+        self.assertIn('VERSION = "1.6.2"', src)
         manifest = json.loads((ROOT / "version.json").read_text(
             encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.6.1")
+        self.assertEqual(manifest["version"], "1.6.2")
         self.assertTrue(manifest.get("features"))
 
 

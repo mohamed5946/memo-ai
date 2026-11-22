@@ -178,6 +178,32 @@ def check_once(temp_c: float | None = None, temp_available: bool = True,
             "causes": causes}
 
 
+def _read_temp_capped(timeout: float = 15.0) -> tuple:
+    """read_cpu_temp() in a worker thread (v1.6.2 B22): a stuck WMI /
+    PowerShell probe can never block the watcher past `timeout` --
+    on timeout this is (None, False), never a hang."""
+    import threading
+
+    result: dict = {}
+
+    def _run():
+        try:
+            import monitor as monitor_mod
+            result["value"] = monitor_mod.read_cpu_temp()
+        except Exception as exc:
+            _append_log(f"temp probe failed: {exc}")
+            result["value"] = (None, False)
+
+    thread = threading.Thread(target=_run, daemon=True,
+                              name="tempwatch-temp-probe")
+    thread.start()
+    thread.join(timeout=timeout)
+    if thread.is_alive():
+        _append_log(f"temp probe timed out ({timeout:.0f}s)")
+        return None, False
+    return result.get("value", (None, False))
+
+
 def _watch_loop() -> None:
     """The background loop: poll every 60s, never die. Reads the
     setting each loop so toggling tempwatch off stops it promptly."""
@@ -191,17 +217,17 @@ def _watch_loop() -> None:
                     return
             except Exception:
                 pass
-            temp_c, available = (None, False)
-            try:
-                import monitor as monitor_mod
-                temp_c, available = monitor_mod.read_cpu_temp()
-            except Exception as exc:
-                _append_log(f"temp probe failed: {exc}")
+            temp_c, available = _read_temp_capped()
+            # v1.6.2 (B22): the top-process scan runs ONLY when the
+            # device is actually hot -- a cool poll needs no scan.
+            hot = (temp_c is not None and available
+                   and temp_c >= _WARN_C)
             result = check_once(
                 temp_c=temp_c, temp_available=available,
                 consecutive_hot=consecutive_hot,
-                top_processes=_top_cpu_processes(),
-                windows_update_running=_windows_update_running())
+                top_processes=_top_cpu_processes() if hot else [],
+                windows_update_running=_windows_update_running()
+                if hot else False)
             consecutive_hot = int(result.get("consecutive_hot") or 0)
         except Exception as exc:
             # The watcher must NEVER crash the boot / the session.

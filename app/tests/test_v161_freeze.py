@@ -90,7 +90,12 @@ class TestMonitorCache(unittest.TestCase):
                         side_effect=AssertionError("subprocess spawned")):
             fast = mon._sample_fast()
         self.assertIsNotNone(fast["ram"])
-        self.assertIn("top_processes", fast)
+        # v1.6.2: the top_processes KEY is absent from the fast
+        # sample on purpose -- a fast partial carrying [] would wipe
+        # the slow-delivered list out of the merged cache on every
+        # 5 s sample (the process list flickered to empty forever).
+        # get_status() still reports [] until the sampler delivers.
+        self.assertNotIn("top_processes", fast)
         self.assertNotIn("gpu", fast)
         self.assertNotIn("temp_c", fast)
 

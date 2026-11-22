@@ -8,15 +8,20 @@
 </head>
 <body data-theme="night-glass">
 <div class="app">
-  <div class="window-bar"><span class="win-dot red"></span><span class="win-dot yellow"></span><span class="win-dot green"></span><span class="win-title">LONA</span></div>
-
-  <header>
+  <header id="app-header">
+    <div class="win-controls">
+      <button class="win-btn close" id="win-close" type="button" title="قفل" aria-label="قفل"></button>
+      <button class="win-btn min" id="win-min" type="button" title="تصغير" aria-label="تصغير"></button>
+      <button class="win-btn max" id="win-max" type="button" title="تكبير" aria-label="تكبير"></button>
+    </div>
     <div class="logo"><img src="assets/avatar-robot.png" alt="LONA"></div>
     <div class="title">
       <h1>LONA</h1>
       <p data-i18n="subtitle">محلي • آمن • أوفلاين</p>
     </div>
     <div class="spacer"></div>
+    <span class="header-clock" id="header-clock">--:--</span>
+    <span class="model-indicator" id="model-indicator" title="الموديل الحالي">تلقائي</span>
     <span class="pill" id="net-pill"><span class="dot"></span><span id="net-text">Online</span></span>
     <button class="icon-btn btn-3d" id="voice-btn" title="تشغيل / إيقاف صوت المساعد"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#sounds"/></svg></button>
     <button class="icon-btn btn-3d" id="settings-btn" title="الإعدادات"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#settings"/></svg></button>
@@ -36,7 +41,7 @@
   <div class="main-col" id="main-col">
   <div class="robot-stage" id="robot-stage">
     <div class="robot-wrap" id="stage-robot"><span class="zzz">Z</span><span id="stage-robot-svg"></span><span class="robot-bubble-say" id="stage-say"></span></div>
-    <svg class="robot-rings" width="150" height="26" viewBox="0 0 150 26" aria-hidden="true"><ellipse cx="75" cy="13" rx="48" ry="7"></ellipse><ellipse cx="75" cy="13" rx="35" ry="5"></ellipse><ellipse cx="75" cy="13" rx="22" ry="3.5"></ellipse></svg>
+    <svg class="robot-rings" width="110" height="18" viewBox="0 0 150 26" aria-hidden="true"><ellipse cx="75" cy="13" rx="48" ry="7"></ellipse><ellipse cx="75" cy="13" rx="35" ry="5"></ellipse><ellipse cx="75" cy="13" rx="22" ry="3.5"></ellipse></svg>
     <div class="robot-name" id="robot-name">LONA</div>
     <div class="self-view-row" id="stage-self-row"><span>المود: <b id="stage-mood">صاحي</b></span><span>المهمة: <b id="stage-task">جاهزة</b></span></div>
   </div>
@@ -56,7 +61,7 @@
       <div class="stat-card" data-stat="battery"><div class="stat-label">البطارية</div><div class="stat-value"><span class="count-up" data-target="0" data-suffix="%" data-sampled="false">—</span></div><div class="stat-bar"><i style="--bar-w:0%"></i></div></div>
     </div>
     <div class="temp-hint" id="temp-hint" hidden>
-      <span id="temp-hint-text"></span>
+      <span id="temp-hint-text">الحرارة مش متاحة على الجهاز ده — ثبّت LibreHardwareMonitor عشان تشوفها:</span>
       <a id="temp-hint-link" href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases" target="_blank" rel="noopener">LibreHardwareMonitor</a>
       <button class="temp-hint-dismiss btn-3d" id="temp-hint-dismiss" type="button" title="تجاهل"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#x"/></svg></button>
     </div>
@@ -112,11 +117,11 @@
     <h3 data-i18n="sec_general">عام</h3>
     <div class="field">
       <label data-i18n="ai_name">اسم المساعد</label>
-      <input type="text" id="set-ai-name" value="LONA">
+      <input type="text" id="set-ai-name" value="LONA" virtualkeyboardpolicy="manual">
     </div>
     <div class="field">
       <label data-i18n="user_name">المساعد يناديك بإيه؟</label>
-      <input type="text" id="set-user-name" value="Mohamed">
+      <input type="text" id="set-user-name" value="Mohamed" virtualkeyboardpolicy="manual">
     </div>
     <div class="field">
       <label data-i18n="language">لغة الواجهة</label>
@@ -140,7 +145,7 @@
     <div class="field"><div class="hint" id="wakeword-status" data-i18n="wakeword_status_loading">الاستماع الدايم: بيجهّز…</div></div>
     <div class="field" style="margin-top:14px">
       <label data-i18n="owner_code">كود المالك</label>
-      <input type="password" id="set-owner-code" data-i18n-ph="owner_code_ph" placeholder="اكتب الكود السري">
+      <input type="password" id="set-owner-code" data-i18n-ph="owner_code_ph" placeholder="اكتب الكود السري" virtualkeyboardpolicy="manual">
     </div>
     <div class="row">
       <button class="ghost-btn btn-3d" id="owner-unlock-btn" data-i18n="owner_unlock">تفعيل وضع المالك</button>
@@ -148,7 +153,7 @@
     </div>
     <h3 data-i18n="sec_about">عن المطور</h3>
     <div class="about-box">
-      <div><b>LONA</b> v1.6.1</div>
+      <div><b>LONA</b> v1.6.2</div>
       <div data-i18n="about_by">صمم بواسطة <b>ENG/Mohamed El Sayed</b></div>
       <div style="margin-top:8px"><button class="gold-btn btn-3d" id="portfolio-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#globe"/></svg> <span data-i18n="visit_site">زور الموقع</span></button>
       <button class="ghost-btn btn-3d" id="github-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#github"/></svg> <span data-i18n="github">GitHub</span></button></div>
@@ -169,7 +174,7 @@
       <span data-i18n="wa_toggle">تفعيل ربط الواتساب</span></label>
     <div class="field" style="margin-top:10px">
       <label data-i18n="wa_owner_label">رقمك الأساسي (owner) — اللي يأمر اللابتوب من الواتساب</label>
-      <input type="text" id="set-wa-owner" placeholder="01xxxxxxxxx" dir="ltr">
+      <input type="text" id="set-wa-owner" placeholder="01xxxxxxxxx" dir="ltr" virtualkeyboardpolicy="manual">
     </div>
     <div class="field"><div class="hint" id="wa-status" data-i18n="wa_status_off">الواتساب مش مفعّل.</div></div>
     <div class="wa-qr-wrap" id="wa-qr-wrap" style="display:none">
@@ -211,22 +216,22 @@
     <label class="toggle"><input type="checkbox" id="set-monitor-enabled" checked>
       <span data-i18n="mon_enable">مراقبة صحة الجهاز والتنبيه عند الخطر</span></label>
     <div class="field"><label data-i18n="mon_ram_free">تنبيه لما الرام الفاضية تقل عن (MB)</label>
-      <input type="number" id="set-mon-ram-free" value="500" dir="ltr"></div>
+      <input type="number" id="set-mon-ram-free" value="500" dir="ltr" virtualkeyboardpolicy="manual"></div>
     <div class="field"><label data-i18n="mon_ram_pct">أو لما استهلاك الرام يزيد عن (%)</label>
-      <input type="number" id="set-mon-ram-pct" value="92" dir="ltr"></div>
+      <input type="number" id="set-mon-ram-pct" value="92" dir="ltr" virtualkeyboardpolicy="manual"></div>
     <div class="field"><label data-i18n="mon_disk_free">تنبيه لما القرص الفاضي يقل عن (GB)</label>
-      <input type="number" id="set-mon-disk-free" value="10" dir="ltr"></div>
+      <input type="number" id="set-mon-disk-free" value="10" dir="ltr" virtualkeyboardpolicy="manual"></div>
     <div class="field"><label data-i18n="mon_disk_pct">أو لما القرص الفاضي يقل عن (%)</label>
-      <input type="number" id="set-mon-disk-pct" value="10" dir="ltr"></div>
+      <input type="number" id="set-mon-disk-pct" value="10" dir="ltr" virtualkeyboardpolicy="manual"></div>
     <div class="field"><label data-i18n="mon_temp_warn">تنبيه حرارة المعالج (°م)</label>
-      <input type="number" id="set-mon-temp-warn" value="85" dir="ltr"></div>
+      <input type="number" id="set-mon-temp-warn" value="85" dir="ltr" virtualkeyboardpolicy="manual"></div>
     <div class="field"><label data-i18n="mon_cpu">تنبيه حمل معالج مستمر فوق (%) لمدة (دقائق)</label>
-      <div class="row"><input type="number" id="set-mon-cpu-pct" value="85" dir="ltr" style="width:90px">
-      <input type="number" id="set-mon-cpu-min" value="5" dir="ltr" style="width:90px"></div></div>
+      <div class="row"><input type="number" id="set-mon-cpu-pct" value="85" dir="ltr" style="width:90px" virtualkeyboardpolicy="manual">
+      <input type="number" id="set-mon-cpu-min" value="5" dir="ltr" style="width:90px" virtualkeyboardpolicy="manual"></div></div>
     <div class="field"><label data-i18n="mon_battery">تنبيه بطارية منخفضة تحت (%)</label>
-      <input type="number" id="set-mon-batt" value="20" dir="ltr"></div>
+      <input type="number" id="set-mon-batt" value="20" dir="ltr" virtualkeyboardpolicy="manual"></div>
     <div class="field"><label data-i18n="mon_cooldown">عدم تكرار نفس التنبيه قبل (دقيقة)</label>
-      <input type="number" id="set-mon-cooldown" value="30" dir="ltr"></div>
+      <input type="number" id="set-mon-cooldown" value="30" dir="ltr" virtualkeyboardpolicy="manual"></div>
     <label class="toggle"><input type="checkbox" id="set-mon-in-app" checked>
       <span data-i18n="mon_in_app">التنبيه داخل التطبيق</span></label>
     <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-mon-toast" checked>
@@ -333,17 +338,17 @@
     <h3>مفاتيح API</h3>
     <div class="field">
       <label>مفتاح Gemini للصوت</label>
-      <div class="api-key-row"><input type="password" id="api-key-gemini-voice" placeholder="مفتاح Gemini للصوت" dir="ltr" autocomplete="off"><button class="ghost-btn btn-3d" id="api-show-gemini-voice" type="button">إظهار</button></div>
+      <div class="api-key-row"><input type="password" id="api-key-gemini-voice" placeholder="مفتاح Gemini للصوت" dir="ltr" autocomplete="off" virtualkeyboardpolicy="manual"><button class="ghost-btn btn-3d" id="api-show-gemini-voice" type="button">إظهار</button></div>
       <div class="row" style="margin-top:8px"><button class="gold-btn btn-3d" id="api-save-gemini-voice" type="button">حفظ</button><button class="ghost-btn btn-3d" id="api-test-gemini-voice" type="button">اختبار الاتصال</button><span class="saved-badge" id="api-badge-gemini-voice"></span><span class="save-status" id="api-status-gemini-voice"></span></div>
     </div>
     <div class="field">
       <label>مفتاح Gemini للمحادثة (بديل Groq)</label>
-      <div class="api-key-row"><input type="password" id="api-key-gemini-chat" placeholder="مفتاح Gemini للمحادثة" dir="ltr" autocomplete="off"><button class="ghost-btn btn-3d" id="api-show-gemini-chat" type="button">إظهار</button></div>
+      <div class="api-key-row"><input type="password" id="api-key-gemini-chat" placeholder="مفتاح Gemini للمحادثة" dir="ltr" autocomplete="off" virtualkeyboardpolicy="manual"><button class="ghost-btn btn-3d" id="api-show-gemini-chat" type="button">إظهار</button></div>
       <div class="row" style="margin-top:8px"><button class="gold-btn btn-3d" id="api-save-gemini-chat" type="button">حفظ</button><button class="ghost-btn btn-3d" id="api-test-gemini-chat" type="button">اختبار الاتصال</button><span class="saved-badge" id="api-badge-gemini-chat"></span><span class="save-status" id="api-status-gemini-chat"></span></div>
     </div>
     <div class="field">
       <label>Groq</label>
-      <div class="api-key-row"><input type="password" id="api-key-groq" placeholder="مفتاح Groq" dir="ltr" autocomplete="off"><button class="ghost-btn btn-3d" id="api-show-groq" type="button">إظهار</button></div>
+      <div class="api-key-row"><input type="password" id="api-key-groq" placeholder="مفتاح Groq" dir="ltr" autocomplete="off" virtualkeyboardpolicy="manual"><button class="ghost-btn btn-3d" id="api-show-groq" type="button">إظهار</button></div>
       <div class="row" style="margin-top:8px"><button class="gold-btn btn-3d" id="api-save-groq" type="button">حفظ</button><button class="ghost-btn btn-3d" id="api-test-groq" type="button">اختبار الاتصال</button><span class="saved-badge" id="api-badge-groq"></span><span class="save-status" id="api-status-groq"></span></div>
     </div>
   </div>
@@ -357,8 +362,8 @@
       <div class="self-view-row"><span class="k">المهمة الحالية</span><span class="v" id="sv-task">—</span></div>
       <div class="self-view-row"><span class="k">آخر إجراء</span><span class="v" id="sv-last-action">—</span></div>
       <div class="self-view-row"><span class="k">استهلاكها هي</span><span class="v" id="sv-usage">—</span></div>
-      <div class="self-view-row"><span class="k">الحرارة</span><span class="v" id="sv-temp">—</span></div>
-      <div class="self-view-row"><span class="k">الملفات العميقة</span><span class="v" id="sv-deep">مقفولة</span></div>
+      <div class="self-view-row"><span class="k">الحرارة</span><span class="v" id="sv-temp">الحرارة مش متاحة على الجهاز ده</span><a class="sv-link" id="sv-temp-link" href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases" target="_blank" rel="noopener" hidden>ثبّت LibreHardwareMonitor</a></div>
+      <div class="self-view-row"><span class="k">الملفات العميقة</span><span class="v" id="sv-deep">مقفولة</span><button class="sv-btn btn-3d" id="sv-deep-request" type="button" hidden>اطلب الإذن</button></div>
       <div class="self-view-row"><span class="k">Chrome</span><span class="v" id="sv-chrome">—</span></div>
       <div class="self-view-row"><span class="k">الموديل</span><span class="v" id="sv-model">—</span></div>
     </div>
@@ -370,14 +375,14 @@
     <h3>نسخة احتياطية</h3>
     <div class="backup-box">
       <div class="field"><label>كلمة سر النسخة (للتصدير)</label>
-        <input type="password" id="backup-export-pass" placeholder="كلمة السر" autocomplete="off" dir="ltr"></div>
+        <input type="password" id="backup-export-pass" placeholder="كلمة السر" autocomplete="off" dir="ltr" virtualkeyboardpolicy="manual"></div>
       <div class="field"><label>تأكيد كلمة السر</label>
-        <input type="password" id="backup-export-pass2" placeholder="اكتبها تاني" autocomplete="off" dir="ltr"></div>
+        <input type="password" id="backup-export-pass2" placeholder="اكتبها تاني" autocomplete="off" dir="ltr" virtualkeyboardpolicy="manual"></div>
       <div class="row"><button class="gold-btn btn-3d" id="backup-export-btn" type="button">تصدير نسخة احتياطية</button><span class="save-status" id="backup-export-status"></span></div>
     </div>
     <div class="backup-box">
       <div class="field"><label>كلمة سر النسخة (للاستيراد)</label>
-        <input type="password" id="backup-import-pass" placeholder="كلمة السر" autocomplete="off" dir="ltr"></div>
+        <input type="password" id="backup-import-pass" placeholder="كلمة السر" autocomplete="off" dir="ltr" virtualkeyboardpolicy="manual"></div>
       <div class="row"><button class="ghost-btn btn-3d" id="backup-import-btn" type="button">استيراد نسخة احتياطية</button><span class="save-status" id="backup-import-status"></span></div>
     </div>
   </div>
@@ -408,6 +413,8 @@
 
   <div class="status" id="status"></div>
   <div class="deepthink-state" id="deepthink-state"></div>
+</div>
+</div>
 
   <div class="composer">
     <div class="attach-wrap">
@@ -419,17 +426,19 @@
         <button type="button" data-kind="مستندات">مستندات</button>
       </div>
     </div>
+    <div class="model-wrap">
+      <button class="model-btn btn-3d" id="model-btn" type="button" title="اختيار الموديل">تلقائي</button>
+      <div class="model-menu" id="model-menu"></div>
+    </div>
     <button class="deepthink-btn btn-3d" id="deepthink-btn" type="button" title="تفكير عميق"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#deep-think"/></svg></button>
     <input class="text-input" id="text-input" type="text"
-           data-i18n-ph="input_placeholder" placeholder="اكتب رسالتك هنا...">
+           data-i18n-ph="input_placeholder" placeholder="اكتب رسالتك هنا..." virtualkeyboardpolicy="manual">
     <button class="send-btn btn-3d" id="send-btn" title="إرسال"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#send"/></svg></button>
     <button class="mic-btn" id="mic-btn" title="تحدث"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#mic"/></svg></button>
   </div>
   <div class="mic-hint" data-i18n="mic_hint">اضغط على المايك وتكلم 5 ثواني</div>
+</div>
 
-</div>
-</div>
-</div>
 
 <!-- INVITE GATE (v1.6.1): first launch only, before the main window.
      Shown when the install is not activated yet; a correct code hides
@@ -444,18 +453,19 @@
     <h2 style="margin:0">كود الدعوة</h2>
     <p style="margin:0;opacity:.8">اكتب كود الدعوة المكوّن من 6 أرقام عشان تفتح البرنامج</p>
     <div class="invite-boxes" id="invite-boxes">
-      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 1" dir="ltr">
-      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 2" dir="ltr">
-      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 3" dir="ltr">
-      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 4" dir="ltr">
-      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 5" dir="ltr">
-      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 6" dir="ltr">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 1" dir="ltr" virtualkeyboardpolicy="manual">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 2" dir="ltr" virtualkeyboardpolicy="manual">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 3" dir="ltr" virtualkeyboardpolicy="manual">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 4" dir="ltr" virtualkeyboardpolicy="manual">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 5" dir="ltr" virtualkeyboardpolicy="manual">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 6" dir="ltr" virtualkeyboardpolicy="manual">
     </div>
     <div class="row" style="justify-content:center"><button class="gold-btn btn-3d" id="invite-activate" type="button" disabled>تفعيل</button></div>
     <div class="field" style="margin-top:10px;text-align:center"><span class="save-status" id="invite-status"></span></div>
   </div>
 </div>
 
+<div class="lightbox" id="lightbox" hidden><img id="lightbox-img" alt="صورة مولّدة"><button class="lightbox-close btn-3d" id="lightbox-close" type="button" title="قفل"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#x"/></svg></button></div>
 <script src="app.js"></script>
 </body>
 </html>

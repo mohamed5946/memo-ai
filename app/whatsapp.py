@@ -1142,7 +1142,9 @@ class WhatsAppService:
             with tools.trusted_caller():
                 result = brain.ask_with_tools(
                     text, ai_name, user_name, lang,
-                    history=self._owner_history, owner_unlocked=True)
+                    history=self._owner_history, owner_unlocked=True,
+                    # v1.6.2: the saved model choice applies here too.
+                    model_choice=self.settings.get("model_choice", "auto"))
             reply = result.get("reply", "")
             engine = result.get("engine", "")
             mode = "owner"
@@ -1155,7 +1157,10 @@ class WhatsAppService:
             # routines (see brain._record_turn).
             hist = self._guest_histories.setdefault(sender, [])
             result = brain.ask(text, ai_name, user_name, lang, history=hist,
-                               memory_enabled=False)
+                               memory_enabled=False,
+                               # v1.6.2: the saved model choice.
+                               model_choice=self.settings.get(
+                                   "model_choice", "auto"))
             self._guest_histories[sender] = hist[-20:]
             if len(self._guest_histories) > 8:  # cap tracked senders
                 oldest = next(iter(self._guest_histories))

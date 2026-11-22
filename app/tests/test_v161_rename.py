@@ -331,7 +331,7 @@ class TestNoUserVisibleMemoAiElsewhere(unittest.TestCase):
                       "OriginalFilename', 'LONA.exe",
                       "ProductName', 'LONA"):
             self.assertIn(field, info_txt)
-        self.assertIn("filevers=(1, 6, 1, 0)", info_txt)
+        self.assertIn("filevers=(1, 6, 2, 0)", info_txt)
 
     def test_workflow_builds_lona_setup(self):
         yml = _read(".github/workflows/build-installer.yml")

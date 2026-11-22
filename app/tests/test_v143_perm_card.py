@@ -145,9 +145,11 @@ class TestPermCardStatic(unittest.TestCase):
 
     def test_polling_and_resolve_untouched(self):
         js = _read("app/ui/app.js")
-        # polling still every 1s, resolve still the same call
+        # polling still every 1s, resolve still the same call — now
+        # raced with a 15s timeout (v1.6.2 B21), never left hanging.
         self.assertIn("}, 1000);", js)
-        self.assertIn("await b.resolve_permission(p.id, allowed);", js)
+        self.assertIn("b.resolve_permission(p.id, allowed)", js)
+        self.assertIn("raceBridgeTimeout(b.resolve_permission(p.id, allowed), 15000", js)
         self.assertIn('finalizePermCard(p.id, allowed ? "allowed" : "denied");', js)
         # card still builds as a chat message, not a modal
         self.assertIn('div.className = "msg perm";', js)
