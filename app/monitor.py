@@ -83,6 +83,11 @@ _STATUS_MAX_AGE_SEC = 10
 # real temperature - it is discarded, never reported.
 _TEMP_PLAUSIBLE_C = (0.0, 125.0)
 
+# A fan speed outside this range is sensor garbage, not a real RPM
+# — it is discarded, never reported. Same range as the embedded
+# helper (tools/LhmReader/Program.cs) and app/lhm_embedded.py.
+_FAN_PLAUSIBLE_RPM = (0.0, 20000.0)
+
 
 def _now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -446,6 +451,31 @@ def _temp_status(available, celsius, reason, hint) -> dict:
             "hint": str(hint or "")}
 
 
+def _sanitize_fans(value) -> list:
+    """Fan list for the device card: [{"name": str, "rpm": float}]
+    with real numbers only. A malformed entry is dropped — a fan
+    speed is never guessed, and a dropped entry simply does not
+    show. [] when the chip reports no fan sensors (or the value was
+    never a fan list at all, e.g. an old injected sampler)."""
+    out = []
+    if not isinstance(value, (list, tuple)):
+        return out
+    for fan in value:
+        if not isinstance(fan, dict):
+            continue
+        rpm = fan.get("rpm")
+        if isinstance(rpm, bool) or not isinstance(rpm, (int, float)):
+            continue
+        rpm = float(rpm)
+        if rpm != rpm or not (_FAN_PLAUSIBLE_RPM[0] <= rpm
+                              <= _FAN_PLAUSIBLE_RPM[1]):
+            continue
+        name = fan.get("name")
+        out.append({"name": str(name) if name else "المروحة",
+                    "rpm": rpm})
+    return out
+
+
 def _temp_hint_for_status(temp_status) -> dict:
     """{text, url} hint for an unavailable temperature, from the
     reasoned status dict. Install-related reasons link the LHM
@@ -572,6 +602,33 @@ def _read_embedded_temp():
         except Exception:
             continue
     return None
+
+
+def _read_embedded_fans():
+    """Embedded-LHM fan list (rc.2, W7), read defensively like
+    _read_embedded_temp: the module lives in app/lhm_embedded.py,
+    owned by another worker, so it may not exist yet, may have no
+    read_embedded_fans, or the call may fail -- every failure is []
+    here, never a raise, so the temperature probe below still gets
+    its chance and the device card simply shows no fans. Shares ONE
+    helper invocation with the temperature probe: lhm_embedded
+    caches a single helper run, so calling this right after
+    read_temp_status() spawns nothing new. On success this is the
+    sanitized list: [{"name": str, "rpm": float}]."""
+    for mod_name in ("lhm_embedded", "app.lhm_embedded"):
+        try:
+            mod = __import__(mod_name, fromlist=["read_embedded_fans"])
+            fn = getattr(mod, "read_embedded_fans", None)
+            if not callable(fn):
+                continue
+            try:
+                res = fn()
+            except Exception:
+                return []
+            return _sanitize_fans(res)
+        except Exception:
+            continue
+    return []
 
 
 def read_temp_status() -> dict:
@@ -1043,7 +1100,13 @@ class SystemMonitor:
                             # after start.
                             "status": _temp_status(False, None,
                                                    "not_installed",
-                                                   _TEMP_HINT["text"])}
+                                                   _TEMP_HINT["text"]),
+                            # rc.2 (W7): fan speeds from the same probe
+                            # -- cached with the temp status, same
+                            # probe interval, no extra OS reads per
+                            # poll. [] = the chip reported no fan
+                            # sensors (or no probe has landed yet).
+                            "fans": []}
         # v1.6.4 perf (b): last GPU probe (a PowerShell spawn) - see
         # _sample_slow. None = never probed (first slow sample probes).
         self._last_gpu_at = None
@@ -1104,6 +1167,17 @@ class SystemMonitor:
                 {"at": now, "temp_c": status.get("celsius"),
                  "available": bool(status.get("available")),
                  "status": dict(status)})
+            # rc.2 (W7): fans ride the same probe — the embedded
+            # reader caches ONE helper invocation, so this call
+            # right after the temperature probe spawns nothing new,
+            # and the list is cached here with the temp status
+            # (same probe interval, no extra OS reads per poll).
+            # A failed fans read is [] (unsupported chip), never a
+            # fake RPM, and never fatal to the temperature.
+            try:
+                self._temp_cache["fans"] = _read_embedded_fans()
+            except Exception:
+                self._temp_cache["fans"] = []
         else:
             self._temp_cache["at"] = now
         temp_c = self._temp_cache.get("temp_c")
@@ -1222,6 +1296,10 @@ class SystemMonitor:
             # into the background cache, so get_status() /
             # get_device_overview() serve it without ever probing.
             "temp_status": self._temp_status_cached(),
+            # rc.2 (W7): fan speeds, cached with the temperature
+            # probe above (same slow sample, no extra OS reads).
+            # [] = the chip reported no fan sensors.
+            "fans": list(self._temp_cache.get("fans") or []),
             "gpu": gpu,
             "storage": storage,
             "top_processes": top_processes,
@@ -1235,7 +1313,8 @@ class SystemMonitor:
              "disk": {"free_gb", "total_gb", "percent_free"},
              "cpu_percent": float,
              "battery": {"percent", "charging"} | None,
-             "temp_c": float | None, "temp_available": bool}
+             "temp_c": float | None, "temp_available": bool,
+             "fans": [{"name", "rpm"}] (possibly empty)}
         """
         fast = self._sample_fast()
         slow = self._sample_slow()
@@ -1342,6 +1421,9 @@ class SystemMonitor:
                  # rc.2: WHY the temperature is missing (see
                  # read_temp_status) -- the chat reads this instead of
                  # guessing "no sensor".
+             "fans": [{"name", "rpm"}] -- real fan speeds from the
+                 embedded LHM reader (rc.2, W7); [] when the chip
+                 reports no fan sensors, never a faked RPM.
              "available": bool}   # False only when psutil is missing
         Any field may be None when its source failed to read (v1.4.3:
         partial data, never a crash, never fake zeros).
@@ -1403,6 +1485,10 @@ class SystemMonitor:
             "temp_c": reading.get("temp_c"),
             "temp_available": bool(reading.get("temp_available", False)),
             "temp_status": dict(temp_status),
+            # rc.2 (W7): fan speeds. The real sampler carries them
+            # in the reading (via _sample_slow); an injected sampler
+            # (or an old reading) without them reports [].
+            "fans": _sanitize_fans(reading.get("fans")),
             "available": psutil is not None,
             "top_processes": top_processes,
             "gpu": gpu,
@@ -1436,8 +1522,8 @@ class SystemMonitor:
     def get_device_overview(self) -> dict:
         """v1.6.0: one flat overview for the island / device panels:
         {ram, cpu, battery, temp_c, temp_available, temp_status,
-        temp_hint, disk, storage, top_processes, gpu, battery_drain,
-        mood, mood_reason}.
+        temp_hint, fans, disk, storage, top_processes, gpu,
+        battery_drain, mood, mood_reason}.
         "disk" is the system-drive summary (back-compat key); "storage"
         is the per-drive list. Nothing here is ever a guessed number."""
         status = self.get_status()
@@ -1453,6 +1539,9 @@ class SystemMonitor:
             # read_temp_status) rides along for the card + the chat.
             "temp_status": dict(temp_status)
                 if isinstance(temp_status, dict) else None,
+            # rc.2 (W7): real fan speeds, [] when the chip reports
+            # no fan sensors — the card then shows nothing for fans.
+            "fans": status.get("fans") or [],
             # v1.6.1: present only while the temperature is unavailable;
             # None once a real reading exists. rc.2: the text names the
             # REAL reason (installed-but-not-running vs not installed

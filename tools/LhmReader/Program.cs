@@ -6,8 +6,17 @@
 // "is LHM running?" failure mode. One-shot console program: it
 // prints exactly one JSON line to stdout and exits.
 //
-//   success: {"celsius": 51.5}
+//   success: {"celsius": 51.5, "fans": [{"name": "Fan #1", "rpm": 2400}]}
 //   failure: {"error": "not_available"|"needs_admin", "detail": "..."}
+//
+// "fans" is the list of Fan-type sensors from the same
+// LibreHardwareMonitor Computer object (SuperIO / embedded
+// controller — IsMotherboardEnabled + IsControllerEnabled below):
+// real RPM values only, [] when the chip reports no fan sensors
+// (e.g. an unsupported laptop EC — the app then simply shows no
+// fans, never a faked RPM). A reading outside 0-20000 RPM is
+// sensor garbage, never a fan speed. The error shape has no fans
+// key; the temperature logic is unchanged.
 //
 // Exit code is always 0 when a JSON line was printed; the Python
 // wrapper (app/lhm_embedded.py) parses stdout, never the exit code.
@@ -40,6 +49,11 @@ namespace LhmReader
         private const float PlausibleMinC = 0.0f;
         private const float PlausibleMaxC = 125.0f;
 
+        // A fan speed outside this range is sensor garbage, not a
+        // real RPM — same range as app/lhm_embedded.py.
+        private const float PlausibleMinRpm = 0.0f;
+        private const float PlausibleMaxRpm = 20000.0f;
+
         private static int Main()
         {
             try
@@ -59,7 +73,16 @@ namespace LhmReader
         private static string ReadCpuTemperature()
         {
             bool isAdmin = IsAdministrator();
-            var computer = new Computer { IsCpuEnabled = true };
+            // Fans live on the SuperIO chip / embedded controller,
+            // not on the CPU: motherboard + controller hardware must
+            // be enabled or no fan sensor is ever enumerated. The
+            // temperature walk below still only counts CPU sensors.
+            var computer = new Computer
+            {
+                IsCpuEnabled = true,
+                IsMotherboardEnabled = true,
+                IsControllerEnabled = true,
+            };
             try
             {
                 computer.Open();
@@ -80,6 +103,19 @@ namespace LhmReader
 
             try
             {
+                // Fan sensors, from every piece of hardware (SuperIO
+                // / EC included) — collected before any temperature
+                // early-return, so a successful reading always
+                // carries them, even when the temperature comes from
+                // an averaged core list.
+                var fans = new List<FanReading>();
+                foreach (IHardware hardware in computer.Hardware)
+                {
+                    CollectFans(hardware, fans);
+                    foreach (IHardware sub in hardware.SubHardware)
+                        CollectFans(sub, fans);
+                }
+
                 bool sawCpu = false;
                 float? package = null;
                 var cores = new List<float>();
@@ -96,17 +132,17 @@ namespace LhmReader
                 }
 
                 if (package.HasValue)
-                    return JsonCelsius(package.Value);
+                    return JsonSuccess(package.Value, fans);
                 if (cores.Count > 0)
                 {
                     // No "CPU Package" sensor: average the cores.
                     float sum = 0;
                     foreach (float c in cores)
                         sum += c;
-                    return JsonCelsius(sum / cores.Count);
+                    return JsonSuccess(sum / cores.Count, fans);
                 }
                 if (any.HasValue)
-                    return JsonCelsius(any.Value);
+                    return JsonSuccess(any.Value, fans);
 
                 if (!sawCpu)
                     return JsonError("not_available",
@@ -124,6 +160,43 @@ namespace LhmReader
             finally
             {
                 try { computer.Close(); } catch { /* best effort */ }
+            }
+        }
+
+        private sealed class FanReading
+        {
+            public string Name;
+            public float Rpm;
+        }
+
+        // Every Fan-type sensor on this piece of hardware that
+        // returned a plausible value. A stopped fan reads 0 RPM —
+        // a real value, kept. One unreadable piece of hardware
+        // must not take the whole reading down with it.
+        private static void CollectFans(IHardware hardware,
+            List<FanReading> fans)
+        {
+            try
+            {
+                hardware.Update();
+            }
+            catch
+            {
+                return;
+            }
+            foreach (ISensor sensor in hardware.Sensors)
+            {
+                if (sensor.SensorType != SensorType.Fan)
+                    continue;
+                if (!sensor.Value.HasValue)
+                    continue;
+                float rpm = sensor.Value.Value;
+                if (rpm < PlausibleMinRpm || rpm > PlausibleMaxRpm)
+                    continue;
+                string name = sensor.Name;
+                if (string.IsNullOrEmpty(name))
+                    name = "Fan";
+                fans.Add(new FanReading { Name = name, Rpm = rpm });
             }
         }
 
@@ -191,10 +264,22 @@ namespace LhmReader
             }
         }
 
-        private static string JsonCelsius(float celsius)
+        private static string JsonSuccess(float celsius,
+            List<FanReading> fans)
         {
+            string fansJson = "";
+            for (int i = 0; i < fans.Count; i++)
+            {
+                if (i > 0)
+                    fansJson += ", ";
+                fansJson += "{\"name\": \"" + JsonEscape(fans[i].Name)
+                    + "\", \"rpm\": "
+                    + ((double)fans[i].Rpm).ToString(
+                        CultureInfo.InvariantCulture) + "}";
+            }
             return "{\"celsius\": "
-                + ((double)celsius).ToString(CultureInfo.InvariantCulture) + "}";
+                + ((double)celsius).ToString(CultureInfo.InvariantCulture)
+                + ", \"fans\": [" + fansJson + "]}";
         }
 
         private static string JsonError(string error, string detail)

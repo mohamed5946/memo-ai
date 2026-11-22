@@ -80,7 +80,7 @@
           <div class="stat th" style="--i:0"><span>الرام</span><b id="vRam">--</b><div class="barx"><i id="bRam"></i></div><small id="vRamSub" style="color:var(--ink-2)"></small></div>
           <div class="stat th" style="--i:1"><span>المعالج</span><b id="vCpu">--</b><div class="barx"><i id="bCpu"></i></div></div>
           <div class="stat th" style="--i:2"><span>البطارية</span><b id="vBat">--</b><div class="barx"><i id="bBat"></i></div><small id="vBatSub" style="color:var(--ink-2)"></small></div>
-          <div class="stat th" style="--i:3"><span>حرارة المعالج</span><b id="vTemp" style="font-size:16px">--</b><span id="vTempNote"></span></div>
+          <div class="stat th" style="--i:3"><span>حرارة المعالج</span><b id="vTemp" style="font-size:16px">--</b><span id="vTempNote"></span><span id="fanList" style="display:none"></span></div>
         </div>
         <h3 class="sub th" style="--i:4">أكتر العمليات استهلاكًا</h3>
         <div id="procList" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -647,6 +647,29 @@
         vTemp.textContent = 'مش متاحة على الجهاز ده';
         vTempNote.textContent = hint;
       }
+    }
+    /* rc.2 (W7): fan speeds from the embedded LHM reader — real
+       RPM values only, shown under the temperature card. When the
+       chip reports no fan sensors the list is empty and NOTHING
+       renders here: no placeholder, no fake number, no error. */
+    var fanBox = document.getElementById('fanList');
+    if (fanBox) {
+      fanBox.innerHTML = '';
+      var fans = Array.isArray(ov.fans) ? ov.fans : [];
+      var shown = 0;
+      fans.forEach(function (f) {
+        if (!f || typeof f.rpm !== 'number' || !isFinite(f.rpm) || f.rpm < 0) { return; }
+        var row = document.createElement('div');
+        var nm = document.createElement('span');
+        nm.textContent = (f.name || 'المروحة') + ': ';
+        var vl = document.createElement('b');
+        vl.textContent = Math.round(f.rpm) + ' لفة/دقيقة';
+        row.appendChild(nm);
+        row.appendChild(vl);
+        fanBox.appendChild(row);
+        shown++;
+      });
+      fanBox.style.display = shown ? 'block' : 'none';
     }
     var list = document.getElementById('procList');
     list.innerHTML = '';
