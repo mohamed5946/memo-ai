@@ -48,7 +48,7 @@
 #     (rounded rect, radius 26) and never touched again - it then
 #     verifies cleanly by read-back, because nothing moves under it;
 #   - collapsed <-> expanded animates purely in HTML/CSS inside the
-#     fixed canvas (the pill is 380x60, the panel 520x300);
+#     fixed canvas (the pill is 220x60, the panel 520x300);
 #   - when collapsed, WS_EX_TRANSPARENT makes the invisible band
 #     click-through, with a 90 ms GetCursorPos poll that removes the
 #     flag and opens the island the moment the cursor is over the pill
@@ -80,7 +80,7 @@ IS_WINDOWS = winshape.IS_WINDOWS
 # (main.py duplicates these constants - it does not import them).
 ISLAND_CANVAS_W = 520
 ISLAND_CANVAS_H = 300
-ISLAND_PILL_W = 380
+ISLAND_PILL_W = 220
 ISLAND_PILL_H = 60
 ISLAND_CANVAS_RADIUS = 26
 ISLAND_TOP_Y = 12
@@ -108,7 +108,7 @@ def center_x(screen_w: int, canvas_w: int) -> int:
 
 def pill_rect_for_canvas(canvas_rect, dpi_scale: float = 1.0):
     """The pill rect (x, y, w, h) inside a canvas rect (x, y, w, h):
-    380x60 logical, centered horizontally, pinned to the top. The
+    220x60 logical, centered horizontally, pinned to the top. The
     canvas rect comes from GetWindowRect, so it is already in the
     window's own (physical, when DPI-aware) coordinate space - the
     pill size is scaled by the same DPI factor."""
@@ -188,7 +188,7 @@ def apply_pill_hit_region(hwnd: int, expanded: bool,
     rect's rounded corners still hit the window) - that is why this
     is the fallback, used only when the toggle fails. Applied +
     verified; returns True only when verified. Coordinates are
-    window-relative; the pill rect is DPI-aware (150% -> 570x90
+    window-relative; the pill rect is DPI-aware (150% -> 330x90
     physical on Mohamed's laptop)."""
     if not IS_WINDOWS or not hwnd:
         return False

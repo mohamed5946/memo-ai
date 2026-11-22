@@ -13,10 +13,10 @@ back, because JS believed curW was 190.
 The v1.6.3 fix ("idle window = 380x60") removed the idle shrink; the
 v1.6.4 fixed canvas goes further and deletes the whole resize
 machinery by design:
-  * the island window is created ONCE at 720x400 (ISLAND_CANVAS_W/H in
+  * the island window is created ONCE at 520x300 (ISLAND_CANVAS_W/H in
     main.py + island_canvas.py) and NEVER resized (resizable=False);
   * collapsed <-> expanded animates purely in HTML/CSS inside that
-    canvas (pill 380x60 <-> panel 720x400, the .open class);
+    canvas (pill 220x60 <-> panel 520x300, the .open class);
   * Api.island_resize(w, h) is a STATE SHIM only: it records
     _island_expanded and toggles WS_EX_TRANSPARENT - it does NOT
     resize the window and does NOT re-apply any region;
@@ -29,13 +29,17 @@ machinery by design:
     polls while the island is collapsed.
 
 Covers:
-  * fixed-canvas constants: 720x400 canvas, 380x60 pill (no 190x52)
+  * fixed-canvas constants: 520x300 canvas, 220x60 pill (no 190x52)
   * no JS size belief (no curW/curH, no animateSize), window created
     at canvas size, resizable=False
-  * setOpen() is the only island_resize call site (720x400 / 380x60)
+  * setOpen() is the only island_resize call site (520x300 / 220x60)
     and collapse kills every JS timer
   * no idle timer at all; the expanded-timers lifecycle replaces it
-  * Python ISLAND_CANVAS_W/H == 720/400, ISLAND_IDLE_W/H == 380/60
+  * Python ISLAND_CANVAS_W/H == 520/300, ISLAND_PILL_W/H == 220/60
+    (island_canvas.py); main.py ISLAND_IDLE_W/H == 380/60 is still
+    asserted as-is - the matching main.py 380 -> 220 change belongs
+    to another rc.2 worker and has not landed yet; once it does,
+    update those two assertions to (220, 60).
   * jsdom runtime harness (app/tests/v163_dom.js): STALE for the
     fixed canvas - it drives the removed showIslandText/curW/curH/
     __islandIdleMs API, so it is skipped here when jsdom is absent
@@ -94,21 +98,30 @@ class TestIdleSizeConstants(unittest.TestCase):
     def test_idle_equals_full_380x60(self):
         # v1.6.4 fixed canvas: the IDLE/FULL/EXPANDED constant line is
         # gone - the sizes now live in three places that must agree:
-        # the 720x400 canvas constants (Python, both modules), the
-        # 380x60 pill + 720x400 panel in the island CSS, and the
-        # 380x60 pill constants kept in main.py.
+        # the 520x300 canvas constants (Python, both modules), the
+        # 220x60 pill + 520x300 panel in the island CSS, the 220x60
+        # pill constants in island_canvas.py, and the pill constants
+        # kept in main.py.
         m = re.search(r"ISLAND_CANVAS_W, ISLAND_CANVAS_H = (\d+), (\d+)",
                       MAIN)
         assert m, "canvas constants missing from main.py"
-        assert (int(m.group(1)), int(m.group(2))) == (720, 400)
+        assert (int(m.group(1)), int(m.group(2))) == (520, 300)
         m = re.search(r"ISLAND_CANVAS_W = (\d+)\nISLAND_CANVAS_H = (\d+)",
                       CANVAS)
         assert m, "canvas constants missing from island_canvas.py"
-        assert (int(m.group(1)), int(m.group(2))) == (720, 400)
-        assert ("body.fixed-canvas .island{width:380px;height:60px}"
-                in ISLAND), "pill CSS must be 380x60"
-        assert (".island.open{width:720px;height:400px" in ISLAND), \
-            "panel CSS must be 720x400"
+        assert (int(m.group(1)), int(m.group(2))) == (520, 300)
+        assert ("body.fixed-canvas .island{width:220px;height:60px}"
+                in ISLAND), "pill CSS must be 220x60"
+        assert (".island.open{width:520px;height:300px" in ISLAND), \
+            "panel CSS must be 520x300"
+        m = re.search(r"ISLAND_PILL_W = (\d+)\nISLAND_PILL_H = (\d+)",
+                      CANVAS)
+        assert m, "pill constants missing from island_canvas.py"
+        assert (int(m.group(1)), int(m.group(2))) == (220, 60)
+        # NOTE (rc.2): main.py ISLAND_IDLE_W/H is still (380, 60) -
+        # the matching main.py 380 -> 220 change belongs to another
+        # rc.2 worker and has not landed yet. Once it does, update
+        # this assertion (and TestPythonIdleSize) to (220, 60).
         m = re.search(r"ISLAND_IDLE_W, ISLAND_IDLE_H = (\d+), (\d+)",
                       MAIN)
         assert m, "pill constants missing from main.py"
@@ -116,11 +129,16 @@ class TestIdleSizeConstants(unittest.TestCase):
 
     def test_no_190x52_sizing_anywhere(self):
         # The 190x52 numbers are gone by design (fixed canvas): no
-        # 190 or 52 anywhere in island.html, and no 190 anywhere in
+        # 190x52 sizing anywhere in island.html, island_canvas.py, or
         # main.py CODE (the only 190x52 mentions left are historical
         # comments describing the deleted small-pill design).
+        # NOTE: bare "52" substring checks are impossible now - the
+        # live canvas size 520x300 contains "52". Match the PAIR
+        # 190x52 / (190, 52) instead, so 520 never trips the check.
         assert "190" not in ISLAND, "190px sizing still present"
-        assert "52" not in ISLAND, "52px sizing still present"
+        assert re.search(r"190\s*x\s*52", ISLAND) is None, \
+            "190x52 sizing still present"
+        assert re.search(r"\(\s*190\s*,\s*52\s*\)", ISLAND) is None
         # No 190 in main.py CODE: strip comments AND string literals
         # (docstrings included) with tokenize - the only 190x52
         # mentions left are historical prose, never a live size.
@@ -135,7 +153,9 @@ class TestIdleSizeConstants(unittest.TestCase):
         assert "190" not in code_only, \
             "190px sizing still in main.py code"
         assert re.search(r"\(\s*190\s*,\s*52\s*\)", code_only) is None
-        assert "190" not in CANVAS and "52" not in CANVAS
+        assert "190" not in CANVAS
+        assert re.search(r"190\s*x\s*52", CANVAS) is None
+        assert re.search(r"\(\s*190\s*,\s*52\s*\)", CANVAS) is None
         # And the region is applied once at creation, never on resize:
         assert "apply_island_canvas_region" in MAIN
         assert "refresh_island_region" in MAIN
@@ -158,14 +178,14 @@ class TestIdleTimerIsHarmless(unittest.TestCase):
         # v1.6.4 fixed canvas: goIdle() itself is deleted - the island
         # no longer shrinks on idle and no longer resizes at all. The
         # replacement behavior: setOpen() is the ONLY island_resize
-        # call site (720x400 on expand, 380x60 on collapse), and
+        # call site (520x300 on expand, 220x60 on collapse), and
         # collapsing kills every JS timer at once.
         assert "goIdle" not in ISLAND, "goIdle still present"
         assert ISLAND.count("B.call('island_resize'") == 1, \
             "island_resize must have exactly one call site (setOpen)"
         body = _extract(ISLAND, "function setOpen(")
-        assert "var w = opening ? 720 : 380" in body
-        assert "var h = opening ? 400 : 60" in body
+        assert "var w = opening ? 520 : 220" in body
+        assert "var h = opening ? 300 : 60" in body
         assert "stopExpandedTimers()" in body, \
             "collapse must stop the mood/reminder timers"
         assert "stopPanelRefresh()" in body, \

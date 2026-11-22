@@ -7,7 +7,10 @@ to run the app from source (and for the in-app updater to extract):
 
 Excluded: .git, .github, installer, __pycache__, *.pyc, .gitignore,
 keys/*.txt (real keys - never shipped), app/data/settings.json
-(user-specific), app/data/logs/* (except the .gitkeep).
+(user-specific), app/data/logs/* (except the .gitkeep),
+tools/LhmReader/bin/ + obj/ (dotnet build outputs - the CI dotnet
+step creates them before this script runs; shipping them would bloat
+the zip and break determinism).
 
 The build is DETERMINISTIC: entries are sorted and every file gets the
 same fixed timestamp, so the zip built on this machine and the one built
@@ -40,6 +43,12 @@ EXCLUDE_DIRS = {".git", ".github", "installer", "__pycache__",
 EXCLUDE_PREFIXES = (
     ("app", "whatsapp_sidecar", "node"),
     ("app", "data", "whatsapp_auth"),
+    # rc.2: dotnet build outputs under tools/LhmReader (the CI dotnet
+    # step runs before this script). bin/ holds the built LhmReader
+    # binaries, obj/ the intermediate artifacts - neither belongs in
+    # a source zip (bloat + non-deterministic timestamps).
+    ("tools", "LhmReader", "bin"),
+    ("tools", "LhmReader", "obj"),
 )
 # version.json is excluded on purpose: it carries the zip's own SHA-256,
 # so including it would make the hash self-referential (chicken-and-egg).
@@ -107,6 +116,9 @@ def main() -> int:
         "bundled node.exe leaked into the zip"
     assert not any("whatsapp_auth" in n for n in names), \
         "WhatsApp session leaked into the zip"
+    assert not any("LhmReader/bin" in n or "LhmReader/obj" in n
+                   for n in names), \
+        "LhmReader dotnet build outputs leaked into the zip"
     print(f"zip: {zip_path} ({len(names)} entries, "
           f"{zip_path.stat().st_size / 1024:.0f} KB)")
     print(f"sha256: {sha}")
