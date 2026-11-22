@@ -78,7 +78,14 @@ def _run_js(cases):
     try:
         proc = subprocess.run(
             ["node", tmp, json.dumps(cases)],
-            capture_output=True, text=True, timeout=30)
+            capture_output=True, text=True, timeout=30,
+            # encoding="utf-8": node writes UTF-8, but text=True
+            # decodes with the locale encoding - cp1252 on the
+            # Windows CI runner, which mojibakes every Arabic string
+            # node returns (same bug class as the NamedTemporaryFile
+            # write above; the write-side fix alone left these 4
+            # tests failing on CI with mojibake assertions).
+            encoding="utf-8")
     finally:
         Path(tmp).unlink(missing_ok=True)
     assert proc.returncode == 0, f"node failed: {proc.stderr}"
@@ -114,7 +121,7 @@ class TestTokenBarSection(unittest.TestCase):
         try:
             proc = subprocess.run(["node", "--check", tmp],
                                   capture_output=True, text=True,
-                                  timeout=30)
+                                  timeout=30, encoding="utf-8")
         finally:
             Path(tmp).unlink(missing_ok=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
