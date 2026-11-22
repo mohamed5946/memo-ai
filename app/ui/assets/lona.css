@@ -14,7 +14,7 @@
 html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
 *{box-sizing:border-box;margin:0}
 body{min-height:100%;font-family:var(--font);color:var(--ink);background:var(--base);overflow-x:hidden}
-.stage{position:relative;min-height:100vh;padding:6px 4px 10px;display:flex;flex-direction:column;align-items:center;gap:22px;overflow:hidden;isolation:isolate}
+.stage{position:relative;min-height:100vh;padding:6px 4px 10px;display:flex;flex-direction:column;gap:22px;overflow:hidden;isolation:isolate}
 .stage::before,.stage::after,.blob{content:"";position:absolute;border-radius:50%;filter:blur(70px);z-index:-1}
 .stage::before{width:520px;height:520px;background:var(--b1);top:-120px;right:-140px;opacity:.85}
 .stage::after{width:480px;height:480px;background:var(--b2);bottom:-140px;left:-120px;opacity:.75}
@@ -214,6 +214,10 @@ svg{display:block}
    square. object-position 50% 28% centers the face in the crop. */
 .mascot-face{border-radius:50%;overflow:hidden;flex:none;cursor:pointer}
 .mascot-face img{width:100%;height:100%;object-fit:cover;object-position:50% 28%;display:block}
+/* Bare <img class="mascot-face"> (no wrapper div): the same face crop
+   applies to the img itself. .hero img.mascot-face below refines the
+   size for the welcome hero. */
+img.mascot-face{width:170px;height:170px;object-fit:cover;object-position:50% 28%;border-radius:50%;display:block}
 .mascot-face.bounce{animation:face-bounce .6s ease}
 @keyframes face-bounce{0%{transform:scale(1)}30%{transform:scale(1.14) rotate(-4deg)}55%{transform:scale(.95) rotate(3deg)}75%{transform:scale(1.05)}100%{transform:scale(1)}}
 .stand .mascot-face{width:150px;height:150px;position:relative;z-index:1;
@@ -227,7 +231,7 @@ svg{display:block}
 .hero img.mascot-face{width:170px;height:170px;max-height:none;object-fit:cover;
   object-position:50% 28%;border-radius:50%;display:block}
 .hero h2{font-size:22px;font-weight:600;line-height:1.5}
-.hero p{font-size:14px;color:var(--ink-2);line-height:1.8;max-width:460px}
+.hero p{font-size:14px;color:var(--ink-2);line-height:1.8}
 .hero .mood{font-size:13px;color:var(--gold-2)}
 /* Error banner — every bridge failure is shown here AND logged via log_error */
 .errbar{position:fixed;top:10px;inset-inline:0;margin:0 auto;width:min(560px,92vw);z-index:50;
