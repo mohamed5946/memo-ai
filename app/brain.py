@@ -177,12 +177,25 @@ def _explicit_model_failure(model: str, kind: str, lang: str,
                          "02:00 بتوقيت القاهرة"),
         "groq-429-rpd": ("Groq وصل للحد اليومي للطلبات — بيتصفّر "
                          "02:00 بتوقيت القاهرة"),
+        "groq-key-rejected": "مفتاح Groq مرفوض — اتأكد من المفتاح",
+        "groq-empty-reply": "Groq رجّع رد فاضي",
+        "groq-unavailable": "سيرفرات Groq مش متاحة دلوقتي — جرّب تاني كمان شوية",
+        "groq-unreachable": "مش قادر أوصل لـ Groq — اتأكد من النت",
+        "groq-bad-request": "Groq رفض الطلب — التفاصيل في السجل",
         "no-gemini-chat-key": ("مفيش مفتاح Gemini للمحادثة محفوظ — دخّله "
                                "من الإعدادات » مفاتيح API"),
         "gemini-429": "Gemini وصل للحد — جرّب كمان دقيقة",
         "gemini-key-rejected": "مفتاح Gemini مرفوض — اتأكد من المفتاح",
         "gemini-failed": "Gemini فشل يرد",
         "gemini-empty-reply": "Gemini رجّع رد فاضي",
+        "gemini-api-not-enabled": ("Gemini API مش مفعّلة على مشروع المفتاح — "
+                                   "فعّلها من Google Cloud أو استخدم مفتاح "
+                                   "جديد من AI Studio"),
+        "gemini-model-not-found": "موديل Gemini مش موجود — حدّث البرنامج",
+        "gemini-unavailable": "سيرفرات Gemini مش متاحة دلوقتي — جرّب تاني كمان شوية",
+        "gemini-unreachable": "مش قادر أوصل لـ Gemini — اتأكد من النت",
+        "gemini-bad-request": "Gemini رفض الطلب — التفاصيل في السجل",
+        "gemini-blocked": "Gemini رفض يرد على الرسالة دي (فلتر أمان)",
         "ollama_down": "Ollama مش شغال — شغّله الأول",
         "failed": "حصل خطأ وهو بيرد",
     }
@@ -195,12 +208,25 @@ def _explicit_model_failure(model: str, kind: str, lang: str,
         "groq-429-rpm": "Groq hit its per-minute request limit — try in a minute",
         "groq-429-tpd": "Groq hit its daily token limit — it resets at 02:00 Cairo time",
         "groq-429-rpd": "Groq hit its daily request limit — it resets at 02:00 Cairo time",
+        "groq-key-rejected": "the Groq key was rejected — check the key",
+        "groq-empty-reply": "Groq returned an empty reply",
+        "groq-unavailable": "Groq's servers are unavailable right now — try again in a bit",
+        "groq-unreachable": "cannot reach Groq — check the internet",
+        "groq-bad-request": "Groq refused the request — details in the log",
         "no-gemini-chat-key": ("no Gemini chat key saved — add it in "
                                "Settings » API keys"),
         "gemini-429": "Gemini hit its limit — try again in a minute",
         "gemini-key-rejected": "the Gemini key was rejected — check the key",
         "gemini-failed": "Gemini failed to answer",
         "gemini-empty-reply": "Gemini returned an empty reply",
+        "gemini-api-not-enabled": ("the Gemini API is not enabled on the key's "
+                                   "project — enable it in Google Cloud or use "
+                                   "a new AI Studio key"),
+        "gemini-model-not-found": "the Gemini model was not found — update the app",
+        "gemini-unavailable": "Gemini's servers are unavailable right now — try again in a bit",
+        "gemini-unreachable": "cannot reach Gemini — check the internet",
+        "gemini-bad-request": "Gemini refused the request — details in the log",
+        "gemini-blocked": "Gemini refused to answer this message (safety filter)",
         "ollama_down": "Ollama is not running — start it first",
         "failed": "something went wrong while it was answering",
     }
@@ -742,6 +768,38 @@ def _groq_429_info(exc) -> tuple:
     return str(exc), None
 
 
+def _groq_failure_kind(exc) -> str:
+    """Map a caught Groq exception to a failure-note kind (v1.6.4
+    rc.2). Known RuntimeError kinds ("no-groq-key",
+    "groq-empty-reply") are kept verbatim so the reason is not lost;
+    an HTTPError is classified by status (401 = rejected key, 5xx =
+    Groq down, other 4xx = refused request); a transport failure is
+    "groq-unreachable". Anything else stays "failed" - the generic
+    note, used only when nothing more specific is known. A 429 never
+    reaches here (GroqRateLimit is handled by _groq_429_info)."""
+    if isinstance(exc, GroqRateLimit):
+        return _groq_429_info(exc)[0]
+    kind = str(exc or "")
+    if kind in ("no-groq-key", "groq-empty-reply"):
+        return kind
+    if isinstance(exc, requests.HTTPError):
+        status = None
+        try:
+            status = exc.response.status_code
+        except Exception:
+            status = None
+        if status == 401:
+            return "groq-key-rejected"
+        if status is not None and status >= 500:
+            return "groq-unavailable"
+        if status is not None and 400 <= status < 500:
+            return "groq-bad-request"
+        return "failed"
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return "groq-unreachable"
+    return "failed"
+
+
 def _groq_message(messages: list, use_tools: bool = False,
                   timeout: int = 60, deep_think: bool = False,
                   privacy_mode: bool | None = None) -> dict:
@@ -1138,9 +1196,12 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         elif kind == "no-groq-key":
             warn("brain", "No Groq key - tools disabled, local Qwen 3B")
         else:
+            # v1.6.4 rc.2: keep the real reason (empty reply, rejected
+            # key, Groq down, unreachable) instead of collapsing it
+            # into a bare "failed" - the all-down message names it.
+            kind = _groq_failure_kind(exc)
             warn("brain", f"Groq failed ({type(exc).__name__}: {exc}) - "
                           f"tools disabled, local Qwen 3B")
-            kind = "failed"
             retry_after = None
         # v1.6.2: a STRICT Groq pick never falls back -- the failure
         # names Groq and the reason, and nothing else answers.
@@ -1151,7 +1212,9 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
             return {"reply": fail, "engine": "", "tools_used": 0,
                     "tools_disabled": True}
         reply, engine = _ask_fallback_chain(messages, lang, kind,
-                                            retry_after)
+                                            retry_after,
+                                            timeout=_remaining_timeout(
+                                                _GROQ_TIMEOUT_SEC))
         if _looks_like_action(user_text):
             # v1.6.1: the tools suffix names the engine that actually
             # answered - Gemini (text-only, no tools) or local. When
@@ -1173,13 +1236,19 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         warn("brain", f"Groq tool loop failed ({type(exc).__name__}: {exc}) "
                       f"- falling back to Gemini / local Qwen 3B")
         # v1.6.2: STRICT Groq pick -- no fallback chain.
+        # v1.6.4 rc.2: name the real Groq reason in the strict failure
+        # too (rejected key / Groq down / unreachable), never a bare
+        # "failed".
+        kind = _groq_failure_kind(exc)
         if choice == "groq":
-            fail = _explicit_model_failure("groq", "failed", lang)
+            fail = _explicit_model_failure("groq", kind, lang)
             _record_turn(user_text, fail, "", hist,
                          learn=memory_enabled, language=lang)
             return {"reply": fail, "engine": "", "tools_used": 0,
                     "tools_disabled": True}
-        reply, engine = _ask_fallback_chain(messages, lang, "failed")
+        reply, engine = _ask_fallback_chain(
+            messages, lang, kind,
+            timeout=_remaining_timeout(_GROQ_TIMEOUT_SEC))
         if _looks_like_action(user_text) and engine in ("gemini",
                                                         "ollama"):
             reply += ("\n\nالأدوات (فتح برامج، ملفات، أوامر) محتاجة "
@@ -1320,8 +1389,11 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
             elif kind == "no-groq-key":
                 warn("brain", "No Groq key in keys/groq-key.txt - using Gemini / local Qwen 3B")
             else:
+                # v1.6.4 rc.2: keep the real reason (empty reply,
+                # rejected key, Groq down, unreachable) instead of
+                # collapsing it into a bare "failed".
+                kind = _groq_failure_kind(exc)
                 warn("brain", f"Groq failed ({type(exc).__name__}: {exc}) - falling back to Gemini / local Qwen 3B")
-                kind = "failed"
                 retry_after = None
             # v1.6.2: STRICT Groq pick -- no fallback chain.
             if choice == "groq":
@@ -1333,11 +1405,14 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
         except Exception as exc:
             warn("brain", f"Groq request failed ({type(exc).__name__}: {exc}) - falling back to Gemini / local Qwen 3B")
             # v1.6.2: STRICT Groq pick -- no fallback chain.
+            # v1.6.4 rc.2: name the real Groq reason in the strict
+            # failure too, never a bare "failed".
+            kind = _groq_failure_kind(exc)
             if choice == "groq":
-                reply = _explicit_model_failure("groq", "failed", lang)
+                reply = _explicit_model_failure("groq", kind, lang)
                 engine = ""
             else:
-                reply, engine = _ask_fallback_chain(messages, lang, "failed")
+                reply, engine = _ask_fallback_chain(messages, lang, kind)
     else:
         info("brain", "Offline - using local Qwen 3B")
         reply, engine = _ask_local(messages, lang)
@@ -1385,6 +1460,18 @@ def _groq_failure_note(kind: str, lang: str,
         "groq-429": ("Groq رفض الطلب مؤقتًا — جرّب كمان دقيقة،",
                      "Groq temporarily refused the request — "
                      "try again in a minute,"),
+        "groq-key-rejected": ("مفتاح Groq مرفوض — اتأكد من المفتاح،",
+                              "The Groq key was rejected — check the key,"),
+        "groq-empty-reply": ("Groq رجّع رد فاضي،",
+                             "Groq returned an empty reply,"),
+        "groq-unavailable": ("سيرفرات Groq مش متاحة دلوقتي — جرّب تاني "
+                             "كمان شوية،",
+                             "Groq's servers are unavailable right now — "
+                             "try again in a bit,"),
+        "groq-unreachable": ("مش قادر أوصل لـ Groq — اتأكد من النت،",
+                             "Cannot reach Groq — check the internet,"),
+        "groq-bad-request": ("Groq رفض الطلب — التفاصيل في السجل،",
+                             "Groq refused the request — details in the log,"),
         "no-groq-key": ("مفيش مفتاح Groq،",
                         "There's no Groq key,"),
         "offline": ("مفيش نت،",
@@ -1398,6 +1485,11 @@ def _groq_failure_note(kind: str, lang: str,
 
 # ---------------------------------------------------------------------------
 # Gemini 2.5 Flash chat fallback (v1.6.1, item 23)
+# v1.6.4 rc.2: EVERY non-2xx is classified from the error body (see
+# _classify_gemini_http_error) - the field failure was a bare "Gemini
+# فشل" because Google answers an invalid key with HTTP 400, not
+# 401/403, and the old code let that 400 fall through
+# raise_for_status() into the generic kind.
 # ---------------------------------------------------------------------------
 
 GEMINI_CHAT_MODEL = "gemini-2.5-flash"
@@ -1443,12 +1535,85 @@ def _messages_for_gemini(messages: list) -> tuple:
     return "\n".join(system_parts), contents
 
 
+def _classify_gemini_http_error(resp) -> RuntimeError:
+    """Map a non-2xx Gemini response to a RuntimeError whose message
+    IS the failure kind (v1.6.4 rc.2 - the field failure).
+
+    What Google actually sends for generateContent errors:
+    {"error": {"code": 400, "message": "API key not valid. Please
+    pass a valid API key.", "status": "INVALID_ARGUMENT", "details":
+    [{"@type": ".../google.rpc.ErrorInfo", "reason":
+    "API_KEY_INVALID", "domain": "googleapis.com", ...}]}}.
+    An invalid key is HTTP 400, NOT 401/403 - the old code only
+    treated 401/403 as key-rejected, so every 400 (bad key, API not
+    enabled on the key's project, malformed request) fell through
+    raise_for_status() into the bare generic "gemini-failed", and the
+    user saw "Gemini فشل" with no reason while the key was the
+    actual problem. The body is read here, so the kind names the
+    real cause; the Google message is logged (it never contains the
+    key) and never shown to the user."""
+    status = 0
+    err = {}
+    try:
+        status = int(getattr(resp, "status_code", 0) or 0)
+    except Exception:
+        status = 0
+    try:
+        err = (resp.json() or {}).get("error") or {}
+    except Exception:
+        err = {}
+    err_status = str(err.get("status") or "")
+    message = str(err.get("message") or "")
+    reason = ""
+    try:
+        for detail in err.get("details") or []:
+            if isinstance(detail, dict) and detail.get("reason"):
+                reason = str(detail["reason"])
+                break
+    except Exception:
+        reason = ""
+    low_msg = message.lower()
+    if status == 429 or err_status == "RESOURCE_EXHAUSTED":
+        kind = "gemini-429"
+    elif (status in (401, 403)
+          or reason in ("API_KEY_INVALID", "API_KEY_EXPIRED")
+          or "api key not valid" in low_msg):
+        kind = "gemini-key-rejected"
+    elif (err_status == "FAILED_PRECONDITION"
+          or reason in ("SERVICE_DISABLED", "BILLING_DISABLED")
+          or "has not been used" in low_msg
+          or "api not enabled" in low_msg
+          or "free tier is not available" in low_msg):
+        kind = "gemini-api-not-enabled"
+    elif status == 404 or err_status == "NOT_FOUND":
+        kind = "gemini-model-not-found"
+    elif status >= 500 or err_status in ("UNAVAILABLE", "INTERNAL"):
+        kind = "gemini-unavailable"
+    elif status == 400:
+        kind = "gemini-bad-request"
+    else:
+        kind = "gemini-failed"
+    warn("brain", f"Gemini chat HTTP {status} "
+                  f"({err_status or '-'}"
+                  f"{'/' + reason if reason else ''})"
+                  + (f": {message[:200]}" if message else ""))
+    return RuntimeError(kind)
+
+
 def _gemini_chat(messages: list, timeout: int = 60) -> str:
     """One Gemini 2.5 Flash call (chat fallback). Uses the CHAT key
     ONLY - the voice key is never sent here. Raises
     RuntimeError("no-gemini-chat-key") / ("gemini-429") /
-    ("gemini-key-rejected") / ("gemini-empty-reply"); other HTTP
-    errors surface as requests.HTTPError."""
+    ("gemini-key-rejected") / ("gemini-api-not-enabled") /
+    ("gemini-model-not-found") / ("gemini-unavailable") /
+    ("gemini-bad-request") / ("gemini-blocked") /
+    ("gemini-empty-reply"); a transport failure (no route to Google)
+    surfaces as requests.ConnectionError/Timeout and is classified
+    by _ask_gemini_chat as "gemini-unreachable".
+    v1.6.4 rc.2: every non-2xx status is classified from the error
+    body (see _classify_gemini_http_error) - a 400 API_KEY_INVALID
+    used to fall through raise_for_status() into the bare
+    "gemini-failed"."""
     api_key = read_key("gemini-chat-key.txt", quiet=True)
     if not api_key:
         raise RuntimeError("no-gemini-chat-key")
@@ -1463,28 +1628,45 @@ def _gemini_chat(messages: list, timeout: int = 60) -> str:
         json=payload,
         timeout=timeout,
     )
-    if resp.status_code == 429:
-        raise RuntimeError("gemini-429")
-    if resp.status_code in (401, 403):
-        raise RuntimeError("gemini-key-rejected")
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        # v1.6.4 rc.2: classify from the body - never a bare "failed".
+        raise _classify_gemini_http_error(resp)
     try:
-        parts = resp.json()["candidates"][0]["content"]["parts"]
+        data = resp.json()
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    # The block reason is read OUTSIDE the parts parse: a blocked
+    # reply has no candidates at all, so candidates[0] raises and
+    # must not wipe the reason we need to report.
+    block_reason = ((data.get("promptFeedback") or {}).get("blockReason")
+                    or "")
+    try:
+        candidates = data.get("candidates") or []
+        first = candidates[0] if candidates else {}
+        parts = (first.get("content") or {}).get("parts") or []
         text = "".join(str(p.get("text") or "") for p in parts
                        if isinstance(p, dict)).strip()
     except Exception:
         text = ""
     if not text:
+        if block_reason:
+            # v1.6.4 rc.2: a 200 with no candidates and a blockReason
+            # is a safety refusal, not an empty reply - name it.
+            warn("brain", f"Gemini chat blocked ({block_reason})")
+            raise RuntimeError("gemini-blocked")
         raise RuntimeError("gemini-empty-reply")
     return text
 
 
-def _ask_gemini_chat(messages: list, lang: str = "ar") -> tuple:
+def _ask_gemini_chat(messages: list, lang: str = "ar",
+                     timeout: int = 60) -> tuple:
     """Gemini chat fallback. Returns (reply, engine, fail_kind) with
     engine "gemini" on success and "" on failure (fail_kind names
     the reason - see _gemini_failure_note). Never raises."""
     try:
-        reply = _gemini_chat(messages)
+        reply = _gemini_chat(messages, timeout=timeout)
         info("brain", "Answered via Gemini 2.5 Flash (chat key)")
         return reply, "gemini", ""
     except RuntimeError as exc:
@@ -1499,6 +1681,13 @@ def _ask_gemini_chat(messages: list, lang: str = "ar") -> tuple:
             warn("brain", f"Gemini chat failed ({kind}) - falling back "
                           "to local Qwen 3B")
         return "", "", kind
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        # v1.6.4 rc.2: no route to Google at all - distinct from a
+        # refused key or a server error, and worth naming.
+        warn("brain", f"Gemini chat unreachable "
+                      f"({type(exc).__name__}: {exc}) - falling back "
+                      "to local Qwen 3B")
+        return "", "", "gemini-unreachable"
     except Exception as exc:
         warn("brain", f"Gemini chat failed ({type(exc).__name__}: {exc}) "
                       "- falling back to local Qwen 3B")
@@ -1519,6 +1708,27 @@ def _gemini_failure_note(kind: str, lang: str) -> str:
         "gemini-key-rejected": (
             "مفتاح Gemini للمحادثة مرفوض — اتأكد من المفتاح،",
             "The Gemini chat key was rejected — check the key,"),
+        "gemini-api-not-enabled": (
+            "Gemini API مش مفعّلة على مشروع المفتاح — فعّلها من Google "
+            "Cloud أو استخدم مفتاح جديد من AI Studio،",
+            "The Gemini API is not enabled on the key's project — "
+            "enable it in Google Cloud or use a new AI Studio key,"),
+        "gemini-model-not-found": (
+            "موديل Gemini مش موجود — حدّث البرنامج،",
+            "The Gemini model was not found — update the app,"),
+        "gemini-unavailable": (
+            "سيرفرات Gemini مش متاحة دلوقتي — جرّب تاني كمان شوية،",
+            "Gemini's servers are unavailable right now — "
+            "try again in a bit,"),
+        "gemini-unreachable": (
+            "مش قادر أوصل لـ Gemini — اتأكد من النت،",
+            "Cannot reach Gemini — check the internet,"),
+        "gemini-bad-request": (
+            "Gemini رفض الطلب — التفاصيل في السجل،",
+            "Gemini refused the request — details in the log,"),
+        "gemini-blocked": (
+            "Gemini رفض يرد على الرسالة دي (فلتر أمان)،",
+            "Gemini refused to answer this message (safety filter),"),
         "gemini-failed": ("Gemini فشل،",
                           "Gemini failed,"),
         "gemini-empty-reply": ("Gemini رجّع رد فاضي،",
@@ -1529,17 +1739,22 @@ def _gemini_failure_note(kind: str, lang: str) -> str:
 
 
 def _ask_fallback_chain(messages: list, lang: str, groq_kind: str,
-                        groq_retry_after: float | None = None) -> tuple:
+                        groq_retry_after: float | None = None,
+                        timeout: int = 60) -> tuple:
     """The chat fallback chain after Groq fails (v1.6.1, item 23):
-    Gemini 2.5 Flash (CHAT key only) -> local Ollama. Returns
-    (reply, engine). When EVERYTHING is down the reply names each
-    engine and why: Groq (limit kind + when it clears, item 22),
-    Gemini (the reason), Ollama (not installed / not running).
+    Gemini 2.5 Flash (CHAT key only) -> local Ollama. Each engine
+    gets its own timeout (v1.6.4 rc.2: the caller in ask_with_tools
+    caps it by the time left on the 180 s cycle deadline, so the
+    chain cannot blow the deadline). Returns (reply, engine). When
+    EVERYTHING is down the reply names each engine and why: Groq
+    (limit kind + when it clears, item 22), Gemini (the reason),
+    Ollama (not installed / not running).
     No chat key -> the chain is Groq -> Ollama exactly as before."""
-    reply, engine, gemini_kind = _ask_gemini_chat(messages, lang)
+    reply, engine, gemini_kind = _ask_gemini_chat(messages, lang,
+                                                  timeout=timeout)
     if engine:
         return reply, engine
-    reply, engine = _ask_local(messages, lang)
+    reply, engine = _ask_local(messages, lang, timeout=timeout)
     if engine:
         return reply, engine
     groq_note = _groq_failure_note(groq_kind, lang, groq_retry_after)
@@ -1547,7 +1762,8 @@ def _ask_fallback_chain(messages: list, lang: str, groq_kind: str,
     return f"{groq_note} {gemini_note} {reply}", ""
 
 
-def _ask_local(messages: list, lang: str = "ar") -> tuple:
+def _ask_local(messages: list, lang: str = "ar",
+               timeout: int = _OLLAMA_TIMEOUT_SEC) -> tuple:
     """Local Ollama fallback. Returns (reply, engine) with engine
     "ollama" on success and "" (empty - NEVER "none") on failure.
     v1.4.1: the failure reply names the REAL local reason (not a bare
@@ -1555,7 +1771,7 @@ def _ask_local(messages: list, lang: str = "ar") -> tuple:
     message every time - the v1.4.0 log showed only the generic text
     while the real cause (400 on a poisoned payload) stayed hidden."""
     try:
-        reply = _ollama(messages)
+        reply = _ollama(messages, timeout=timeout)
         info("brain", "Answered via local Ollama qwen2.5:3b")
         return reply, "ollama"
     except requests.Timeout as exc:
