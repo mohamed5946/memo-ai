@@ -96,6 +96,28 @@
     });
   }
 
+  /* Startup-critical calls get retries with backoff: the field
+     failure (2026-11-23) was a blank white main window + «دالة الجسر
+     مش موجودة: get_settings» even though the method EXISTS — a
+     runtime/race failure on first paint. 3 attempts: immediate,
+     +1s, +3s. Failures are still thrown so the caller surfaces
+     them (showError/logError) — never swallowed. */
+  var CALL_RETRY_DELAYS_MS = [0, 1000, 3000];
+
+  function callRetry(method) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    var attempt = 0;
+    function tryOnce() {
+      return call.apply(null, [method].concat(args)).catch(function (err) {
+        attempt += 1;
+        if (attempt >= CALL_RETRY_DELAYS_MS.length) { throw err; }
+        var delay = CALL_RETRY_DELAYS_MS[attempt];
+        return new Promise(function (resolve) { setTimeout(resolve, delay); }).then(tryOnce);
+      });
+    }
+    return tryOnce();
+  }
+
   /* Poll a pending async result: fn(id) must return {done:bool,...}.
      Resolves with the final object, rejects on timeout. */
   function pollUntil(id, fn, timeoutMs, intervalMs) {
@@ -155,6 +177,7 @@
   global.LonaBridge = {
     getApi: getApi,
     call: call,
+    callRetry: callRetry,
     logError: logError,
     showError: showError,
     hideError: hideError,

@@ -7,15 +7,21 @@
 <link rel="stylesheet" href="assets/fonts/fonts.css">
 <link rel="stylesheet" href="assets/lona.css">
 <style>
-  /* v1.6.4 reskin: frameless window — the header bar is the native
-     drag region; every interactive child opts out so buttons/inputs
-     still receive clicks. The JS pointer handler below is the
-     fallback (window_move_to) if the native region does not engage. */
-  .bar { -webkit-app-region: drag; }
-  .bar button, .bar input, .bar a { -webkit-app-region: no-drag; }
+  /* First paint (before lona.css / JS): the body is NEVER a white
+     void — dark Liquid Glass base from the first pixel, plus the
+     boot overlay covering the window until init settles. */
+  html, body { background:#0b1430; }
+  #bootLoading{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:radial-gradient(600px 400px at 85% -10%,rgba(59,91,255,.55),transparent 60%),radial-gradient(500px 380px at 0% 110%,rgba(255,138,61,.45),transparent 60%),#0b1430;color:#fff;text-align:center;padding:20px}
+  #bootLoading .boot-spin{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;animation:bootSpin 1s linear infinite}
+  @keyframes bootSpin{to{transform:rotate(360deg)}}
+  #bootLoading .boot-logo{font-size:26px;font-weight:700;letter-spacing:2px}
+  #bootLoading .boot-msg{font-size:15px;opacity:.85}
+  #bootRetry{border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.12);color:#fff;border-radius:999px;padding:10px 22px;font-size:15px;cursor:pointer}
+  #bootLoading[hidden]{display:none}
 </style>
 </head>
 <body class="main-page">
+<div id="bootLoading" role="status"><div class="boot-spin" aria-hidden="true"></div><div class="boot-logo">LONA</div><div class="boot-msg">جارٍ التحميل…</div><button id="bootRetry" type="button" hidden>إعادة المحاولة</button></div>
 <div class="errbar" id="errbar" hidden><span id="errbarText"></span><button id="errbarClose" type="button">إخفاء</button></div>
 
 <main class="stage">
@@ -34,11 +40,6 @@
 
     <div class="main">
       <div class="bar">
-        <div class="tl">
-          <button class="tl-btn" id="tlClose" aria-label="إغلاق" style="width:13px;height:13px;border-radius:50%;border:0;background:#ff5f57;cursor:pointer;padding:0"></button>
-          <button class="tl-btn" id="tlMin" aria-label="تصغير" style="width:13px;height:13px;border-radius:50%;border:0;background:#febc2e;cursor:pointer;padding:0"></button>
-          <button class="tl-btn" id="tlMax" aria-label="تكبير" style="width:13px;height:13px;border-radius:50%;border:0;background:#28c840;cursor:pointer;padding:0"></button>
-        </div>
         <b class="brand">LONA</b>
         <button class="model" id="modelPill" type="button">تلقائي · Groq</button>
         <span class="clock" id="clock">--:--</span>
@@ -49,7 +50,7 @@
       <div class="view" data-v="chat">
         <div class="thread" id="thread">
           <div class="hero" id="hero">
-            <img src="assets/mascot.webp" alt="لونا">
+            <img src="assets/mascot.webp" alt="لونا" class="mascot-face" id="welcomeMascot">
             <h2 id="heroGreet">أهلًا، أقدر أساعدك في إيه؟</h2>
             <p class="mood" id="heroMood"></p>
             <p>اسألني عن جهازك، خلّيني أنضّف الرام، أتابع البطارية، أو أفتّكر لك حاجة — كل حاجة بتتقال هنا بتحصل على جهازك وبس.</p>
@@ -142,50 +143,12 @@
   tick();
   setInterval(tick, 15000);
 
-  /* ---------- traffic lights (real window controls) ---------- */
-  document.getElementById('tlClose').addEventListener('click', function () {
-    B.call('window_close').catch(function (err) { fail('window_close', err); });
-  });
-  document.getElementById('tlMin').addEventListener('click', function () {
-    B.call('window_minimize').catch(function (err) { fail('window_minimize', err); });
-  });
-  document.getElementById('tlMax').addEventListener('click', function () {
-    B.call('window_toggle_maximize').catch(function (err) { fail('window_toggle_maximize', err); });
-  });
-
-  /* ---------- frameless drag (v1.6.2, ported) ---------- */
-  /* The OS title bar is gone; the header bar is the drag region.
-     pointerdown records the grab offset, pointermove calls
-     window_move_to() throttled through rAF, pointerup ends it.
-     Buttons/inputs/links never start a drag; double-click on the
-     bar toggles maximize. Native -webkit-app-region: drag (see the
-     <style> above) is the primary path; this is the fallback. */
-  (function () {
-    var bar = document.querySelector('.bar');
-    if (!bar) return;
-    var offX = 0, offY = 0, dragging = false, raf = 0;
-    bar.addEventListener('pointerdown', function (e) {
-      if (e.target.closest('button, input, a')) return;
-      dragging = true;
-      offX = e.screenX - window.screenX;
-      offY = e.screenY - window.screenY;
-    });
-    bar.addEventListener('pointermove', function (e) {
-      if (!dragging || raf) return;
-      var x = e.screenX - offX, y = e.screenY - offY;
-      raf = requestAnimationFrame(function () {
-        raf = 0;
-        B.call('window_move_to', x, y).catch(function () {});
-      });
-    });
-    var endDrag = function () { dragging = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } };
-    bar.addEventListener('pointerup', endDrag);
-    bar.addEventListener('pointerleave', endDrag);
-    bar.addEventListener('dblclick', function (e) {
-      if (e.target.closest('button, input, a')) return;
-      B.call('window_toggle_maximize').catch(function () {});
-    });
-  })();
+  /* ---------- native Windows title bar (rc.2) ----------
+     The main window is a standard Windows window now: the native
+     title bar provides minimize / maximize / close and dragging.
+     The macOS-style dots and the frameless drag fallback are gone.
+     window_minimize / window_toggle_maximize / window_close still
+     exist in main.py for tray/quit flows. */
 
   /* ---------- mute ---------- */
   var mb = document.getElementById('muteBtn');
@@ -651,12 +614,39 @@
     setBar(document.getElementById('bBat'), bat.percent || 0);
     var vTemp = document.getElementById('vTemp');
     var vTempNote = document.getElementById('vTempNote');
-    if (typeof temp.value === 'number') {
+    /* Temp arrives as {available, celsius, reason, hint} — reason is
+       one of ok / lhm_not_running / not_installed / no_sensor /
+       needs_admin, and hint is rendered verbatim. Never show a
+       wrong temperature: a number shows only when celsius is one.
+       lhm_not_running means it IS installed but not running, so
+       there is NO install button — only the hint telling him to
+       open it and leave it in the background. */
+    vTempNote.innerHTML = '';
+    if (typeof temp.celsius === 'number') {
+      vTemp.textContent = temp.celsius + '°C';
+      vTempNote.textContent = temp.label || temp.source || '';
+    } else if (typeof temp.value === 'number') {
+      /* legacy shape (pre-rc.2 monitor.py) — same display */
       vTemp.textContent = temp.value + '°C';
       vTempNote.textContent = temp.label || temp.source || '';
     } else {
-      vTemp.textContent = 'مش متاحة على الجهاز ده';
-      vTempNote.innerHTML = '<a class="act" href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor" target="_blank" rel="noopener">تثبيت LibreHardwareMonitor</a>';
+      var reason = temp.reason || '';
+      var hint = String(temp.hint || '').trim();
+      if (reason === 'lhm_not_running') {
+        vTemp.textContent = 'الحرارة مش متاحة دلوقتي';
+        vTempNote.textContent = hint || 'LibreHardwareMonitor متثبت بس مش شغال — افتحه وسيبه في الخلفية';
+      } else if (reason === 'not_installed') {
+        vTemp.textContent = 'مش متاحة على الجهاز ده';
+        vTempNote.innerHTML = '<a class="act" href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor" target="_blank" rel="noopener">تثبيت LibreHardwareMonitor</a>';
+      } else if (reason === 'needs_admin') {
+        vTemp.textContent = 'الحرارة مش متاحة دلوقتي';
+        vTempNote.textContent = hint || 'قراءة الحرارة محتاجة صلاحية مسؤول — شغّل LONA كمسؤول';
+      } else {
+        /* no_sensor / unknown — hint verbatim, no install button,
+           and never a made-up number */
+        vTemp.textContent = 'مش متاحة على الجهاز ده';
+        vTempNote.textContent = hint;
+      }
     }
     var list = document.getElementById('procList');
     list.innerHTML = '';
@@ -1761,22 +1751,75 @@
      main page's bridge came up. */
   B.call('log_js', 'READY main').catch(function () {});
 
-  /* ---------- init ---------- */
-  B.call('get_status').then(function (res) {
+  /* ---------- welcome face: face-only circle, reacts on click ---------- */
+  /* .mascot-face (lona.css) crops mascot.webp to the face in a
+     circle — the raw square image is never shown. Click bounces
+     the face and greets in the welcome area (mirrors the island). */
+  var welcomeMascot = document.getElementById('welcomeMascot');
+  if (welcomeMascot) {
+    welcomeMascot.addEventListener('click', function () {
+      welcomeMascot.classList.remove('bounce');
+      void welcomeMascot.offsetWidth; /* replay the animation on repeat clicks */
+      welcomeMascot.classList.add('bounce');
+      setTimeout(function () { welcomeMascot.classList.remove('bounce'); }, 700);
+      var moodEl = document.getElementById('heroMood');
+      var who = String(S.user || '').trim();
+      if (moodEl) { moodEl.textContent = who ? ('أهلاً ' + who + '!') : 'أهلاً!'; }
+    });
+  }
+
+  /* ---------- init (startup-critical calls retry: 3 attempts) ---------- */
+  /* Field failure 2026-11-23: blank white window + «دالة الجسر مش
+     موجودة: get_settings» on a single unretried call. The boot
+     overlay («جارٍ التحميل…») covers the window from first paint;
+     it hides only once init settles, and if BOTH startup calls fail
+     after all retries it turns into a visible retry button — never
+     a dead white page. Errors still surface via fail() as before. */
+  var bootEl = document.getElementById('bootLoading');
+  var bootRetryBtn = document.getElementById('bootRetry');
+  var bootSettled = false;
+  var statusOk = false, settingsOk = false;
+  function bootDone() {
+    if (bootSettled) { return; }
+    bootSettled = true;
+    if (bootEl) { bootEl.hidden = true; }
+  }
+  function bootShowRetry() {
+    if (bootSettled) { return; }
+    bootSettled = true;
+    if (bootEl) {
+      var msg = bootEl.querySelector('.boot-msg');
+      if (msg) { msg.textContent = 'تعذّر الاتصال بالبرنامج — جرّب تاني'; }
+      var spin = bootEl.querySelector('.boot-spin');
+      if (spin) { spin.hidden = true; }
+    }
+    if (bootRetryBtn) { bootRetryBtn.hidden = false; }
+  }
+  if (bootRetryBtn) {
+    bootRetryBtn.addEventListener('click', function () { location.reload(); });
+  }
+  /* Failsafe: never trap the user behind the overlay — after 90 s
+     (past the worst-case retry chain: 2 calls × 3 attempts × 10 s
+     bridge poll + backoff) the real UI shows through even if init
+     is still stuck. */
+  setTimeout(function () { if (!bootSettled) { bootDone(); } }, 90000);
+  B.callRetry('get_status').then(function (res) {
+    statusOk = true;
     STATUS = res || {};
     if (STATUS.version) { VERSION = String(STATUS.version); }
     if (STATUS.settings) { applyRemoteSettings(STATUS.settings); }
   }).catch(function (err) { fail('get_status', err); })
-    .then(function () { return B.call('get_settings'); })
-    .then(function (s) { applyRemoteSettings(s); })
+    .then(function () { return B.callRetry('get_settings'); })
+    .then(function (s) { settingsOk = true; applyRemoteSettings(s); })
     .catch(function (err) { fail('get_settings', err); })
     .then(function () {
       applyTheme(S.theme || 'lg', false);
       lite(!!S.lite, false);
       mute(!!S.muted);
       applyGreeting();
+      if (statusOk || settingsOk) { bootDone(); } else { bootShowRetry(); }
     });
-  B.call('get_model_options').then(function (res) {
+  B.callRetry('get_model_options').then(function (res) {
     res = res || {};
     modelChoice = res.choice || 'auto';
     modelOptions = Array.isArray(res.options) ? res.options : [];
