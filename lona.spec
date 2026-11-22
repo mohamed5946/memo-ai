@@ -21,7 +21,7 @@
 import os
 from PyInstaller.utils.hooks import collect_all
 
-ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
+ROOT = os.path.abspath(SPECPATH)  # lona.spec lives at the repo root
 LONA2 = os.path.join(ROOT, "lona2")
 
 datas = [
