@@ -81,6 +81,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          # pytest is a dev-only dependency: it is NOT in
+          # lona2/requirements.txt (the runtime list), so install it
+          # here. (The first v2.0.0-rebuild.1 run failed on exactly
+          # this: "No module named pytest" on the runner.)
+          pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw "pip install pytest failed" }
           python -m pytest lona2/tests/ -q
           if ($LASTEXITCODE -ne 0) { throw "v2 test suite failed" }
 
