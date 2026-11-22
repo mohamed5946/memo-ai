@@ -339,6 +339,30 @@ def _read_cpu_temp_capped(timeout: float = 15.0) -> tuple:
     return result.get("value", (None, False))
 
 
+def _read_temp_status_capped(timeout: float = 15.0) -> dict | None:
+    """read_temp_status() in a worker thread (rc.2, same cap as
+    _read_cpu_temp_capped): a stuck WMI / PowerShell / embedded-helper
+    probe can never block the caller past `timeout` -- on timeout this
+    is None (the caller keeps the last cached status), never a hang."""
+    result: dict = {}
+
+    def _run():
+        try:
+            result["value"] = read_temp_status()
+        except Exception:
+            result["value"] = None
+
+    thread = threading.Thread(target=_run, daemon=True,
+                              name="memo-temp-probe")
+    thread.start()
+    thread.join(timeout=timeout)
+    if thread.is_alive():
+        warn("monitor", "CPU temperature probe timed out "
+                        f"({timeout:.0f}s) - keeping the last status")
+        return None
+    return result.get("value")
+
+
 def read_cpu_temp() -> tuple:
     """Best-effort CPU temperature.
 
@@ -352,28 +376,14 @@ def read_cpu_temp() -> tuple:
     sensors. ACPI thermal zones are probed LAST and only for the
     diagnostics log, labelled as what they are — a zone/room reading
     (~24 C), NOT a CPU temperature — so they can never be presented
-    as one again."""
-    if sys.platform != "win32":
-        return None, False
-    candidates = _wmi_temps() or _powershell_temps()
-    plausible = [t for t in candidates
-                 if _TEMP_PLAUSIBLE_C[0] <= t <= _TEMP_PLAUSIBLE_C[1]]
-    if not plausible:
-        # v1.6.4 (F-E): no CPU sensor — say so honestly. A thermal
-        # zone may still answer, but its value is a zone/room reading,
-        # not CPU temperature: log it labelled as such, never return
-        # it. The caller shows the LibreHardwareMonitor hint instead.
-        zone = _wmi_thermal_zones() or _powershell_thermal_zones()
-        zone_plausible = [t for t in zone
-                          if _TEMP_PLAUSIBLE_C[0] <= t <= _TEMP_PLAUSIBLE_C[1]]
-        if zone_plausible:
-            info("monitor", "No CPU temperature sensor answered; "
-                            f"thermal zone reads {max(zone_plausible):.1f}C "
-                            "- a zone/room reading, NOT CPU temperature, "
-                            "so it is not reported as one")
-        return None, False
-    # Several sensors: the hottest one is the one that matters.
-    return max(plausible), True
+    as one again.
+
+    rc.2: this is the (temp, available) view of read_temp_status() --
+    the tuple shape is kept for tempwatch.py and the existing tests,
+    and the reason WHY the temperature is missing lives in the
+    status dict (see read_temp_status)."""
+    status = read_temp_status()
+    return status["celsius"], status["available"]
 
 
 # v1.6.1: when no temperature source answers, the device panel shows
@@ -386,6 +396,257 @@ _TEMP_HINT = {
     "url": "https://github.com/LibreHardwareMonitor/"
            "LibreHardwareMonitor/releases",
 }
+
+_LHM_RELEASES_URL = ("https://github.com/LibreHardwareMonitor/"
+                     "LibreHardwareMonitor/releases")
+
+
+# ---------------------------------------------------------------------------
+# rc.2: temperature status WITH the real reason (W3).
+#
+# Field evidence: the device card and the chat both said "مش متاحة /
+# مفيش حساس" when the truth was that LibreHardwareMonitor was
+# INSTALLED but not RUNNING -- its WMI namespaces
+# (root\LibreHardwareMonitor) exist only while LHM runs, so "no WMI
+# namespace answers" could mean either "not installed" or "installed
+# but not running", and the old "ثبّت LibreHardwareMonitor" button
+# told Mohamed to install something he already had. The status dict
+# below names the real cause, and the device card / chat consume it
+# instead of guessing.
+# ---------------------------------------------------------------------------
+
+# The exact reasons read_temp_status() can report. Other workers
+# consume this dict -- do not rename the keys or the reason strings.
+_TEMP_REASONS = ("ok", "lhm_not_running", "not_installed", "no_sensor",
+                 "needs_admin")
+
+# rc.2: the field case -- LHM is on disk but its process is not up,
+# so no WMI namespace answers. Exact wording from the rc.2 brief.
+_TEMP_HINT_LHM_NOT_RUNNING = (
+    "LibreHardwareMonitor متثبت بس مش شغال — افتحه وسيبه شغال "
+    "في الخلفية عشان الحرارة تظهر")
+_TEMP_HINT_NO_SENSOR = ("مفيش حساس حرارة للمعالج على الجهاز ده — "
+                        "الحرارة مش متاحة")
+_TEMP_HINT_NEEDS_ADMIN = ("LibreHardwareMonitor محتاج صلاحيات مدير "
+                          "عشان يقرأ حساس الحرارة — شغّله كمسؤول "
+                          "(Run as administrator)")
+_TEMP_HINT_WINDOWS_ONLY = ("قراءة الحرارة عن طريق LibreHardwareMonitor "
+                           "متاحة على ويندوز بس")
+
+
+def _temp_status(available, celsius, reason, hint) -> dict:
+    """The exact temp-status shape the device card and the chat
+    consume: {"available", "celsius", "reason", "hint"}. `reason` is
+    one of _TEMP_REASONS; `celsius` is a real CPU reading or None --
+    never a guessed number; `hint` is the Arabic sentence shown to
+    Mohamed for that reason ("" when the temperature is fine)."""
+    return {"available": bool(available),
+            "celsius": (float(celsius) if celsius is not None else None),
+            "reason": reason,
+            "hint": str(hint or "")}
+
+
+def _temp_hint_for_status(temp_status) -> dict:
+    """{text, url} hint for an unavailable temperature, from the
+    reasoned status dict. Install-related reasons link the LHM
+    releases page; no_sensor / needs_admin carry no link (installing
+    again would not help / is not the fix). With no reasoned status
+    (injected samplers, old callers) this is the exact agreed
+    _TEMP_HINT, so the v1.6.1 contract still holds."""
+    if isinstance(temp_status, dict):
+        reason = temp_status.get("reason")
+        hint = temp_status.get("hint")
+        if reason in _TEMP_REASONS and isinstance(hint, str) and hint:
+            if reason in ("lhm_not_running", "not_installed"):
+                return {"text": hint, "url": _LHM_RELEASES_URL}
+            return {"text": hint, "url": None}
+    return dict(_TEMP_HINT)
+
+
+def _lhm_exe_candidates() -> list:
+    """Where a LibreHardwareMonitor install lives: the standard
+    install folders plus anything on PATH."""
+    candidates = []
+    for env_key in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
+                    "LOCALAPPDATA"):
+        base = os.environ.get(env_key)
+        if base:
+            candidates.append(os.path.join(
+                base, "LibreHardwareMonitor",
+                "LibreHardwareMonitor.exe"))
+    try:
+        import shutil
+        found = shutil.which("LibreHardwareMonitor")
+        if found:
+            candidates.append(found)
+    except Exception:
+        pass
+    return candidates
+
+
+def _lhm_installed() -> bool:
+    """True when LibreHardwareMonitor is installed -- its exe sits in
+    a known install folder, or it is registered in the Uninstall
+    registry key -- even when it is not running. Best effort, never
+    raises: off Windows (or without winreg) the registry half is
+    skipped, and a missing key is simply "not installed"."""
+    for path in _lhm_exe_candidates():
+        try:
+            if path and os.path.isfile(path):
+                return True
+        except Exception:
+            pass
+    try:
+        import winreg
+        uninstall = (r"SOFTWARE\Microsoft\Windows\CurrentVersion"
+                     r"\Uninstall")
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            for view in (0, winreg.KEY_WOW64_64KEY,
+                         winreg.KEY_WOW64_32KEY):
+                try:
+                    key = winreg.OpenKey(root, uninstall, 0,
+                                         winreg.KEY_READ | view)
+                except Exception:
+                    continue
+                try:
+                    i = 0
+                    while True:
+                        try:
+                            sub = winreg.EnumKey(key, i)
+                        except OSError:
+                            break
+                        i += 1
+                        try:
+                            with winreg.OpenKey(key, sub) as subkey:
+                                name, _ = winreg.QueryValueEx(
+                                    subkey, "DisplayName")
+                        except Exception:
+                            continue
+                        if isinstance(name, str) and \
+                                "librehardwaremonitor" in name.lower():
+                            return True
+                finally:
+                    winreg.CloseKey(key)
+    except Exception:
+        pass
+    return False
+
+
+def _lhm_running() -> bool:
+    """True when LibreHardwareMonitor.exe is a live process right now
+    (psutil scan). False when psutil is missing or the scan fails --
+    never raises."""
+    if psutil is None:
+        return False
+    try:
+        for proc in psutil.process_iter(["name"]):
+            try:
+                name = (proc.info or {}).get("name") or ""
+            except Exception:
+                continue
+            if str(name).lower() == "librehardwaremonitor.exe":
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _read_embedded_temp():
+    """Embedded-LHM temperature (rc.2), read defensively: the module
+    lives in app/lhm_embedded.py, owned by another worker, so it may
+    not exist yet, may have no read_embedded_temp, or the call may
+    fail -- every failure is None here, never a raise, so the WMI
+    path below still gets its chance. On success this is the helper's
+    dict: {"celsius": float} or {"error": ..., "detail": ...}."""
+    for mod_name in ("lhm_embedded", "app.lhm_embedded"):
+        try:
+            mod = __import__(mod_name, fromlist=["read_embedded_temp"])
+            fn = getattr(mod, "read_embedded_temp", None)
+            if not callable(fn):
+                continue
+            try:
+                res = fn()
+            except Exception:
+                return None
+            return res if isinstance(res, dict) else None
+        except Exception:
+            continue
+    return None
+
+
+def read_temp_status() -> dict:
+    """Best-effort CPU temperature WITH the real reason it is missing.
+
+    Returns {"available": bool, "celsius": float|None,
+             "reason": "ok"|"lhm_not_running"|"not_installed"
+                       |"no_sensor"|"needs_admin",
+             "hint": str} -- the exact shape the device card and the
+    chat consume (other workers: do not change the keys or the reason
+    strings). Sources, in order (rc.2): (1) embedded
+    LibreHardwareMonitor (app.lhm_embedded, defensive -- absent or
+    failing is never fatal); (2) WMI Libre/OpenHardwareMonitor CPU
+    sensors, Win32_TemperatureProbe, Dell DCIM sensors (the v1.6.4
+    F-E order); (3) ACPI thermal zones LAST and only for the
+    diagnostics log -- a zone reading is a room value, never a CPU
+    temperature, so it can never be reported as one. When no CPU
+    sensor answers, the reason names the real cause: LHM installed
+    but not running, LHM not installed at all, no sensor on the
+    machine, or the embedded reader needs admin rights. Never
+    returns a wrong temperature, never raises."""
+    if sys.platform != "win32":
+        return _temp_status(False, None, "not_installed",
+                            _TEMP_HINT_WINDOWS_ONLY)
+    # (1) Embedded LHM -- the rc.2 path (no separate LHM app needed).
+    needs_admin = False
+    try:
+        embedded = _read_embedded_temp()
+    except Exception:
+        # Defensive to the last: a failing embedded reader is
+        # "unavailable", never a crash, and WMI still gets its chance.
+        embedded = None
+    if isinstance(embedded, dict):
+        celsius = embedded.get("celsius")
+        if isinstance(celsius, (int, float)) and \
+                _TEMP_PLAUSIBLE_C[0] <= float(celsius) \
+                <= _TEMP_PLAUSIBLE_C[1]:
+            return _temp_status(True, float(celsius), "ok", "")
+        if embedded.get("error") == "needs_admin":
+            # Not fatal yet: a running standalone LHM may still
+            # answer over WMI below. Only if nothing else answers
+            # is this the reason reported.
+            needs_admin = True
+    # (2) WMI / PowerShell CPU sensors (v1.6.4 F-E order).
+    candidates = _wmi_temps() or _powershell_temps()
+    plausible = [t for t in candidates
+                 if _TEMP_PLAUSIBLE_C[0] <= t <= _TEMP_PLAUSIBLE_C[1]]
+    if plausible:
+        # Several sensors: the hottest one is the one that matters.
+        return _temp_status(True, max(plausible), "ok", "")
+    # (3) Thermal zones LAST -- logged honestly, never reported.
+    # v1.6.4 (F-E): no CPU sensor -- say so honestly. A thermal zone
+    # may still answer, but its value is a zone/room reading, not CPU
+    # temperature: log it labelled as such, never return it. The
+    # caller shows the reasoned hint instead.
+    zone = _wmi_thermal_zones() or _powershell_thermal_zones()
+    zone_plausible = [t for t in zone
+                      if _TEMP_PLAUSIBLE_C[0] <= t <= _TEMP_PLAUSIBLE_C[1]]
+    if zone_plausible:
+        info("monitor", "No CPU temperature sensor answered; "
+                        f"thermal zone reads {max(zone_plausible):.1f}C "
+                        "- a zone/room reading, NOT CPU temperature, "
+                        "so it is not reported as one")
+    if needs_admin:
+        return _temp_status(False, None, "needs_admin",
+                            _TEMP_HINT_NEEDS_ADMIN)
+    if _lhm_running():
+        # LHM is up but published no CPU sensor: the machine (or its
+        # sensor set) has nothing to read, not a missing install.
+        return _temp_status(False, None, "no_sensor",
+                            _TEMP_HINT_NO_SENSOR)
+    if _lhm_installed():
+        return _temp_status(False, None, "lhm_not_running",
+                            _TEMP_HINT_LHM_NOT_RUNNING)
+    return _temp_status(False, None, "not_installed", _TEMP_HINT["text"])
 
 
 # ---------------------------------------------------------------------------
@@ -772,7 +1033,17 @@ class SystemMonitor:
         self._cpu_history = []      # [(timestamp, cpu_percent)]
         self._active = set()        # alert kinds whose condition is true
         self._last_fired = {}       # kind -> timestamp of last firing
-        self._temp_cache = {"at": 0.0, "temp_c": None, "available": False}
+        self._temp_cache = {"at": 0.0, "temp_c": None, "available": False,
+                            # rc.2: the full reasoned temp status (see
+                            # read_temp_status) -- cached with the probe,
+                            # never re-detected per poll. Pre-probe this
+                            # is the old install hint, exactly what the
+                            # card showed before rc.2, until the
+                            # sampler's first slow sample lands seconds
+                            # after start.
+                            "status": _temp_status(False, None,
+                                                   "not_installed",
+                                                   _TEMP_HINT["text"])}
         # v1.6.4 perf (b): last GPU probe (a PowerShell spawn) - see
         # _sample_slow. None = never probed (first slow sample probes).
         self._last_gpu_at = None
@@ -800,8 +1071,20 @@ class SystemMonitor:
 
     # -- sampling -----------------------------------------------------------
 
+    def _temp_status_cached(self) -> dict:
+        """The last probed temp status (a fresh copy), or the pre-probe
+        default when the sampler has not landed a slow sample yet."""
+        cached = self._temp_cache.get("status")
+        if isinstance(cached, dict) \
+                and cached.get("reason") in _TEMP_REASONS:
+            return dict(cached)
+        return _temp_status(False, None, "not_installed",
+                            _TEMP_HINT["text"])
+
     def _read_temp_cached(self):
-        """Temperature, probed at most once per _TEMP_PROBE_INTERVAL_SEC."""
+        """Temperature, probed at most once per _TEMP_PROBE_INTERVAL_SEC.
+        Caches the full reasoned status dict (see read_temp_status);
+        returns the (temp_c, available) pair _sample_slow expects."""
         now = self._clock()
         if now - self._temp_cache["at"] < _TEMP_PROBE_INTERVAL_SEC:
             return (self._temp_cache["temp_c"],
@@ -809,17 +1092,26 @@ class SystemMonitor:
         # v1.4.3: the probe must never raise - a failed probe is
         # "unavailable", not a dead monitor. v1.6.2 (B24): capped at
         # 15 s in a worker thread, so a stuck probe never blocks the
-        # sampler either.
+        # sampler either. A timed-out probe keeps the last status
+        # (and still bumps "at", so it is not retried every minute).
         try:
-            temp_c, available = _read_cpu_temp_capped()
+            status = _read_temp_status_capped()
         except Exception as exc:
             warn("monitor", f"CPU temperature probe failed: {exc}")
-            temp_c, available = None, False
-        self._temp_cache.update({"at": now, "temp_c": temp_c,
-                                 "available": available})
+            status = None
+        if isinstance(status, dict):
+            self._temp_cache.update(
+                {"at": now, "temp_c": status.get("celsius"),
+                 "available": bool(status.get("available")),
+                 "status": dict(status)})
+        else:
+            self._temp_cache["at"] = now
+        temp_c = self._temp_cache.get("temp_c")
+        available = self._temp_cache.get("available", False)
         if not available:
+            reason = (self._temp_cache.get("status") or {}).get("reason")
             info("monitor", "CPU temperature unavailable "
-                 "(no WMI thermal source answered)")
+                            f"(reason: {reason or 'unknown'})")
         return temp_c, available
 
     def _sample_fast(self) -> dict:
@@ -926,6 +1218,10 @@ class SystemMonitor:
         return {
             "temp_c": temp_c,
             "temp_available": temp_available,
+            # rc.2: the reasoned status travels with the slow sample
+            # into the background cache, so get_status() /
+            # get_device_overview() serve it without ever probing.
+            "temp_status": self._temp_status_cached(),
             "gpu": gpu,
             "storage": storage,
             "top_processes": top_processes,
@@ -1042,6 +1338,10 @@ class SystemMonitor:
              "cpu": {"percent": float | None, "sustained_high": bool},
              "battery": {"percent", "charging"} | None,
              "temp_c": float | None, "temp_available": bool,
+             "temp_status": {"available", "celsius", "reason", "hint"},
+                 # rc.2: WHY the temperature is missing (see
+                 # read_temp_status) -- the chat reads this instead of
+                 # guessing "no sensor".
              "available": bool}   # False only when psutil is missing
         Any field may be None when its source failed to read (v1.4.3:
         partial data, never a crash, never fake zeros).
@@ -1079,6 +1379,20 @@ class SystemMonitor:
         drain = reading.get("battery_drain")
         if drain is None:
             drain = battery_drain_estimate(battery, top_processes)
+        # rc.2: the reasoned temp status. The real sampler carries it
+        # in the reading (via _sample_slow); an injected sampler (or
+        # a reading from before the first slow sample) falls back to
+        # the monitor's cached status -- or "ok" when the reading
+        # itself carries a real temperature but no status dict.
+        temp_status = reading.get("temp_status")
+        if not (isinstance(temp_status, dict)
+                and temp_status.get("reason") in _TEMP_REASONS):
+            if reading.get("temp_available") \
+                    and reading.get("temp_c") is not None:
+                temp_status = _temp_status(
+                    True, reading.get("temp_c"), "ok", "")
+            else:
+                temp_status = self._temp_status_cached()
         status = {
             "ram": reading.get("ram"),
             "disk": reading.get("disk"),
@@ -1088,6 +1402,7 @@ class SystemMonitor:
             "battery": battery,
             "temp_c": reading.get("temp_c"),
             "temp_available": bool(reading.get("temp_available", False)),
+            "temp_status": dict(temp_status),
             "available": psutil is not None,
             "top_processes": top_processes,
             "gpu": gpu,
@@ -1120,21 +1435,32 @@ class SystemMonitor:
 
     def get_device_overview(self) -> dict:
         """v1.6.0: one flat overview for the island / device panels:
-        {ram, cpu, battery, temp_c, temp_available, disk, storage,
-        top_processes, gpu, battery_drain, mood, mood_reason}.
+        {ram, cpu, battery, temp_c, temp_available, temp_status,
+        temp_hint, disk, storage, top_processes, gpu, battery_drain,
+        mood, mood_reason}.
         "disk" is the system-drive summary (back-compat key); "storage"
         is the per-drive list. Nothing here is ever a guessed number."""
         status = self.get_status()
         temp_available = bool(status.get("temp_available"))
+        temp_status = status.get("temp_status")
         return {
             "ram": status.get("ram"),
             "cpu": status.get("cpu"),
             "battery": status.get("battery"),
             "temp_c": status.get("temp_c"),
             "temp_available": temp_available,
+            # rc.2: the reasoned status (exact shape from
+            # read_temp_status) rides along for the card + the chat.
+            "temp_status": dict(temp_status)
+                if isinstance(temp_status, dict) else None,
             # v1.6.1: present only while the temperature is unavailable;
-            # None once a real reading exists.
-            "temp_hint": None if temp_available else dict(_TEMP_HINT),
+            # None once a real reading exists. rc.2: the text names the
+            # REAL reason (installed-but-not-running vs not installed
+            # vs no sensor vs needs admin) instead of always the
+            # install hint; with no reasoned status (injected samplers)
+            # it is the exact agreed _TEMP_HINT.
+            "temp_hint": None if temp_available
+                else _temp_hint_for_status(temp_status),
             "disk": status.get("disk"),
             "storage": status.get("storage") or [],
             "top_processes": status.get("top_processes") or [],
