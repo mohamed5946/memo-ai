@@ -132,10 +132,10 @@ class TestApiContract(unittest.TestCase):
 
     def test_version_is_1_6_2_everywhere(self):
         src = self._main_source()
-        self.assertIn('VERSION = "1.6.2"', src)
+        self.assertIn('VERSION = "1.6.3"', src)
         manifest = json.loads((ROOT / "version.json").read_text(
             encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.6.2")
+        self.assertEqual(manifest["version"], "1.6.3")
         self.assertTrue(manifest.get("features"))
 
 

@@ -169,27 +169,27 @@ class TestRemoveOldInstallBounded:
 class TestVersionManifest:
     def test_version_bumped_with_v162_urls(self):
         m = _manifest()
-        assert m["version"] == "1.6.2"
+        assert m["version"] == "1.6.3"
         assert m["url"] == (
             "https://github.com/mohamed5946/memo-ai/releases/download/"
-            "v1.6.2/memo-ai-v1.6.2.zip")
+            "v1.6.3/memo-ai-v1.6.3.zip")
         assert m["setup_url"] == (
             "https://github.com/mohamed5946/memo-ai/releases/download/"
-            "v1.6.2/LONA-Setup-1.6.2.exe")
-        assert "1.6.0" not in m["url"]
-        assert "1.6.0" not in m["setup_url"]
+            "v1.6.3/LONA-Setup-1.6.3.exe")
+        assert "1.6.2" not in m["url"]
+        assert "1.6.2" not in m["setup_url"]
         assert "1.6.1" not in m["url"]
         assert "1.6.1" not in m["setup_url"]
 
     def test_hashes_left_untouched_for_ci(self):
-        # The v1.6.1 hashes stay as they are; the CI workflow
+        # The v1.6.2 hashes stay as they are; the CI workflow
         # ("Update version.json manifest on main") overwrites them
         # with the real built-file hashes on main after the tag build.
         m = _manifest()
         assert m["sha256"] == (
-            "e901b8c63dc7bd265dbaeff777accf7c7fd8ac49714cb50284d6cdbc9e9ae31d")
+            "2db4730c648b0b36a310a99f1227e1df372b48923615d8917c332fd7789f336e")
         assert m["setup_sha256"] == (
-            "d19dd4a7ba7f7af977c65b8ba547e5606d6eb007ac9a2890a00f27a554057e15")
+            "57c3b08b019a03485980573b4dc83f050fa6445a2125a4f2b6432da2d46068fd")
 
     def test_other_fields_preserved(self):
         m = _manifest()
@@ -201,10 +201,10 @@ class TestVersionManifest:
             "إصلاح ذاتي آمن",
             "تحكم في المتصفح",
         ]
-        # Notes now open with the v1.6.2 entry; the v1.6.1 text is
+        # Notes now open with the v1.6.3 entry; the v1.6.2 text is
         # kept verbatim as history, not rewritten.
-        assert m["notes"].startswith("v1.6.2:")
-        assert "v1.6.1: إصلاح المحدّث" in m["notes"]
+        assert m["notes"].startswith("v1.6.3:")
+        assert "v1.6.2: إصلاح تعليق المثبّت" in m["notes"]
 
 
 if __name__ == "__main__":

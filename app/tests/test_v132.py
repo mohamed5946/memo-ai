@@ -365,9 +365,9 @@ class TestSelfTestAndInstaller(unittest.TestCase):
 
     def test_version_consistency(self):
         import main
-        self.assertEqual(main.VERSION, "1.6.2")
-        self.assertIn("v1.6.2", _read("app/ui/index.html"))
-        self.assertIn("1, 6, 2, 0",
+        self.assertEqual(main.VERSION, "1.6.3")
+        self.assertIn("v1.6.3", _read("app/ui/index.html"))
+        self.assertIn("1, 6, 3, 0",
                       _read("installer/file_version_info.txt"))
         # version.json is updated BY THE CI after the tag build (it
         # carries the real release hashes) - and the post-release commit

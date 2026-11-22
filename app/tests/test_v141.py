@@ -869,17 +869,17 @@ class TestVersionAndInstaller(unittest.TestCase):
 
     def test_version_consistency_v141(self):
         import main
-        self.assertEqual(main.VERSION, "1.6.2")
-        self.assertIn("v1.6.2", _read("app/ui/index.html"))
-        self.assertIn("1, 6, 2, 0",
+        self.assertEqual(main.VERSION, "1.6.3")
+        self.assertIn("v1.6.3", _read("app/ui/index.html"))
+        self.assertIn("1, 6, 3, 0",
                       _read("installer/file_version_info.txt"))
-        self.assertIn("'1.6.2'", _read("installer/file_version_info.txt"))
+        self.assertIn("'1.6.3'", _read("installer/file_version_info.txt"))
         # v1.4.2: the manifest is updated by the post-release commit
         # (af85c62 did this for v1.4.1) - so it must EQUAL the app
         # version now, not lag one behind. Checked after that commit.
         manifest = json.loads(_read("version.json"))
         self.assertEqual(manifest["version"], main.VERSION)
-        self.assertIn("1.6.2", manifest["notes"])
+        self.assertIn("1.6.3", manifest["notes"])
 
 
 if __name__ == "__main__":
