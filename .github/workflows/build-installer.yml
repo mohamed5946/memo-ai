@@ -132,6 +132,31 @@ jobs:
           # on failure so a real failure is diagnosable).
           if ($LASTEXITCODE -ne 0) { throw "pytest failed" }
 
+      - name: Set up .NET SDK 8 (LHM helper)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build LHM helper (embedded LibreHardwareMonitor)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # v1.6.4-rc.2 (W6): the LhmReader.exe console helper reads
+          # the CPU temperature straight from LibreHardwareMonitorLib
+          # - no separate LHM app needed on the user's PC. net472
+          # runs on any Windows 10/11 with no extra runtime; the
+          # .NET 8 SDK builds it via the NuGet targeting pack.
+          # setup-dotnet above guarantees the SDK is present (the
+          # windows-latest runner ships one, but pin 8.0.x so the
+          # build does not depend on the runner image); dotnet
+          # --version is the check that it is actually there.
+          dotnet --version
+          if ($LASTEXITCODE -ne 0) { throw "dotnet SDK not available" }
+          dotnet build tools/LhmReader -c Release
+          if ($LASTEXITCODE -ne 0) { throw "dotnet build (LhmReader) failed" }
+          if (-not (Test-Path "tools\LhmReader\bin\Release\net472\LhmReader.exe")) { throw "LhmReader.exe was not produced" }
+          if (-not (Test-Path "tools\LhmReader\bin\Release\net472\LibreHardwareMonitorLib.dll")) { throw "LibreHardwareMonitorLib.dll was not produced next to LhmReader.exe" }
+
       - name: Build exe with PyInstaller
         shell: pwsh
         run: |

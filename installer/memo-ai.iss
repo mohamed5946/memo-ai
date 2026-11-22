@@ -100,6 +100,9 @@ Source: "..\dist\LONA\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 ; keys/ lives next to the exe (not inside _internal) so users can see and
 ; edit their key files; only the instructions file ships with the installer.
 Source: "..\keys\README.txt"; DestDir: "{app}\keys"; Flags: ignoreversion
+; v1.6.4-rc.2: third-party notices (incl. the full MPL-2.0 text for
+; the embedded LibreHardwareMonitor library) ship with the install.
+Source: "..\THIRD_PARTY.md"; DestDir: "{app}"; Flags: ignoreversion
 ; v1.6.0 (LONA Browser extension): the Chrome native-host manifest.
 ; It is copied here and then REWRITTEN at install time by
 ; WriteNativeHostManifest() with the real install path (see [Code]).

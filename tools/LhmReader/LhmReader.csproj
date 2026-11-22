@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- net472 runs on any Windows 10/11 with no extra runtime to
+         install: the .NET Framework is part of Windows. The .NET 8
+         SDK builds this target via the NuGet targeting pack. -->
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>LhmReader</AssemblyName>
+    <RootNamespace>LhmReader</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>7.3</LangVersion>
+    <!-- LONA is 64-bit; the LibreHardwareMonitor kernel driver is
+         architecture-sensitive, so build x64 explicitly. -->
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Latest stable at the time of writing (2026-11-23): 0.9.6.
+         0.9.7 exists only as -pre prereleases; pin the stable one so
+         CI restores the same bits every time. -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+  </ItemGroup>
+
+</Project>

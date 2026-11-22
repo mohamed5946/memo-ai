@@ -81,6 +81,23 @@ def _wa_datas():
 
 datas += _wa_datas()
 
+# v1.6.4-rc.2: embedded LibreHardwareMonitor helper (W6). The
+# LhmReader.exe console helper + LibreHardwareMonitorLib.dll are
+# built by CI (dotnet build tools/LhmReader -c Release) BEFORE
+# PyInstaller runs, and bundled under app/lhm/ so
+# app/lhm_embedded.py finds them frozen (_internal/app/lhm/) and
+# reads the CPU temperature with no separate LHM app installed.
+# Fail loudly when the helper was not built - a silent bundle
+# without it would ship a temperature feature that can never work.
+_lhm_dir = os.path.join(ROOT, "tools", "LhmReader", "bin", "Release", "net472")
+for _lhm_file in ("LhmReader.exe", "LibreHardwareMonitorLib.dll"):
+    _lhm_path = os.path.join(_lhm_dir, _lhm_file)
+    if not os.path.isfile(_lhm_path):
+        raise RuntimeError(
+            "LHM helper file missing - build it first: "
+            "dotnet build tools/LhmReader -c Release (" + _lhm_path + ")")
+    datas.append((_lhm_path, os.path.join("app", "lhm")))
+
 # v1.2.5: EXPLICIT webview/js bridge files. collect_all("webview") SHOULD
 # include them, but the whole window.pywebview bridge (and therefore every
 # button in the app) silently never exists if they are missing from the
