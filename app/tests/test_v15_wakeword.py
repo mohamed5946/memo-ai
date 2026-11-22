@@ -463,7 +463,9 @@ class TestListenerWake(_ListenerCase):
 class TestSettingsAndWiring(unittest.TestCase):
     def test_defaults(self):
         import settings_store
-        self.assertTrue(settings_store.DEFAULTS["wakeword_enabled"])
+        # rc.2: wake word is OFF by default (always-on Whisper pushed
+        # the laptop to 99 C in the field).
+        self.assertFalse(settings_store.DEFAULTS["wakeword_enabled"])
         self.assertEqual(settings_store.DEFAULTS["wakeword_phrase"],
                          "يا لونا")
         self.assertEqual(settings_store.DEFAULTS["wakeword_cooldown_sec"],

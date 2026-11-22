@@ -299,7 +299,7 @@ class WakeWordListener:
         with self._state_lock:
             state, detail = self._state, self._detail
         return {
-            "enabled": bool(self.settings.get("wakeword_enabled", True)),
+            "enabled": bool(self.settings.get("wakeword_enabled", False)),
             "state": state,
             "detail": detail,
             "model_ready": bool(self._spotter is not None and
@@ -324,7 +324,7 @@ class WakeWordListener:
         """Start listening (loads the model in the background first).
         Returns False immediately only when disabled; model failures
         surface later via status() (state "error")."""
-        if not self.settings.get("wakeword_enabled", True):
+        if not self.settings.get("wakeword_enabled", False):
             info("wakeword", "Wake word disabled in settings - not starting")
             return False
         if self.running:

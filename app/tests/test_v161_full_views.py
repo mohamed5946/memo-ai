@@ -4,7 +4,7 @@ Before: clicking a sidebar item other than chat/device opened
 #settings-modal -> .modal (width min(620px, 92vw) -- a small centred box).
 Now: every sidebar destination is a .main-view inside #main-col, exactly
 like view-chat / view-device. The settings modal markup is gone entirely
-(no other modal use existed); the menu and all 13 sections live in the
+(no other modal use existed); the menu and all 14 sections live in the
 main area, the composer + quick-scan bar hide in every view except
 chat/device, and the header gear opens the settings as a full view too.
 
@@ -31,10 +31,11 @@ LONA_CSS = (ROOT / "app" / "ui" / "assets" / "lona.css").read_text(
 # The v1 sidebar entries api-keys / self-view / logs are Settings
 # sections now, not sidebar destinations.
 SIDEBAR_VIEWS = ("chat", "device", "tasks", "themes", "settings")
-# The 13 Settings sections (SEC in index.html), each with a Bsec
+# The 14 Settings sections (SEC in index.html), each with a Bsec
 # builder and a menu button with an inline-SVG icon.
 SECTIONS = ("general", "wa", "memory", "health", "notif", "sound",
-            "avatar", "log", "update", "themes", "api", "self", "backup")
+            "avatar", "log", "update", "themes", "api", "tokens",
+            "self", "backup")
 
 
 class TestNoModalForNavigation(unittest.TestCase):
@@ -168,14 +169,15 @@ class TestSectionWiringUnchanged(unittest.TestCase):
             self.assertIn(needle, sec, needle)
 
     def test_back_button_count_unchanged(self):
-        # 13 sections, one back button each — in the reskin they share a
-        # single data-back template rendered by renderSec() for whichever
-        # section is open (so the static markup has exactly one).
+        # 14 sections (rc.2 adds "tokens"), one back button each — in
+        # the reskin they share a single data-back template rendered
+        # by renderSec() for whichever section is open (so the static
+        # markup has exactly one).
         self.assertEqual(HTML.count("data-back"), 1)
         m = re.search(r"var SEC = \[(.*?)\];", HTML, re.S)
         self.assertIsNotNone(m, "SEC list missing from index.html")
         sec = re.findall(r"\['([a-z]+)',", m.group(1))
-        self.assertEqual(len(sec), 13, f"expected 13 sections, got {sec}")
+        self.assertEqual(len(sec), 14, f"expected 14 sections, got {sec}")
         self.assertEqual(sorted(sec), sorted(SECTIONS))
 
 

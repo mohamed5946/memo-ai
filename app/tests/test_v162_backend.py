@@ -44,10 +44,12 @@ What is proven here (one class per work item):
   * Extension re-wire: module-level send_command / is_connected
     exist; send_command translates browser_control's action shape;
     is_connected is False with no client.
-  * F4 island is 380x60, island window transparent, island_radius
-    matches the pill; main window frameless (item 3) with
-    window_minimize / window_toggle_maximize / window_close /
-    window_move_to.
+  * F4 island is 220x60 (rc.2), island window transparent,
+    island_radius matches the pill; main window has a NATIVE frame
+    (rc.2 - was frameless in item 3; the frameless window looked
+    like a browser, maximize was broken and Win+Arrow snap did
+    not work) with window_minimize / window_toggle_maximize /
+    window_close / window_move_to.
   * API-keys page: get_api_keys_status is cached (30 s TTL);
     _maybe_migrate runs once per process; get_api_key_value
     returns the value only on the explicit show tap, and
@@ -1248,7 +1250,7 @@ class TestExtensionRewire(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# F4 -- island size/transparency + frameless main window (item 3)
+# F4 -- island size/transparency + native-frame main window (rc.2)
 # ---------------------------------------------------------------------------
 
 class TestIslandAndFrameless(unittest.TestCase):
@@ -1282,14 +1284,22 @@ class TestIslandAndFrameless(unittest.TestCase):
         self.assertEqual(main_mod.MAIN_W, 1280)
         self.assertEqual(main_mod.MAIN_H, 860)
 
-    def test_main_window_frameless_resizable(self):
+    def test_main_window_native_frame_resizable(self):
+        # rc.2: the main window has a NATIVE Windows frame (standard
+        # title bar, working maximize, Win+Arrow snap). It was
+        # frameless since v1.6.2 item 3; the frameless window looked
+        # like a browser and maximize/snap were broken. The island
+        # stays frameless.
         import re
         m = re.search(r'create_window\(\s*"LONA", str\(ui_dir / '
                       r'"index\.html"\).*?js_api=self\.api\)',
                       MAIN_SRC, re.S)
         self.assertIsNotNone(m, "main create_window not found")
         block = m.group(0)
-        self.assertIn("frameless=True", block)
+        # No frameless kwarg (the word may still appear in the rc.2
+        # comment inside the call explaining why it was removed).
+        self.assertNotIn("frameless=True", block)
+        self.assertNotIn("frameless =", block)
         self.assertIn("resizable=True", block)
         self.assertNotIn("transparent", block)
 

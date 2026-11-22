@@ -110,7 +110,9 @@ DEFAULTS = {
     # from the AI's name: "يا {ai_name}" (default "يا لونا"). Any user
     # can rename the AI from Settings (ai_name) - set_ai_name() re-syncs
     # this phrase, and the listener matches the synced phrase.
-    "wakeword_enabled": True,
+    # rc.2: OFF by default - the always-on Whisper listener pushed the
+    # laptop to 99 C in the field; the user enables it from Settings.
+    "wakeword_enabled": False,
     "wakeword_phrase": "يا لونا",
     "wakeword_cooldown_sec": 5,
     # v1.4.2: important-notification alerts (Windows toast listener).
