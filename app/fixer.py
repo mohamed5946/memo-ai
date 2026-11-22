@@ -179,14 +179,22 @@ def restore_deleted(entry: dict) -> dict:
                 "if ($i) { $i.InvokeVerb('restore'); 'restored' } "
                 "else { 'not_found' }"
             )
-            proc = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps],
-                capture_output=True, text=True, timeout=30,
-                **hidden_spawn.run_kwargs())
-            if "restored" in (proc.stdout or ""):
-                _remove_undo_entry(entry)
-                info("fixer", f"Restored from Recycle Bin: {original}")
-                return {"ok": True, "reason": "restored"}
+            # The Shell namespace can lag behind SHFileOperationW: a
+            # just-deleted item may not appear in the Bin enumeration
+            # on the first query (seen on CI, where the single query
+            # returned 'not_found' right after a successful delete).
+            # Retry a few times before giving up - a real user hitting
+            # Undo right after a delete meets the same race.
+            for _attempt in range(5):
+                proc = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps],
+                    capture_output=True, text=True, timeout=30,
+                    **hidden_spawn.run_kwargs())
+                if "restored" in (proc.stdout or ""):
+                    _remove_undo_entry(entry)
+                    info("fixer", f"Restored from Recycle Bin: {original}")
+                    return {"ok": True, "reason": "restored"}
+                time.sleep(0.3)
             return {"ok": False, "reason": "not_found",
                     "detail": ("الملف مش موجود في سلة المهملات — "
                                "يمكن اتمسح منها خلاص.")}
