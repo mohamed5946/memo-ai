@@ -36,10 +36,8 @@ Covers:
     and collapse kills every JS timer
   * no idle timer at all; the expanded-timers lifecycle replaces it
   * Python ISLAND_CANVAS_W/H == 520/300, ISLAND_PILL_W/H == 220/60
-    (island_canvas.py); main.py ISLAND_IDLE_W/H == 380/60 is still
-    asserted as-is - the matching main.py 380 -> 220 change belongs
-    to another rc.2 worker and has not landed yet; once it does,
-    update those two assertions to (220, 60).
+    (island_canvas.py); main.py ISLAND_IDLE_W/H == 220/60 (rc.2 W8:
+    flipped from 380 to match island.html's 220x60 collapsed pill).
   * jsdom runtime harness (app/tests/v163_dom.js): STALE for the
     fixed canvas - it drives the removed showIslandText/curW/curH/
     __islandIdleMs API, so it is skipped here when jsdom is absent
@@ -95,7 +93,7 @@ def _find_jsdom_node_path():
 
 
 class TestIdleSizeConstants(unittest.TestCase):
-    def test_idle_equals_full_380x60(self):
+    def test_idle_equals_full_220x60(self):
         # v1.6.4 fixed canvas: the IDLE/FULL/EXPANDED constant line is
         # gone - the sizes now live in three places that must agree:
         # the 520x300 canvas constants (Python, both modules), the
@@ -118,14 +116,12 @@ class TestIdleSizeConstants(unittest.TestCase):
                       CANVAS)
         assert m, "pill constants missing from island_canvas.py"
         assert (int(m.group(1)), int(m.group(2))) == (220, 60)
-        # NOTE (rc.2): main.py ISLAND_IDLE_W/H is still (380, 60) -
-        # the matching main.py 380 -> 220 change belongs to another
-        # rc.2 worker and has not landed yet. Once it does, update
-        # this assertion (and TestPythonIdleSize) to (220, 60).
+        # rc.2 W8: main.py ISLAND_IDLE_W/H flipped 380 -> 220 to match
+        # island.html's 220x60 collapsed pill.
         m = re.search(r"ISLAND_IDLE_W, ISLAND_IDLE_H = (\d+), (\d+)",
                       MAIN)
         assert m, "pill constants missing from main.py"
-        assert (int(m.group(1)), int(m.group(2))) == (380, 60)
+        assert (int(m.group(1)), int(m.group(2))) == (220, 60)
 
     def test_no_190x52_sizing_anywhere(self):
         # The 190x52 numbers are gone by design (fixed canvas): no
@@ -228,7 +224,8 @@ class TestPythonIdleSize(unittest.TestCase):
             fake.windows = []
             sys.modules["webview"] = fake
         import main as main_mod
-        assert main_mod.ISLAND_IDLE_W == 380
+        # rc.2 W8: 380 -> 220 to match island.html's 220x60 pill.
+        assert main_mod.ISLAND_IDLE_W == 220
         assert main_mod.ISLAND_IDLE_H == 60
 
 

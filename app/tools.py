@@ -912,8 +912,21 @@ def _tool_system_status(args: dict) -> str:
     if temp is not None:
         lines.append(f"• حرارة المعالج: {temp}°م")
     else:
-        lines.append("• حرارة المعالج: مش متاحة على الجهاز ده "
-                     "(مفيش حساس مقروء) — متخمنش رقم.")
+        # rc.2 W8: reason-aware - get_status() carries temp_status
+        # {reason, hint} (see monitor.read_temp_status: ok /
+        # lhm_not_running / not_installed / no_sensor / needs_admin).
+        # The hint is quoted VERBATIM, so the user hears the real
+        # cause ("LibreHardwareMonitor متثبت بس مش شغال — افتحه
+        # وسيبه شغال") instead of "مفيش حساس". No status dict (an
+        # older monitor) keeps the old generic line.
+        ts = st.get("temp_status") or {}
+        hint = str(ts.get("hint") or "").strip()
+        if hint:
+            lines.append("• حرارة المعالج: مش متاحة — "
+                         f"{hint} — متخمنش رقم.")
+        else:
+            lines.append("• حرارة المعالج: مش متاحة على الجهاز ده "
+                         "(مفيش حساس مقروء) — متخمنش رقم.")
     if battery:
         lines.append(f"• البطارية: {battery.get('percent', '?')}%"
                      + (" (بتشحن)" if battery.get("charging")

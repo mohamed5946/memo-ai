@@ -1252,8 +1252,9 @@ class TestExtensionRewire(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestIslandAndFrameless(unittest.TestCase):
-    def test_island_idle_size_380x60(self):
-        self.assertEqual(main_mod.ISLAND_IDLE_W, 380)
+    def test_island_idle_size_220x60(self):
+        # rc.2 W8: 380 -> 220 to match island.html's 220x60 pill.
+        self.assertEqual(main_mod.ISLAND_IDLE_W, 220)
         self.assertEqual(main_mod.ISLAND_IDLE_H, 60)
 
     def test_island_radius_matches_pill(self):

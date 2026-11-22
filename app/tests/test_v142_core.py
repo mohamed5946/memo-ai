@@ -10,8 +10,9 @@
 #     system prompt; Egyptian dialect + masculine forms are in the
 #     prompt; tone learning ("اختصر" -> short); routines + preferences.
 #   * guests (memory_enabled=False) never write the owner's memory.
-#   * history window is 40 messages now, and old turns are summarized
-#     into the memory file instead of silently dropped (rollover).
+#   * history window is 10 messages now (rc.2 W8 token efficiency),
+#     and old turns are summarized into the memory file instead of
+#     silently dropped (rollover) + as a short summary in the prompt.
 #   * web_search: the brain calls it for unknown facts and the answer
 #     uses the results; a failed search is reported honestly; the
 #     system prompt carries the search rule.
@@ -189,7 +190,13 @@ class TestLearning(_MemoryCase):
 
 
 class TestHistoryWindow(_MemoryCase):
-    def test_window_is_40_messages(self):
+    def test_window_is_10_messages(self):
+        # rc.2 W8: only the last 10 history messages ride verbatim
+        # (was 40); older turns ride as a short summary in the
+        # system prompt, so a long chat never re-sends the full
+        # history. "سؤال جديد" is a simple turn, so the Gemini
+        # first-attempt runs first - no Gemini key is saved here,
+        # so it falls through to the mocked Groq call below.
         hist = []
         for i in range(25):
             hist.append({"role": "user", "content": f"سؤال {i}"})
@@ -205,9 +212,14 @@ class TestHistoryWindow(_MemoryCase):
                                   side_effect=fake_groq):
             brain.ask_with_tools("سؤال جديد", "Memo", "Mohamed", "ar",
                                  history=hist)
-        # system + last 40 history messages + this turn = 42.
-        self.assertEqual(len(seen["messages"]), 42)
-        self.assertEqual(seen["messages"][1]["content"], "سؤال 5")
+        # system + last 10 history messages + this turn = 12.
+        self.assertEqual(len(seen["messages"]), 12)
+        self.assertEqual(seen["messages"][1]["content"], "سؤال 20")
+        # The older turns (0-19) are NOT sent verbatim - they ride
+        # as a short summary inside the system prompt instead.
+        system_text = seen["messages"][0]["content"]
+        self.assertIn("سؤال 0", system_text)
+        self.assertIn("سؤال 19", system_text)
 
     def test_rollover_summarizes_old_turns_instead_of_dropping(self):
         hist = []

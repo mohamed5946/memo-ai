@@ -381,9 +381,9 @@ VERSION = "1.6.4-rc.1"
 # the chat. Frameless since v1.6.2: the native title bar is gone and
 # the in-app header owns minimize/maximize/close + drag.
 MAIN_W, MAIN_H = 1280, 860
-# v1.6.2 (F4): the idle pill is 380x60 -- the 190x52 numbers were the
-# old small-pill design; the pill is the full 380-wide island.
-ISLAND_IDLE_W, ISLAND_IDLE_H = 380, 60
+# v1.6.4-rc.2 (W8): the idle pill is 220x60 -- matches island.html's
+# 220x60 collapsed pill (was 380x60).
+ISLAND_IDLE_W, ISLAND_IDLE_H = 220, 60
 # v1.6.4 reskin (fixed canvas, WindyLand/Nusa method): the island window
 # is created ONCE at the expanded canvas size and never resized.
 # v1.6.4-rc.2: 520x300 (was 720x400) - must match ISLAND_CANVAS_W/H in
@@ -1549,6 +1549,33 @@ class Api:
         ok = save_settings(_APP.settings)
         info("app", f"Model choice set to {wanted}")
         return {"ok": bool(ok), "choice": wanted}
+
+    # -- token usage (rc.2 W8, Settings "التوكينز" bar data) -------------
+    @_log_slow
+    def get_token_usage(self):
+        """Token-bar state: the tracked per-engine usage from
+        brain.get_token_usage(). Pure read - never probes or calls
+        an engine, so it is safe to poll from Settings. Per engine:
+        {"used", "limit", "remaining", "reset_in_seconds",
+        "estimated", "has_data"}. No calls yet for an engine ->
+        has_data False (the UI shows "—", never a fake 100%).
+        A failure here also returns the no-data shape, never a
+        guessed number."""
+        try:
+            return dict(brain.get_token_usage())
+        except Exception as exc:
+            error("app", f"get_token_usage failed: {exc}")
+            return {
+                # The Groq 8000 tokens/min free-tier limit is the
+                # known constant (see brain._GROQ_TPM_LIMIT); the
+                # usage itself is unknown here, so has_data False.
+                "groq": {"used": None, "limit": 8000, "remaining": None,
+                         "reset_in_seconds": None, "estimated": True,
+                         "has_data": False},
+                "gemini": {"used": None, "limit": None, "remaining": None,
+                           "reset_in_seconds": None, "estimated": True,
+                           "has_data": False},
+            }
 
     @_log_slow
     def get_proactive_feed(self):
@@ -3320,36 +3347,41 @@ class MemoApp:
         only the bridge can resolve."""
         try:
             # v1.6.0: self-view summary (mood, own usage, temp) goes
-            # into the system prompt each turn; deep think + privacy
-            # mode come from settings. All guarded - a failed summary
-            # never blocks the chat.
+            # into the system prompt; deep think + privacy mode come
+            # from settings. All guarded - a failed summary never
+            # blocks the chat.
+            # rc.2 W8: device data goes into the prompt ONLY when
+            # this message is about the device (or the user asks for
+            # it) - a plain "hello" must not carry the snapshot
+            # every turn. Otherwise self_view stays "" (nothing).
             self_view = ""
-            try:
-                if selfview_mod is not None:
-                    mood = "صاحي"
-                    if self._monitor is not None:
-                        mood = self._monitor.get_device_overview().get(
-                            "mood", "صاحي")
-                    settings = dict(self.settings)
-                    settings["deep_file_access_granted"] = \
-                        tools.is_deep_file_access_granted()
-                    self_view = selfview_mod.self_view_summary(
-                        mood=mood, monitor=self._monitor,
-                        settings=settings)
-            except Exception:
-                self_view = ""
-            # rc.2: the temp REASON rides into the prompt (the self-view
-            # above only says "مش متاحة" when the sensor is silent).
-            # The hint is injected verbatim, so the AI repeats the real
-            # cause ("LHM متثبت بس مش شغال — افتحه") instead of
-            # guessing "مفيش حساس". Guarded - never blocks the chat.
-            try:
-                temp_line = self._temp_context_line()
-                if temp_line:
-                    self_view = (self_view + " " + temp_line) \
-                        if self_view else temp_line
-            except Exception:
-                pass
+            if brain.is_device_question(text):
+                try:
+                    if selfview_mod is not None:
+                        mood = "صاحي"
+                        if self._monitor is not None:
+                            mood = self._monitor.get_device_overview().get(
+                                "mood", "صاحي")
+                        settings = dict(self.settings)
+                        settings["deep_file_access_granted"] = \
+                            tools.is_deep_file_access_granted()
+                        self_view = selfview_mod.self_view_summary(
+                            mood=mood, monitor=self._monitor,
+                            settings=settings)
+                except Exception:
+                    self_view = ""
+                # rc.2: the temp REASON rides into the prompt (the self-view
+                # above only says "مش متاحة" when the sensor is silent).
+                # The hint is injected verbatim, so the AI repeats the real
+                # cause ("LHM متثبت بس مش شغال — افتحه") instead of
+                # guessing "مفيش حساس". Guarded - never blocks the chat.
+                try:
+                    temp_line = self._temp_context_line()
+                    if temp_line:
+                        self_view = (self_view + " " + temp_line) \
+                            if self_view else temp_line
+                except Exception:
+                    pass
             result = brain.ask_with_tools(
                 text, self.settings.get("ai_name", "LONA"),
                 self.settings.get("user_name", "Mohamed"),

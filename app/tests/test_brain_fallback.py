@@ -121,7 +121,7 @@ class _ChainHarness:
                 side_effect=requests.ConnectionError("refused")))
         return patchers
 
-    def ask(self, tools=False):
+    def ask(self, tools=False, text="إزيك؟"):
         patchers = self._patchers()
         if tools:
             patchers.append(mock.patch.object(
@@ -134,8 +134,8 @@ class _ChainHarness:
         try:
             if tools:
                 return brain_mod.ask_with_tools(
-                    "إزيك؟", "LONA", "Mohamed", "ar", history=[])
-            return brain_mod.ask("إزيك؟", "LONA", "Mohamed", "ar",
+                    text, "LONA", "Mohamed", "ar", history=[])
+            return brain_mod.ask(text, "LONA", "Mohamed", "ar",
                                  history=[])
         finally:
             for p in reversed(patchers):
@@ -160,8 +160,12 @@ class TestGroqRateLimitFallsBackToGemini(unittest.TestCase):
         self.assertNotIn("وصل للحد", res["reply"])
 
     def test_tpm_429_gemini_answers_in_tool_loop(self):
+        # rc.2 W8: a simple greeting now routes to Gemini FIRST in
+        # auto mode, so the 429-fallback path needs a HARD question
+        # (an action) that actually reaches the Groq tool loop.
         res = _ChainHarness(self, _groq_429_tpm(),
-                            gemini_resp=_gemini_ok()).ask(tools=True)
+                            gemini_resp=_gemini_ok()).ask(
+                                tools=True, text="افتح برنامج الرسام")
         self.assertEqual(res["engine"], "gemini")
         self.assertIn("Gemini", res["reply"])
         # The tool loop fell back with tools disabled, honestly.

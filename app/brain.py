@@ -40,6 +40,26 @@ _OLLAMA_TIMEOUT_SEC = 60
 # v1.6.2 (B10): at most 5 tool calls executed per round.
 _MAX_TOOL_CALLS_PER_ROUND = 5
 
+# v1.6.4 rc.2 (W8 token efficiency): the Groq 8000 tokens/min limit
+# was hit in the field because EVERY turn re-sent the whole history
+# (40 messages) plus a device snapshot. The caps below are the fix:
+#   * _CHAT_HISTORY_SEND - only the last 10 history messages ride
+#     verbatim; older turns ride as a short deterministic summary
+#     (see _context_history) - a 30-message chat no longer sends the
+#     full history each time.
+#   * _MAX_TOKENS_NORMAL / _MAX_TOKENS_DEEP_THINK - per-reply output
+#     caps (Groq max_completion_tokens / Gemini maxOutputTokens).
+#     Deep Think gets more; a normal reply is short by design.
+#   * _GROQ_TPM_LIMIT - the free-tier per-minute token limit for
+#     gpt-oss-120b (see _classify_groq_429); the token tracker
+#     measures usage against it for the Settings token bar.
+_CHAT_HISTORY_SEND = 10
+_CHAT_HISTORY_SUMMARY_MAX_CHARS = 1200
+_MAX_TOKENS_NORMAL = 600
+_MAX_TOKENS_DEEP_THINK = 2000
+_GROQ_TPM_LIMIT = 8000
+_TOKEN_WINDOW_SEC = 60.0
+
 _history: list = []
 
 # v1.4.2: long-term memory (local file, see memory.py). The store is
@@ -820,7 +840,12 @@ def _groq_message(messages: list, use_tools: bool = False,
                "messages": _apply_privacy(
                    _sanitize_messages(messages),
                    _resolve_privacy_mode(privacy_mode)),
-               "temperature": 0.7}
+               "temperature": 0.7,
+               # rc.2 W8: cap the reply length - a normal reply is
+               # short by design; Deep Think gets more room.
+               "max_completion_tokens": (
+                   _MAX_TOKENS_DEEP_THINK if deep_think
+                   else _MAX_TOKENS_NORMAL)}
     if deep_think:
         payload["reasoning_effort"] = "high"
     if use_tools:
@@ -838,7 +863,16 @@ def _groq_message(messages: list, use_tools: bool = False,
         # report "daily" for a per-minute 429.
         raise _classify_groq_429(resp)
     resp.raise_for_status()
-    message = dict(resp.json()["choices"][0]["message"] or {})
+    data = resp.json()
+    # rc.2 W8: record the reply's token usage (per-reply log +
+    # token-bar counters) from the response usage field.
+    try:
+        _record_engine_usage("groq", (data or {}).get("usage"),
+                             getattr(resp, "headers", None))
+    except Exception:
+        pass
+    message = dict((data or {}).get("choices", [{}])[0].get("message")
+                   or {})
     message.pop("reasoning", None)  # v1.6.0: reasoning is never surfaced
     return message
 
@@ -852,7 +886,11 @@ def _groq(messages: list, timeout: int = 60, deep_think: bool = False,
                "messages": _apply_privacy(
                    _sanitize_messages(messages),
                    _resolve_privacy_mode(privacy_mode)),
-               "temperature": 0.7}
+               "temperature": 0.7,
+               # rc.2 W8: cap the reply length (see _groq_message).
+               "max_completion_tokens": (
+                   _MAX_TOKENS_DEEP_THINK if deep_think
+                   else _MAX_TOKENS_NORMAL)}
     if deep_think:
         payload["reasoning_effort"] = "high"
     resp = requests.post(
@@ -870,7 +908,16 @@ def _groq(messages: list, timeout: int = 60, deep_think: bool = False,
         # report "daily" for a per-minute 429.
         raise _classify_groq_429(resp)
     resp.raise_for_status()
-    content = (resp.json()["choices"][0]["message"] or {}).get("content")
+    data = resp.json()
+    # rc.2 W8: record the reply's token usage (per-reply log +
+    # token-bar counters) from the response usage field.
+    try:
+        _record_engine_usage("groq", (data or {}).get("usage"),
+                             getattr(resp, "headers", None))
+    except Exception:
+        pass
+    content = ((data or {}).get("choices", [{}])[0].get("message")
+               or {}).get("content")
     if not isinstance(content, str) or not content.strip():
         raise RuntimeError("groq-empty-reply")
     return content.strip()
@@ -889,6 +936,326 @@ _ACTION_WORDS = (
 def _looks_like_action(text: str) -> bool:
     low = text.lower()
     return any(w in low for w in _ACTION_WORDS)
+
+
+# ---------------------------------------------------------------------------
+# v1.6.4 rc.2 (W8 token efficiency)
+# ---------------------------------------------------------------------------
+
+def _norm_words(text: str) -> set:
+    """Word set of a message: lowercased, Arabic diacritics stripped,
+    so "شغّل" reads as "شغل" and "الرَّام" as "الرام". Each word also
+    contributes its ال-stripped variant ("المساحة" matches "مساحة",
+    "والرام" matches "رام") - whole words only, never substrings."""
+    low = (text or "").lower()
+    low = re.sub(r"[\u064B-\u0652\u0640]", "", low)
+    words = set(re.findall(r"[\u0600-\u06FFa-z0-9]+", low))
+    extra = set()
+    for w in words:
+        stripped = w
+        if stripped.startswith("و"):
+            stripped = stripped[1:]
+        if stripped.startswith("ال") and len(stripped) > 3:
+            stripped = stripped[2:]
+        if stripped and stripped != w:
+            extra.add(stripped)
+    return words | extra
+
+
+# Words that mean "this message is about the laptop itself" - the
+# ONLY case where the device snapshot belongs in the prompt (item 2).
+# A bare "الشغل" (work) is not "شغل" (play) - whole-word matching,
+# never substrings.
+_DEVICE_WORDS = {
+    "الجهاز", "اللابتوب", "اللاب", "لابتوب", "جهاز",
+    "الرام", "رام", "الذاكرة", "ذاكرة",
+    "البطارية", "بطارية", "الشاحن",
+    "المعالج", "معالج", "البروسيسور", "بروسيسور",
+    "الحرارة", "حرارة", "سخن", "سخونة", "سخن؟",
+    "القرص", "قرص", "الهارد", "هارد", "التخزين", "مساحة",
+    "المروحة", "مروحة", "المراوح", "الفان", "فان",
+    "العمليات", "البروسيسات",
+    "الاستهلاك", "الأداء", "اداء",
+    "laptop", "device", "ram", "memory", "battery", "cpu",
+    "processor", "temperature", "temp", "hot", "overheating",
+    "disk", "storage", "space", "fan", "process", "processes",
+    "usage", "performance",
+}
+
+
+def is_device_question(text: str) -> bool:
+    """True when this message asks about the laptop/device itself
+    (public: main.py gates the per-turn device snapshot on it)."""
+    return bool(_norm_words(text) & _DEVICE_WORDS)
+
+
+# Words that mean "look something up on the web" - needs the
+# web_search tool, so Groq (tools) answers, never the text-only
+# simple route.
+_WEB_WORDS = {
+    "سعر", "أسعار", "الأسعار", "أخبار", "خبر", "دور", "ابحث", "إبحث",
+    "الطقس", "طقس", "نتيجة", "نتائج",
+    "price", "prices", "news", "search", "weather", "score",
+}
+
+# Fragments that mean "this is code / a hard question" - the small
+# model must not take it.
+_CODE_MARKERS = (
+    "```", "def ", "import ", "class ", "function ", "public ",
+    "private ", "int main", "console.log", "print(", "=>",
+    "select ", "from ", "where ",
+)
+
+_SIMPLE_MAX_CHARS = 500
+
+
+def _is_simple_chat(text: str, deep_think: bool = False) -> bool:
+    """True when a turn is simple small-talk / a short plain question
+    that needs no tools, no device numbers, no web lookup and no
+    reasoning - the kind of turn the higher-limit fallback model can
+    answer (item 4). Deep Think, actions, device questions, web
+    lookups, code and long messages are all HARD (Groq 120b)."""
+    if deep_think:
+        return False
+    msg = (text or "").strip()
+    if not msg or len(msg) > _SIMPLE_MAX_CHARS:
+        return False
+    if _looks_like_action(msg):
+        return False
+    if is_device_question(msg):
+        return False
+    low = msg.lower()
+    if any(m in low for m in _CODE_MARKERS):
+        return False
+    if _norm_words(msg) & _WEB_WORDS:
+        return False
+    return True
+
+
+def _context_history(hist: list, store, language: str) -> tuple:
+    """Split stored history into (recent, older_summary) for ONE
+    request (item 1). Only the last _CHAT_HISTORY_SEND messages ride
+    verbatim; the rest is condensed with the store's deterministic
+    summarize_turns (no model call, no tokens) and capped, so a
+    30-message chat never re-sends the whole history. The stored
+    rolling summary (memory file, from rollover) covers turns already
+    dropped from `hist`, so there is no overlap. store None (guests)
+    means no summary - just the recent window."""
+    hist = list(hist or [])
+    recent = hist[-_CHAT_HISTORY_SEND:]
+    older = hist[:-_CHAT_HISTORY_SEND]
+    if not older or store is None:
+        return recent, ""
+    try:
+        summary = store.summarize_turns(older, language)
+    except Exception:
+        return recent, ""
+    summary = (summary or "").strip()
+    if not summary:
+        return recent, ""
+    if len(summary) > _CHAT_HISTORY_SUMMARY_MAX_CHARS:
+        summary = summary[-_CHAT_HISTORY_SUMMARY_MAX_CHARS:]
+        nl = summary.find("\n")
+        if nl != -1:
+            summary = summary[nl + 1:]
+    return recent, summary
+
+
+# -- unchanged-snapshot cache (item 5) --------------------------------------
+# The last device snapshot actually SENT in the system prompt (shared
+# in-app history only). When the next turn's snapshot is identical,
+# it is dropped: the numbers are still visible in the previous
+# assistant reply inside the sent window, so resending them burns
+# tokens for nothing. In-process only; hash() is fine here.
+_LAST_DEVICE_VIEW = {"hash": None}
+
+
+def _dedup_self_view(self_view: str, shared_history: bool) -> str:
+    """Drop a device snapshot identical to the one sent last turn.
+    Only for the shared history (history is None) - a WhatsApp
+    guest's own history never contained it, so it always gets it.
+    Returns the view to send ("" when dropped)."""
+    if not self_view or not shared_history:
+        return self_view
+    h = hash(self_view)
+    if _LAST_DEVICE_VIEW["hash"] == h:
+        return ""
+    _LAST_DEVICE_VIEW["hash"] = h
+    return self_view
+
+
+# -- per-engine token tracking (items 6 + Settings token bar) ---------------
+# Accumulated from the engines' own usage fields
+# (Groq usage.prompt/completion_tokens, Gemini usageMetadata) plus
+# Groq's rate-limit headers when present (the TRUE remaining).
+# Pure in-memory accounting for this session; never a probe, never
+# a guess - an engine with no calls yet reports has_data False.
+_TOKEN_LOCK = threading.Lock()
+_TOKEN_USAGE = {
+    "groq": {"used": 0, "window_start": 0.0, "calls": 0,
+             "remaining": None, "reset_in": None, "header_at": 0.0,
+             "used_at_header": 0},
+    "gemini": {"used": 0, "window_start": 0.0, "calls": 0,
+               "remaining": None, "reset_in": None, "header_at": 0.0,
+               "used_at_header": 0},
+}
+
+
+def _reset_token_usage() -> None:
+    """Clear the tracked counters (tests only)."""
+    with _TOKEN_LOCK:
+        for st in _TOKEN_USAGE.values():
+            st.update({"used": 0, "window_start": 0.0, "calls": 0,
+                       "remaining": None, "reset_in": None,
+                       "header_at": 0.0, "used_at_header": 0})
+
+
+def _parse_reset_seconds(raw) -> float | None:
+    """Parse a Groq x-ratelimit-reset-tokens value: "7.66s",
+    "2m59.56s" or plain seconds. None when unparsable."""
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    try:
+        if s.endswith("ms"):
+            return float(s[:-2]) / 1000.0
+        if s.endswith("s"):
+            s = s[:-1]
+            if "m" in s:
+                mins, secs = s.split("m", 1)
+                return float(mins) * 60.0 + float(secs or 0)
+            return float(s)
+        return float(s)
+    except Exception:
+        return None
+
+
+def _usage_pair(usage) -> tuple:
+    """(prompt, completion) ints from a Groq usage dict or a Gemini
+    usageMetadata dict; (0, 0) when the engine reported nothing."""
+    if not isinstance(usage, dict):
+        return 0, 0
+    prompt = usage.get("prompt_tokens",
+                       usage.get("promptTokenCount", 0))
+    completion = usage.get("completion_tokens",
+                           usage.get("candidatesTokenCount", 0))
+    try:
+        prompt = int(prompt or 0)
+    except Exception:
+        prompt = 0
+    try:
+        completion = int(completion or 0)
+    except Exception:
+        completion = 0
+    return max(0, prompt), max(0, completion)
+
+
+def _record_engine_usage(engine: str, usage, headers=None) -> None:
+    """Record one engine reply: accumulate its prompt+completion
+    tokens into the current 60 s window, keep the latest Groq
+    rate-limit headers (true remaining), and log the per-reply
+    token count to the diagnostics log (item 6) so the burn is
+    visible. Never raises; a reply without a usage field is simply
+    not counted."""
+    if engine not in _TOKEN_USAGE:
+        return
+    prompt, completion = _usage_pair(usage)
+    total = prompt + completion
+    if total <= 0 and not headers:
+        return
+    now = time.time()
+    try:
+        with _TOKEN_LOCK:
+            st = _TOKEN_USAGE[engine]
+            if now - st["window_start"] >= _TOKEN_WINDOW_SEC:
+                st["used"] = 0
+                st["window_start"] = now
+            st["used"] += total
+            st["calls"] += 1
+            if headers:
+                try:
+                    rem = headers.get("x-ratelimit-remaining-tokens")
+                    if rem is not None:
+                        st["remaining"] = int(float(rem))
+                        st["used_at_header"] = st["used"]
+                        st["header_at"] = now
+                    reset = _parse_reset_seconds(
+                        headers.get("x-ratelimit-reset-tokens"))
+                    if reset is not None:
+                        st["reset_in"] = reset
+                        st["header_at"] = now
+                except Exception:
+                    pass
+            used = st["used"]
+        if total > 0:
+            info("brain", f"{engine} reply tokens: prompt={prompt} "
+                          f"completion={completion} total={total} "
+                          f"(window used={used})")
+    except Exception:
+        pass
+
+
+def get_token_usage() -> dict:
+    """Tracked token state for the Settings token bar (rc.2 W8).
+    Pure read - never probes or calls an engine. Per engine:
+    {"used", "limit", "remaining", "reset_in_seconds", "estimated",
+    "has_data"}. used = tokens in the current 60 s window (None
+    when the engine has never answered this session); remaining
+    prefers the latest Groq rate-limit header (the TRUE remaining,
+    aged by the tokens used since it arrived, estimated False) and
+    otherwise falls back to limit - used (estimated True). Gemini
+    has no per-minute token limit configured in the code, so its
+    limit stays None - never invented. No data yet -> has_data
+    False (the UI shows "—", never a fake 100%)."""
+    now = time.time()
+    out = {}
+    try:
+        with _TOKEN_LOCK:
+            snapshot = {name: dict(st)
+                        for name, st in _TOKEN_USAGE.items()}
+    except Exception:
+        snapshot = {}
+    for engine, limit in (("groq", _GROQ_TPM_LIMIT),
+                          ("gemini", None)):
+        st = snapshot.get(engine) or {}
+        has_data = bool(st.get("calls", 0) > 0
+                        or st.get("header_at", 0) > 0)
+        if not has_data:
+            out[engine] = {"used": None, "limit": limit,
+                           "remaining": None, "reset_in_seconds": None,
+                           "estimated": True, "has_data": False}
+            continue
+        window_start = float(st.get("window_start") or 0)
+        window_live = (now - window_start) < _TOKEN_WINDOW_SEC
+        used = int(st.get("used") or 0) if window_live else 0
+        header_at = float(st.get("header_at") or 0)
+        header_fresh = (st.get("remaining") is not None
+                        and (now - header_at) < _TOKEN_WINDOW_SEC)
+        if header_fresh:
+            # True remaining, aged by the tokens spent since the
+            # header arrived; the reset countdown ages the same way.
+            remaining = max(0, int(st["remaining"])
+                            - (used - int(st.get("used_at_header") or 0)))
+            reset = st.get("reset_in")
+            reset = (max(0.0, float(reset) - (now - header_at))
+                     if reset is not None else None)
+            estimated = False
+        elif limit is not None:
+            remaining = max(0, limit - used)
+            reset = (max(0.0, _TOKEN_WINDOW_SEC - (now - window_start))
+                     if window_live else None)
+            estimated = True
+        else:
+            remaining = None
+            reset = None
+            estimated = True
+        out[engine] = {"used": used, "limit": limit,
+                       "remaining": remaining,
+                       "reset_in_seconds": (
+                           int(round(reset))
+                           if reset is not None else None),
+                       "estimated": estimated, "has_data": True}
+    return out
 
 
 # v1.6.1 (item 21d): media tools run ONLY on an explicit play/open
@@ -1003,6 +1370,23 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                                           memory_enabled)
     if browser_reply is not None:
         return browser_reply
+    # rc.2 W8 (items 1+5): an unchanged device snapshot is not
+    # re-sent - the numbers are still visible in the previous reply
+    # inside the sent window. Shared history only; a WhatsApp
+    # guest's own history never contained it, so it always gets it.
+    self_view = _dedup_self_view(self_view, history is None)
+    # Only the last ~10 history messages ride verbatim (was 40);
+    # older turns ride as a short deterministic summary appended to
+    # the memory block, so a long chat never re-sends the full
+    # history. The stored rolling summary (memory file) covers turns
+    # already rolled over, so there is no overlap.
+    recent, older_summary = _context_history(hist, _mem, lang)
+    if older_summary:
+        extra = ("ملخص أقدم من المحادثة دي:\n" + older_summary
+                 if lang == "ar" else
+                 "Summary of the earlier part of this conversation:\n"
+                 + older_summary)
+        mem_block = (mem_block + "\n\n" + extra) if mem_block else extra
     system = {"role": "system",
               "content": system_prompt(ai_name, user_name, lang, True,
                                        owner_unlocked=owner_unlocked,
@@ -1011,9 +1395,7 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
     # `turn` collects ONLY this turn's messages (user + tool calls +
     # tool results) so the shared history never duplicates old entries.
     turn = [{"role": "user", "content": user_text}]
-    # v1.4.2: wider active window (40 messages = 20 turns, was 20);
-    # older turns are summarized into the memory file, not dropped.
-    messages = [system] + hist[-memory_mod.HISTORY_KEEP:] + turn
+    messages = [system] + recent + turn
 
     # v1.6.2: STRICT model choice. "auto" falls through to the chain
     # below; an explicit pick answers with that model ONLY -- Gemini
@@ -1022,7 +1404,8 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
     choice = _normalize_model_choice(model_choice)
     if choice in ("gemini", "local"):
         if choice == "gemini":
-            reply, engine, fail_kind = _ask_gemini_chat(messages, lang)
+            reply, engine, fail_kind = _ask_gemini_chat(
+                messages, lang, deep_think=deep_think)
             fail_kind = fail_kind or "gemini-failed"
         else:
             reply, engine = _ask_local(messages, lang)
@@ -1094,6 +1477,25 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         _groq_kwargs["deep_think"] = True
     if privacy_mode is not None:
         _groq_kwargs["privacy_mode"] = privacy_mode
+    # rc.2 W8 (item 4): in auto mode a SIMPLE turn goes to Gemini
+    # 2.5 Flash first (same routing as ask() - higher token limit,
+    # Groq 120b kept for hard questions and tool use). A Gemini
+    # failure falls through to the Groq tool loop below.
+    if choice == "auto" and _is_simple_chat(user_text, deep_think):
+        reply, engine, _simple_kind = _ask_gemini_chat(
+            messages, lang,
+            timeout=_remaining_timeout(_GROQ_TIMEOUT_SEC))
+        if engine:
+            info("brain", "Simple chat routed to Gemini 2.5 Flash "
+                          "(auto) - Groq 120b kept for hard questions")
+            _record_turn(user_text, reply, engine, hist,
+                         learn=memory_enabled, language=lang)
+            return {"reply": reply, "engine": engine, "tools_used": 0,
+                    "tools_disabled": False}
+    # rc.2 W8 (item 5): hashes of system_status results already sent
+    # in THIS turn - a repeat call with an unchanged snapshot gets a
+    # short "no change" note instead of the full numbers again.
+    status_seen = {}
     try:
         for _round in range(5):
             # v1.6.2 (B10): the deadline is total -- a cycle that is
@@ -1163,6 +1565,20 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                 else:
                     result = tools.execute_tool(name, args)
                     tools_used += 1
+                    if name == "system_status" and isinstance(result, str):
+                        # rc.2 W8 (item 5): same device snapshot twice
+                        # in one turn is sent once - the second call
+                        # gets a short "no change" note.
+                        h = hash(result)
+                        if status_seen.get(name) == h:
+                            result = ("نفس حالة الجهاز اللي شفتها "
+                                      "قبل كده في الرد ده — مفيش تغيير."
+                                      if lang == "ar" else
+                                      "Same device status as you "
+                                      "already saw in this reply — "
+                                      "no change.")
+                        else:
+                            status_seen[name] = h
                 # v1.6.0 dangerous-action safety: a tool result is DATA,
                 # never a command. If it carries an injected instruction
                 # ("delete all files", "ignore previous instructions",
@@ -1335,18 +1751,30 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
         _record_turn(user_text, cmd_reply, "memory", hist, learn=False,
                      language=lang)
         return {"reply": cmd_reply, "engine": "memory"}
+    # rc.2 W8 (items 1+5): same context trimming + snapshot dedup
+    # as ask_with_tools - last ~10 messages verbatim, older turns
+    # as a short summary, unchanged device snapshot not re-sent.
+    self_view = _dedup_self_view(self_view, history is None)
+    recent, older_summary = _context_history(hist, _mem, lang)
+    if older_summary:
+        extra = ("ملخص أقدم من المحادثة دي:\n" + older_summary
+                 if lang == "ar" else
+                 "Summary of the earlier part of this conversation:\n"
+                 + older_summary)
+        mem_block = (mem_block + "\n\n" + extra) if mem_block else extra
     system = {"role": "system",
               "content": system_prompt(ai_name, user_name, lang,
                                        owner_unlocked=owner_unlocked,
                                        memory_block=mem_block,
                                        self_view=self_view)}
-    messages = [system] + hist[-memory_mod.HISTORY_KEEP:] + [{"role": "user", "content": user_text}]
+    messages = [system] + recent + [{"role": "user", "content": user_text}]
 
     # v1.6.2: STRICT model choice (same contract as ask_with_tools).
     choice = _normalize_model_choice(model_choice)
     if choice in ("gemini", "local"):
         if choice == "gemini":
-            reply, engine, fail_kind = _ask_gemini_chat(messages, lang)
+            reply, engine, fail_kind = _ask_gemini_chat(
+                messages, lang, deep_think=deep_think)
             fail_kind = fail_kind or "gemini-failed"
         else:
             reply, engine = _ask_local(messages, lang)
@@ -1366,6 +1794,23 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
                      learn=memory_enabled, language=lang)
         return {"reply": reply, "engine": ""}
     if online:
+        # rc.2 W8 (item 4): in auto mode a SIMPLE turn (small-talk,
+        # a short plain question - no tools, no device numbers, no
+        # web, no reasoning) goes to Gemini 2.5 Flash first: its
+        # free-tier token limit is far above Groq's 8000/min, so
+        # everyday chat stops burning the Groq budget. gpt-oss-120b
+        # stays the engine for Deep Think, hard questions and
+        # anything needing tools. A Gemini failure falls through to
+        # the Groq call below (which still has its own fallback).
+        if choice == "auto" and _is_simple_chat(user_text, deep_think):
+            reply, engine, _simple_kind = _ask_gemini_chat(
+                messages, lang, timeout=_GROQ_TIMEOUT_SEC)
+            if engine:
+                info("brain", "Simple chat routed to Gemini 2.5 Flash "
+                              "(auto) - Groq 120b kept for hard questions")
+                _record_turn(user_text, reply, engine, hist,
+                             learn=memory_enabled, language=lang)
+                return {"reply": reply, "engine": engine}
         try:
             # v1.6.0: same conditional-kwargs rule as ask_with_tools
             # (see above) - the default call shape is unchanged.
@@ -1600,7 +2045,8 @@ def _classify_gemini_http_error(resp) -> RuntimeError:
     return RuntimeError(kind)
 
 
-def _gemini_chat(messages: list, timeout: int = 60) -> str:
+def _gemini_chat(messages: list, timeout: int = 60,
+                 deep_think: bool = False) -> str:
     """One Gemini 2.5 Flash call (chat fallback). Uses the CHAT key
     ONLY - the voice key is never sent here. Raises
     RuntimeError("no-gemini-chat-key") / ("gemini-429") /
@@ -1618,7 +2064,12 @@ def _gemini_chat(messages: list, timeout: int = 60) -> str:
     if not api_key:
         raise RuntimeError("no-gemini-chat-key")
     system_text, contents = _messages_for_gemini(messages)
-    payload = {"contents": contents}
+    payload = {"contents": contents,
+               # rc.2 W8: cap the reply length (see _groq_message).
+               "generationConfig": {
+                   "maxOutputTokens": (
+                       _MAX_TOKENS_DEEP_THINK if deep_think
+                       else _MAX_TOKENS_NORMAL)}}
     if system_text:
         payload["systemInstruction"] = {"parts": [{"text": system_text}]}
     resp = requests.post(
@@ -1637,6 +2088,13 @@ def _gemini_chat(messages: list, timeout: int = 60) -> str:
         data = {}
     if not isinstance(data, dict):
         data = {}
+    # rc.2 W8: record the reply's token usage (per-reply log +
+    # token-bar counters) from usageMetadata.
+    try:
+        _record_engine_usage("gemini", data.get("usageMetadata"),
+                             getattr(resp, "headers", None))
+    except Exception:
+        pass
     # The block reason is read OUTSIDE the parts parse: a blocked
     # reply has no candidates at all, so candidates[0] raises and
     # must not wipe the reason we need to report.
@@ -1661,12 +2119,13 @@ def _gemini_chat(messages: list, timeout: int = 60) -> str:
 
 
 def _ask_gemini_chat(messages: list, lang: str = "ar",
-                     timeout: int = 60) -> tuple:
+                     timeout: int = 60, deep_think: bool = False) -> tuple:
     """Gemini chat fallback. Returns (reply, engine, fail_kind) with
     engine "gemini" on success and "" on failure (fail_kind names
     the reason - see _gemini_failure_note). Never raises."""
     try:
-        reply = _gemini_chat(messages, timeout=timeout)
+        reply = _gemini_chat(messages, timeout=timeout,
+                             deep_think=deep_think)
         info("brain", "Answered via Gemini 2.5 Flash (chat key)")
         return reply, "gemini", ""
     except RuntimeError as exc:
