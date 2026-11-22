@@ -47,7 +47,10 @@
 
 import json
 import re
-import resource
+try:
+    import resource  # Unix-only; absent on Windows (CI runs on Windows)
+except ImportError:  # pragma: no cover - Windows
+    resource = None
 import sys
 import tempfile
 import threading
@@ -545,6 +548,8 @@ class TestIdleCPU(unittest.TestCase):
     """The always-listening loop on silence must stay near 0% CPU."""
 
     def _cpu_percent(self, fn, seconds=5.0):
+        if resource is None:  # Windows: no getrusage; skip, don't fail
+            raise unittest.SkipTest("resource.getrusage unavailable on Windows")
         before = resource.getrusage(resource.RUSAGE_SELF)
         t0 = time.time()
         fn()
