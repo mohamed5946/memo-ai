@@ -53,6 +53,7 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
@@ -74,6 +75,24 @@ import tempwatch as tempwatch_mod  # noqa: E402
 import tools as tools_mod  # noqa: E402
 from companion import Companion, get_next_exam  # noqa: E402
 from monitor import SystemMonitor, device_state_to_mood  # noqa: E402
+
+
+@contextmanager
+def _txt_key_store():
+    """Force the plaintext keys/*.txt backend for key tests.
+
+    On Windows the real store is Credential Manager - a shared OS
+    vault that patching settings_store.KEYS_DIR cannot isolate, so a
+    key saved by one test leaks into every later test in the same
+    process (and into the no-key tests, turning them into live
+    network calls). The txt fallback IS isolated by the KEYS_DIR
+    patch, so key-logic tests run against it on all platforms; the
+    real Windows vault path is covered separately by
+    test_migration_txt_keys_matches_platform.
+    """
+    with mock.patch.object(apikeys_mod, "_cred_available",
+                           return_value=False):
+        yield
 
 
 def _reading(ram_free_mb=4000, ram_pct=50.0, disk_free_gb=100.0,
@@ -197,9 +216,17 @@ class TestFixerTiers(unittest.TestCase):
             result = fixer_mod.delete_user_file(str(target), granted=True)
             self.assertTrue(result.get("ok"), result)
             self.assertFalse(target.exists())
-            trash = tmpdir / "data" / "trash"
-            self.assertTrue(trash.exists())
-            self.assertEqual(len(list(trash.iterdir())), 1)
+            if sys.platform == "win32":
+                # Windows has no app trash folder: the file goes to
+                # the real Recycle Bin instead (still recoverable -
+                # the delete->restore roundtrip in
+                # test_v160_integration proves it comes back).
+                # The local-trash folder must NOT have been created.
+                self.assertFalse((tmpdir / "data" / "trash").exists())
+            else:
+                trash = tmpdir / "data" / "trash"
+                self.assertTrue(trash.exists())
+                self.assertEqual(len(list(trash.iterdir())), 1)
             entries = fixer_mod.list_undoable()
             self.assertTrue(any(e.get("kind") == "file"
                                 for e in entries))
@@ -212,10 +239,23 @@ class TestFixerTiers(unittest.TestCase):
         self.assertEqual(fixer_mod.tier_for("delete_user_file"), "red")
 
     def test_relaunch_process(self):
-        result = fixer_mod.relaunch_process(
-            {"kind": "process", "name": "true", "exe": "/bin/true"})
-        self.assertTrue(result.get("ok"), result)
-        self.assertIn("pid", result)
+        if sys.platform == "win32":
+            # relaunch_process() uses os.startfile() on Windows,
+            # which takes no arguments - so no Windows exe exits at
+            # once the way /bin/true does (bare python.exe would
+            # open a REPL that never exits). Assert the wiring
+            # instead: startfile called with the recorded exe.
+            with mock.patch.object(fixer_mod.os, "startfile") as started:
+                result = fixer_mod.relaunch_process(
+                    {"kind": "process", "name": "python",
+                     "exe": sys.executable})
+            self.assertTrue(result.get("ok"), result)
+            started.assert_called_once_with(sys.executable)
+        else:
+            result = fixer_mod.relaunch_process(
+                {"kind": "process", "name": "true", "exe": "/bin/true"})
+            self.assertTrue(result.get("ok"), result)
+            self.assertIn("pid", result)
         bad = fixer_mod.relaunch_process({"kind": "process", "exe": ""})
         self.assertFalse(bad.get("ok"))
 
@@ -346,6 +386,21 @@ class TestTempwatch(unittest.TestCase):
         self.assertFalse(result["alert"])
 
     def test_registration_guarded_off_windows(self):
+        if sys.platform == "win32":
+            # Windows IS the supported platform: the Run-key
+            # registration succeeds per-user with no admin. The
+            # test registers for real, then removes the Run value
+            # again so it leaves nothing behind on the runner.
+            # (The schtasks variant is NOT asserted here: whether
+            # schtasks succeeds on a hosted runner is policy, not
+            # app behaviour.)
+            try:
+                self.assertTrue(tempwatch_mod.register_tempwatch())
+                self.assertTrue(tempwatch_mod.is_tempwatch_registered())
+            finally:
+                tempwatch_mod.unregister_tempwatch()
+            self.assertFalse(tempwatch_mod.is_tempwatch_registered())
+            return
         # No admin, no service: on Linux both registrations refuse
         # cleanly instead of raising.
         self.assertFalse(tempwatch_mod.register_tempwatch())
@@ -536,7 +591,8 @@ class TestApiKeysCredentialStore(unittest.TestCase):
     def test_txt_fallback_roundtrip_on_linux(self):
         tmp = Path(tempfile.mkdtemp())
         keys_dir = tmp / "keys"
-        with mock.patch.object(settings_mod, "KEYS_DIR", keys_dir):
+        with mock.patch.object(settings_mod, "KEYS_DIR", keys_dir), \
+                _txt_key_store():
             apikeys_mod.reset_migration_flag()
             result = apikeys_mod.save_key("groq", "  gsk_testkey123  \n")
             self.assertTrue(result.get("ok"), result)
@@ -548,8 +604,12 @@ class TestApiKeysCredentialStore(unittest.TestCase):
                 apikeys_mod.get_api_keys_status()["gemini-voice"])
             self.assertFalse(
                 apikeys_mod.get_api_keys_status()["gemini-chat"])
-            mode = (keys_dir / "groq-key.txt").stat().st_mode & 0o777
-            self.assertEqual(mode, 0o600)
+            # POSIX permission bits do not exist on Windows
+            # (os.chmod(0o600) is a no-op there), so the mode check
+            # only runs where the OS has modes to check.
+            if sys.platform != "win32":
+                mode = (keys_dir / "groq-key.txt").stat().st_mode & 0o777
+                self.assertEqual(mode, 0o600)
             # settings_store.read_key delegates to the same store.
             self.assertEqual(settings_mod.read_key("groq-key.txt"),
                              "gsk_testkey123")
@@ -558,17 +618,34 @@ class TestApiKeysCredentialStore(unittest.TestCase):
         self.assertFalse(apikeys_mod.save_key("nope", "x")["ok"])
         self.assertFalse(apikeys_mod.save_key("groq", "   ")["ok"])
 
-    def test_migration_noop_off_windows(self):
+    def test_migration_txt_keys_matches_platform(self):
+        # Was test_migration_noop_off_windows: off Windows the
+        # migration is a noop ("unsupported") and the txt file stays;
+        # on Windows it is the real supported path - the txt key IS
+        # moved into Credential Manager and the txt file deleted.
+        # The Windows branch writes one entry to the runner's vault
+        # and deletes it again in the finally below.
         tmp = Path(tempfile.mkdtemp())
-        with mock.patch.object(settings_mod, "KEYS_DIR", tmp):
-            (tmp / "groq-key.txt").write_text("gsk_abc\n")
-            results = apikeys_mod.migrate_txt_keys()
-            self.assertEqual(results["groq"], "unsupported")
-            self.assertTrue((tmp / "groq-key.txt").exists())
+        try:
+            with mock.patch.object(settings_mod, "KEYS_DIR", tmp):
+                (tmp / "groq-key.txt").write_text("gsk_abc\n")
+                results = apikeys_mod.migrate_txt_keys()
+                if sys.platform == "win32":
+                    self.assertEqual(results["groq"], "migrated")
+                    self.assertFalse((tmp / "groq-key.txt").exists())
+                    self.assertEqual(apikeys_mod.read_key_value("groq"),
+                                     "gsk_abc")
+                else:
+                    self.assertEqual(results["groq"], "unsupported")
+                    self.assertTrue((tmp / "groq-key.txt").exists())
+        finally:
+            if sys.platform == "win32":
+                apikeys_mod.delete_key("groq")
 
     def test_key_test_uses_mocked_http(self):
         tmp = Path(tempfile.mkdtemp())
-        with mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"):
+        with mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"), \
+                _txt_key_store():
             apikeys_mod.reset_migration_flag()
             apikeys_mod.save_key("groq", "gsk_testkey123")
 
@@ -583,9 +660,11 @@ class TestApiKeysCredentialStore(unittest.TestCase):
             with mock.patch("requests.get", return_value=_Bad()):
                 result = apikeys_mod.test_key("groq")
             self.assertFalse(result.get("valid"))
-        # No key saved at all -> not valid.
-        self.assertFalse(apikeys_mod.test_key("gemini-chat")["valid"])
-        self.assertFalse(apikeys_mod.test_key("gemini-voice")["valid"])
+            # No key saved at all -> not valid. (Inside the mocked
+            # store: outside it this would read the shared Windows
+            # vault, where an earlier test's key could leak in.)
+            self.assertFalse(apikeys_mod.test_key("gemini-chat")["valid"])
+            self.assertFalse(apikeys_mod.test_key("gemini-voice")["valid"])
 
 
 class TestPrivacyRedaction(unittest.TestCase):
@@ -672,7 +751,8 @@ class TestImageUnderstanding(unittest.TestCase):
     def test_confirmed_call_with_mocked_gemini(self):
         img_mod = __import__("image_understanding")
         tmp = Path(tempfile.mkdtemp())
-        with mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"):
+        with mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"), \
+                _txt_key_store():
             apikeys_mod.reset_migration_flag()
             apikeys_mod.save_key("gemini-chat", "AIzaTestKey1234567890abcdef")  # v1.6.1: vision uses the CHAT key
 
@@ -699,7 +779,8 @@ class TestSettingsBackup(unittest.TestCase):
         with mock.patch.object(settings_mod, "DATA_DIR", data_dir), \
                 mock.patch.object(settings_mod, "SETTINGS_PATH",
                                   data_dir / "settings.json"), \
-                mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"):
+                mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"), \
+                _txt_key_store():
             apikeys_mod.reset_migration_flag()
             apikeys_mod.save_key("groq", "gsk_backup_test_key")
             settings_mod.save_settings({**settings_mod.load_settings(),
@@ -724,7 +805,8 @@ class TestSettingsBackup(unittest.TestCase):
         with mock.patch.object(settings_mod, "DATA_DIR", data_dir), \
                 mock.patch.object(settings_mod, "SETTINGS_PATH",
                                   data_dir / "settings.json"), \
-                mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"):
+                mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"), \
+                _txt_key_store():
             apikeys_mod.reset_migration_flag()
             apikeys_mod.save_key("groq", "gsk_backup_test_key")
             backup_path = tmp / "backup.zip"

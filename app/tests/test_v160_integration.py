@@ -33,6 +33,7 @@ sys.path.insert(0, str(APP_DIR))
 import fixer as fixer_mod  # noqa: E402
 import image_understanding as image_mod  # noqa: E402
 import settings_store as settings_mod  # noqa: E402
+import apikeys as apikeys_mod  # noqa: E402
 
 
 class TestRestoreDeleted(unittest.TestCase):
@@ -74,8 +75,22 @@ class TestRelaunchRecordedKill(unittest.TestCase):
     def test_relaunch_from_record(self):
         tmp = Path(tempfile.mkdtemp())
         with mock.patch.object(settings_mod, "DATA_DIR", tmp / "data"):
-            entry = fixer_mod.record_kill("true", None, exe="/bin/true")
-            res = fixer_mod.relaunch_process(entry)
+            if sys.platform == "win32":
+                # See test_v160_backend.TestFixerTiers
+                # .test_relaunch_process: os.startfile() takes no
+                # arguments, so a bare python.exe would open a REPL
+                # that never exits - assert the wiring instead.
+                exe, name = sys.executable, "python"
+            else:
+                exe, name = "/bin/true", "true"
+            entry = fixer_mod.record_kill(name, None, exe=exe)
+            if sys.platform == "win32":
+                with mock.patch.object(fixer_mod.os,
+                                       "startfile") as started:
+                    res = fixer_mod.relaunch_process(entry)
+                started.assert_called_once_with(exe)
+            else:
+                res = fixer_mod.relaunch_process(entry)
             self.assertTrue(res.get("ok"), res)
             self.assertIn(entry,
                           fixer_mod.list_undoable())
@@ -98,8 +113,23 @@ class TestImageUnderstandingNoKey(unittest.TestCase):
     def test_no_key_fails_without_network(self):
         # A tiny PNG header + confirmed: the key check fires first,
         # so no HTTP call is attempted in this sandbox.
+        # The key store is forced to an EMPTY txt fallback: on
+        # Windows the real store is the shared Credential Manager,
+        # and a key saved by an earlier test in the same process
+        # would otherwise make this a live network call (which is
+        # exactly how it failed on CI: 'http_error' instead of
+        # 'no_key'). requests.post is also guarded so a leaked key
+        # can never silently turn this into a live call.
+        tmp = Path(tempfile.mkdtemp())
         png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
-        res = image_mod.send_image_to_gemini(png, "x", confirmed=True)
+        with mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"), \
+                mock.patch.object(apikeys_mod, "_cred_available",
+                                  return_value=False), \
+                mock.patch("requests.post",
+                           side_effect=AssertionError(
+                               "no HTTP call with no key")):
+            apikeys_mod.reset_migration_flag()
+            res = image_mod.send_image_to_gemini(png, "x", confirmed=True)
         self.assertFalse(res.get("ok"))
         self.assertEqual(res.get("reason"), "no_key")
 

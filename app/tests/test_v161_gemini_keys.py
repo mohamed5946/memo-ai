@@ -32,6 +32,38 @@ import brain as brain_mod  # noqa: E402
 import settings_store as settings_mod  # noqa: E402
 
 
+# Every test in this file patches settings_store.KEYS_DIR to a fresh
+# tmp dir and assumes that isolates the key store. On Windows that
+# assumption is FALSE: the real store is Credential Manager, a shared
+# OS vault keyed by fixed target names ("LONA:gemini-voice", ...),
+# so a key saved by one test leaks into every later test in the same
+# process - which is exactly how CI failed: a gemini-chat key saved
+# by test_v160_backend's vision test made the no-key tests issue
+# live network calls, and a gemini-voice key saved by
+# test_existing_voice_key_never_overwritten (unittest runs methods
+# alphabetically, so it runs first) made the split migration report
+# 'already_set'. Force the plaintext keys/*.txt backend for the whole
+# module: it IS isolated by the KEYS_DIR patch, and the split/migration
+# logic under test is backend-agnostic. The real Windows vault path
+# is covered by test_v160_backend
+# .TestApiKeysCredentialStore.test_migration_txt_keys_matches_platform.
+_cred_patcher = None
+
+
+def setUpModule():
+    global _cred_patcher
+    _cred_patcher = mock.patch.object(
+        apikeys_mod, "_cred_available", return_value=False)
+    _cred_patcher.start()
+
+
+def tearDownModule():
+    global _cred_patcher
+    if _cred_patcher is not None:
+        _cred_patcher.stop()
+        _cred_patcher = None
+
+
 class TestSplitMigration(unittest.TestCase):
     """The old single key is copied to BOTH new providers."""
 

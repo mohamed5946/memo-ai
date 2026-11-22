@@ -105,10 +105,15 @@ class TestIdentityMigration(unittest.TestCase):
                               {"qa.json": qa, "rules.json": rules})
         self.assertEqual(st["ai_name"], "LONA")
         data_dir = tmp / "data"
-        new_qa = json.loads((data_dir / "qa.json").read_text())
+        # encoding="utf-8": on Windows read_text() defaults to
+        # cp1252, which mojibakes the Arabic answers (the CI failure
+        # was "أنا LONA،" not found in mojibake).
+        new_qa = json.loads((data_dir / "qa.json").read_text(
+            encoding="utf-8"))
         self.assertIn("أنا LONA،", new_qa["questions"][0]["a"])
         self.assertIn("I'm LONA,", new_qa["questions"][1]["a"])
-        new_rules = json.loads((data_dir / "rules.json").read_text())
+        new_rules = json.loads((data_dir / "rules.json").read_text(
+            encoding="utf-8"))
         self.assertIn("أنا LONA،", new_rules["rules"][0]["reply"])
         # Unrelated user text mentioning Memo is NOT rewritten.
         self.assertIn("Memo", new_rules["rules"][1]["match"])
@@ -119,7 +124,8 @@ class TestIdentityMigration(unittest.TestCase):
         _load_with_saved(tmp, {"ai_name": "سارة", "avatar": "girl"},
                          {"qa.json": qa})
         self.assertIn("أنا Memo.",
-                      (tmp / "data" / "qa.json").read_text())
+                      (tmp / "data" / "qa.json").read_text(
+                          encoding="utf-8"))
 
 
 class TestRobotIsTheDefaultIdentity(unittest.TestCase):
@@ -222,8 +228,13 @@ class TestNoUserVisibleMemo(unittest.TestCase):
         self.assertNotIn("Memo", pet)
 
     def test_bundled_qa_answers_are_lona(self):
-        qa = json.loads((APP_DIR / "data" / "qa.json").read_text())
-        rules = json.loads((APP_DIR / "data" / "rules.json").read_text())
+        # encoding="utf-8" is required: on Windows read_text()
+        # defaults to cp1252, which cannot decode the Arabic answers
+        # (UnicodeDecodeError on CI) and mojibakes them on read.
+        qa = json.loads((APP_DIR / "data" / "qa.json").read_text(
+            encoding="utf-8"))
+        rules = json.loads((APP_DIR / "data" / "rules.json").read_text(
+            encoding="utf-8"))
         blob = json.dumps([qa, rules], ensure_ascii=False)
         self.assertNotIn("Memo", blob)
         self.assertIn("LONA", blob)

@@ -32,10 +32,12 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
+import monitor as monitor_mod  # noqa: E402
 from monitor import (  # noqa: E402
     MoodStabilizer,
     SystemMonitor,
@@ -203,16 +205,28 @@ class TestMoodStabilizer(unittest.TestCase):
 
 
 class TestMonitorToneIntegration(unittest.TestCase):
+    # _idle_seconds() is a LIVE host probe (Windows GetLastInputInfo;
+    # None off Windows). On Windows CI the runner's own input makes
+    # it read ~0s, so a healthy machine maps to the happy mood
+    # ("recent interaction") instead of awake - which is correct app
+    # behaviour, not a regression (the reskin never touched the mood
+    # mapping). These tests pin it to 420s (7 min idle: past the
+    # 5-min recent-interaction window, short of the 10-min sleep
+    # threshold) so the mood contract itself is what's tested.
     def test_noted_tone_steers_overview_mood(self):
         mon = SystemMonitor(sample_fn=lambda: _reading())
         mon.note_user_message("شكرا يا لونا، برافو")
-        overview = mon.get_device_overview()
+        with mock.patch.object(monitor_mod, "_idle_seconds",
+                               return_value=420.0):
+            overview = mon.get_device_overview()
         self.assertEqual(overview["mood"], "مبسوط وبيرقص")
 
     def test_neutral_message_changes_nothing(self):
         mon = SystemMonitor(sample_fn=lambda: _reading())
         mon.note_user_message("افتح VS Code")
-        overview = mon.get_device_overview()
+        with mock.patch.object(monitor_mod, "_idle_seconds",
+                               return_value=420.0):
+            overview = mon.get_device_overview()
         self.assertEqual(overview["mood"], "صاحي")
 
     def test_overview_mood_holds_across_flickering_readings(self):
@@ -221,15 +235,17 @@ class TestMonitorToneIntegration(unittest.TestCase):
                     _reading(battery={"percent": 10, "charging": False})]
         mon = SystemMonitor(sample_fn=lambda: readings[0],
                             clock=lambda: now[0])
-        self.assertEqual(mon.get_device_overview()["mood"], "صاحي")
-        # Battery collapses -> raw mood is "تعبان", but the hold keeps
-        # the displayed mood until confirmed + hold elapsed.
-        mon.sample_fn = lambda: readings[1]
-        self.assertEqual(mon.get_device_overview()["mood"], "صاحي")
-        mon.sample_fn = lambda: readings[1]
-        self.assertEqual(mon.get_device_overview()["mood"], "صاحي")
-        now[0] += 200.0
-        self.assertEqual(mon.get_device_overview()["mood"], "تعبان")
+        with mock.patch.object(monitor_mod, "_idle_seconds",
+                               return_value=420.0):
+            self.assertEqual(mon.get_device_overview()["mood"], "صاحي")
+            # Battery collapses -> raw mood is "تعبان", but the hold keeps
+            # the displayed mood until confirmed + hold elapsed.
+            mon.sample_fn = lambda: readings[1]
+            self.assertEqual(mon.get_device_overview()["mood"], "صاحي")
+            mon.sample_fn = lambda: readings[1]
+            self.assertEqual(mon.get_device_overview()["mood"], "صاحي")
+            now[0] += 200.0
+            self.assertEqual(mon.get_device_overview()["mood"], "تعبان")
 
     def test_raw_mapping_unchanged(self):
         mood, _ = device_state_to_mood(_status_for_mood(temp_c=92.0))

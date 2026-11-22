@@ -156,9 +156,17 @@ class TestSystemStatusTool(unittest.TestCase):
 
 
 class TestHiddenSpawn(unittest.TestCase):
-    def test_helper_returns_nothing_off_windows(self):
-        self.assertEqual(hidden_spawn.popen_kwargs(), {})
-        self.assertEqual(hidden_spawn.run_kwargs(), {})
+    def test_helper_matches_platform(self):
+        # The helper is {} off Windows and CREATE_NO_WINDOW on
+        # Windows - assert the value for THIS platform instead of
+        # assuming the suite only runs off Windows (CI runs on
+        # Windows, where the old {} expectation failed).
+        if sys.platform == "win32":
+            expected = {"creationflags": 0x08000000}
+        else:
+            expected = {}
+        self.assertEqual(hidden_spawn.popen_kwargs(), expected)
+        self.assertEqual(hidden_spawn.run_kwargs(), expected)
 
     def test_helper_returns_create_no_window_on_win32(self):
         with mock.patch.object(sys, "platform", "win32"):

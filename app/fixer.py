@@ -151,11 +151,30 @@ def restore_deleted(entry: dict) -> dict:
         try:
             import subprocess
             import hidden_spawn
+            # The Bin records the canonical (long) path, but the undo
+            # entry may hold an 8.3 short spelling (e.g. RUNNER~1 in
+            # a Temp path) - match either spelling of the same file,
+            # so a just-deleted file is always found. (Pre-existing
+            # v1.6.3: the old code compared the recorded spelling
+            # only, and restore failed with 'not_found' on CI where
+            # tempfile returns short paths.)
+            spellings = [original]
+            try:
+                import ctypes
+                buf = ctypes.create_unicode_buffer(512)
+                n = ctypes.windll.kernel32.GetLongPathNameW(
+                    original, buf, 512)
+                if n and buf.value and buf.value != original:
+                    spellings.append(buf.value)
+            except Exception:
+                pass
+            quoted = ",".join(
+                "'" + s.replace("'", "''") + "'" for s in spellings)
             ps = (
                 "$s=New-Object -ComObject Shell.Application;"
                 "$b=$s.Namespace(0xA);"
-                "$p='" + original.replace("'", "''") + "';"
-                "$i=$b.Items() | Where-Object { $_.Path -eq $p } "
+                f"$paths=@({quoted});"
+                "$i=$b.Items() | Where-Object { $paths -contains $_.Path } "
                 "| Select-Object -First 1;"
                 "if ($i) { $i.InvokeVerb('restore'); 'restored' } "
                 "else { 'not_found' }"
