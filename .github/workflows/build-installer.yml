@@ -105,6 +105,10 @@ jobs:
           # model") - the model is downloaded on first use and is not in
           # the repo or the CI cache, so they cannot pass here; they are
           # a pre-existing environment limitation, not a reskin failure.
+          # pytest is NOT in requirements.txt (v1 CI never ran the
+          # suite) - install it here so this step is self-contained.
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw "pip install pytest failed" }
           python -m pytest app/tests -q -p no:cacheprovider `
             --deselect app/tests/test_v15_wakeword.py::TestRealSpotterEndToEnd::test_negative_fixtures_do_not_wake `
             --deselect app/tests/test_v15_wakeword.py::TestRealSpotterEndToEnd::test_positive_fixtures_wake `
