@@ -6,11 +6,11 @@
   icons, or assets used. Full license text: THIRD_PARTY.md (repo root).
 
   Fixed canvas (WindyLand method): the window is created once at
-  720x400 and NEVER resized. Collapsed <-> expanded animates purely
-  in CSS inside that canvas (pill 380x60 <-> panel 720x400); the area
-  outside the pill is transparent HTML. The Python side only toggles
-  WS_EX_TRANSPARENT (island_resize is a state shim now) - no window
-  resize, no region re-application, no race.
+  520x300 and NEVER resized. Collapsed <-> expanded animates purely
+  in CSS inside that canvas (pill 220x60 <-> rounded pill 520x300);
+  the area outside the pill is transparent HTML. The Python side only
+  toggles WS_EX_TRANSPARENT (island_resize is a state shim now) - no
+  window resize, no region re-application, no race.
 -->
 <html lang="ar" dir="rtl">
 <head>
@@ -20,10 +20,19 @@
 <link rel="stylesheet" href="assets/fonts/fonts.css">
 <link rel="stylesheet" href="assets/lona.css">
 <style>
-  /* --- fixed canvas: the window is 720x400, always. The pill and the
+  /* --- fixed canvas: the window is 520x300, always. The pill and the
      panel are drawn inside it; nothing here resizes the window. --- */
-  body.fixed-canvas .island{width:380px;height:60px}
-  body.fixed-canvas .island.open{width:720px;height:400px;border-radius:26px}
+  body.fixed-canvas .island{width:220px;height:60px}
+  body.fixed-canvas .island.open{width:520px;height:300px;border-radius:44px}
+  /* --- expanded pill fits the 520x300 canvas: the small-screen media
+     query in lona.css would hide the stand below 640px, so the island
+     re-asserts its own two-column layout + tighter paddings here. --- */
+  body.fixed-canvas .island.open .i-full{grid-template-columns:170px 1fr}
+  body.fixed-canvas .island.open .stand{display:flex}
+  body.fixed-canvas .island.open .chat-side{padding:16px 18px;gap:10px}
+  body.fixed-canvas .island.open .chat-side h2{font-size:20px}
+  body.fixed-canvas .island.open .i-reply{max-height:72px}
+  body.fixed-canvas .i-toast{max-width:480px}
   /* --- toast: brief alert expansion, overlaid on the canvas --- */
   .i-toast{position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:50;
     max-width:640px;padding:10px 18px;border-radius:16px;text-align:center;
@@ -86,18 +95,15 @@
 <section class="glass island" id="island" aria-label="لونا">
   <div class="ib" aria-hidden="true"><i></i><i></i><i></i></div>
   <div class="i-mini" id="mini">
-    <div class="bubble"><img src="assets/mascot.webp" alt="لونا"></div>
-    <div><div class="i-title" id="pillName">لونا</div><div class="i-status"><span class="dot"></span><span id="miniStatus">Listening...</span></div></div>
+    <div class="bubble mascot-face" data-stop><img src="assets/mascot.webp" alt="لونا"></div>
+    <div><div class="i-title" id="pillName">لونا</div><div class="i-status"><span class="dot"></span></div></div>
     <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <span class="mdots" id="mediaDots" hidden>
       <i class="mdot mic" title="المايك شغال"></i><i class="mdot cam" title="الكاميرا شغالة"></i>
     </span>
-    <button class="round" id="micBtn" aria-label="المايك" data-stop>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-    </button>
   </div>
   <div class="i-full">
-    <div class="stand"><div class="platform"></div><img class="mascot" src="assets/mascot.webp" alt="لونا"></div>
+    <div class="stand"><div class="platform"></div><div class="mascot-face" data-stop><img src="assets/mascot.webp" alt="لونا"></div></div>
     <div class="chat-side">
       <h2 id="greet">أهلًا، أقدر أساعدك في إيه؟</h2>
       <p class="mood" id="moodLine" style="font-size:13px;color:var(--ink-2)"></p>
@@ -128,8 +134,6 @@
   'use strict';
   var B = window.LonaBridge;
   var isl = document.getElementById('island');
-  var miniStatus = document.getElementById('miniStatus');
-  var micBtn = document.getElementById('micBtn');
   var input = document.getElementById('islInput');
   var replyBox = document.getElementById('replyBox');
   var moodLine = document.getElementById('moodLine');
@@ -139,10 +143,10 @@
   var panelsEl = document.getElementById('panels');
   var panelTabs = document.getElementById('panelTabs');
   var panelBody = document.getElementById('panelBody');
-  var micLive = false;
   var busy = false;
   var toastTimer = null;
   var toastOpened = false;
+  var userName = '';
   var panelTimer = null;
   var currentPanel = null;
   var lastWaterNudge = 0;
@@ -168,7 +172,7 @@
   /* --- expand / collapse: click anywhere on the island except buttons ---
      Fixed canvas: the WINDOW never resizes. island_expand / island_collapse
      only flip the Python-side state (WS_EX_TRANSPARENT); the visual
-     animation is the .open class in this fixed 720x400 canvas. */
+     animation is the .open class in this fixed 520x300 canvas. */
   function setOpen(opening, focusInput) {
     isl.classList.toggle('open', opening);
     if (!opening) {
@@ -180,13 +184,14 @@
       stopExpandedTimers();
       stopPanelRefresh();
     }
-    var w = opening ? 720 : 380;
-    var h = opening ? 400 : 60;
+    var w = opening ? 520 : 220;
+    var h = opening ? 300 : 60;
     return B.call(opening ? 'island_expand' : 'island_collapse').then(function () {
       return B.call('island_resize', w, h);
     }).then(function () {
       if (opening) {
         startExpandedTimers();
+        refreshMusicState();
         if (focusInput) { input.focus(); }
       }
     }).catch(function (err) {
@@ -260,11 +265,21 @@
     }, ms);
   };
 
-  /* --- mic: local listening indicator only (no voice method in the v2 bridge) --- */
-  micBtn.addEventListener('click', function () {
-    micLive = !micLive;
-    isl.classList.toggle('mic-live', micLive);
-    miniStatus.textContent = micLive ? 'بسمعك…' : 'Listening...';
+  /* --- interactive face: tapping the robot face (pill or expanded
+     stand) bounces it and shows a short greeting in the reply area.
+     The faces carry data-stop, so this never toggles expand/collapse;
+     from the collapsed pill it opens the island to show the greeting. --- */
+  function greetFromFace(face) {
+    face.classList.remove('bounce');
+    void face.offsetWidth;
+    face.classList.add('bounce');
+    replyBox.textContent = 'أهلاً ' + (userName || 'Mohamed') + '!';
+    if (!isOpen()) {
+      setOpen(true, false).catch(function (err) { fail('island_face_open', err); });
+    }
+  }
+  document.querySelectorAll('#island .mascot-face').forEach(function (face) {
+    face.addEventListener('click', function () { greetFromFace(face); });
   });
 
   /* --- attach: not wired in the v2 bridge — say so honestly, fake nothing --- */
@@ -319,6 +334,7 @@
     if (pill) { pill.textContent = aiName; }
     document.getElementById('island').setAttribute('aria-label', aiName);
     var name = s.user_name || s.user || '';
+    userName = name;
     if (name) {
       document.getElementById('greet').textContent = 'أهلًا ' + name + '، أقدر أساعدك في إيه؟';
     }
@@ -433,6 +449,17 @@
   var lastTrackKey = null;
   var cachedLyricsHtml = '';
 
+  /* Waveform bars animate ONLY while music is actually playing: the
+     .playing class on the island gates the .wave animation in CSS.
+     One-shot SMTC read (no timers run while collapsed, so the last
+     known state persists until the next expand refreshes it). */
+  function refreshMusicState() {
+    fetchIslandJob('island_music', []).then(function (r) {
+      r = r || {};
+      isl.classList.toggle('playing', !!r.available && /play/i.test(String(r.status || '')));
+    }).catch(function () { isl.classList.remove('playing'); });
+  }
+
   function renderMusic() {
     /* The 1 s panel timer calls this every second: never overlap two
        SMTC reads - a tick while one is in flight is skipped, and
@@ -443,11 +470,13 @@
     fetchIslandJob('island_music', []).then(function (r) {
       r = r || {};
       if (!r.available) {
+        isl.classList.remove('playing');
         panelBody.innerHTML = '<h3>الموسيقى</h3><p class="p-note">مفيش حاجة شغالة دلوقتي، أو الميزة دي مش متاحة على الجهاز ده.</p>';
         lastTrackKey = null;
         cachedLyricsHtml = '';
         return;
       }
+      isl.classList.toggle('playing', /play/i.test(String(r.status || '')));
       var pos = Math.round(r.position_sec || 0);
       var dur = Math.round(r.duration_sec || 0);
       var key = (r.artist || '') + '|' + (r.title || '');
@@ -483,6 +512,7 @@
         highlightLyric(pos);
       }
     }).catch(function (err) {
+      isl.classList.remove('playing');
       panelBody.innerHTML = '<h3>الموسيقى</h3><p class="p-note">الميزة دي مش متاحة دلوقتي.</p>';
       fail('island_music', err);
     }).then(function () { musicInFlight = false; });

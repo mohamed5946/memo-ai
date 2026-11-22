@@ -38,11 +38,11 @@ body{min-height:100%;font-family:var(--font);color:var(--ink);background:var(--b
 
 /* island */
 .island{
-  width:min(380px,94vw);height:60px;border-radius:30px;cursor:pointer;flex:none;
+  width:220px;height:60px;border-radius:30px;cursor:pointer;flex:none;
   transition:width .6s cubic-bezier(.32,1.2,.4,1),height .6s cubic-bezier(.32,1.2,.4,1),border-radius .6s cubic-bezier(.32,1.2,.4,1);
   overflow:hidden;
 }
-.island.open{width:min(720px,94vw);height:min(400px,70vh);border-radius:38px;cursor:default}
+.island.open{width:520px;height:300px;border-radius:44px;cursor:default}
 .island > *{position:relative;z-index:1}
 .i-mini{position:absolute;inset:0;display:flex;align-items:center;gap:10px;padding:0 10px;transition:opacity .25s,transform .35s}
 .island.open .i-mini{opacity:0;transform:scale(.96);pointer-events:none}
@@ -51,7 +51,11 @@ body{min-height:100%;font-family:var(--font);color:var(--ink);background:var(--b
 .i-title{font-size:14px;font-weight:600;line-height:1.1}
 .i-status{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-2);margin-top:3px}
 .dot{width:7px;height:7px;border-radius:50%;background:#43e07a;box-shadow:0 0 8px #43e07a}
-.wave{display:flex;align-items:center;gap:3px;height:26px;margin-inline:auto}
+/* Waveform bars animate ONLY while music is actually playing
+   (island.html toggles .playing from the SMTC state); otherwise
+   the bars are hidden entirely. */
+.wave{display:none;align-items:center;gap:3px;height:26px;margin-inline:auto}
+.island.playing .wave{display:flex}
 .wave i{width:3px;border-radius:2px;background:linear-gradient(var(--gold-2),var(--gold));height:8px;animation:wv 1.1s ease-in-out infinite}
 .wave i:nth-child(2n){animation-delay:.18s}.wave i:nth-child(3n){animation-delay:.36s}.wave i:nth-child(5n){animation-delay:.07s}
 @keyframes wv{0%,100%{height:6px}50%{height:22px}}
@@ -59,7 +63,7 @@ body{min-height:100%;font-family:var(--font);color:var(--ink);background:var(--b
   background:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.55);transition:transform .2s,background .2s}
 .round:hover{background:rgba(255,255,255,.26)}.round:active{transform:scale(.92)}
 .round.gold{background:linear-gradient(160deg,var(--gold-2),var(--gold));color:#4a3300}
-.i-full{position:absolute;inset:0;display:grid;grid-template-columns:230px 1fr;opacity:0;pointer-events:none;transition:opacity .3s}
+.i-full{position:absolute;inset:0;display:grid;grid-template-columns:170px 1fr;opacity:0;pointer-events:none;transition:opacity .3s}
 .island.open .i-full{opacity:1;pointer-events:auto;transition-delay:.25s}
 .stand{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:18px 10px 26px;position:relative}
 .stand svg.bot{width:150px;height:auto;filter:drop-shadow(0 10px 16px rgba(0,0,0,.28));animation:float 4s ease-in-out infinite;z-index:1}
@@ -72,8 +76,9 @@ body{min-height:100%;font-family:var(--font);color:var(--ink);background:var(--b
 .field input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font:inherit;font-size:14px;padding:0 6px}
 .field input::placeholder{color:var(--ink-3)}
 
-/* window */
-.win{width:min(1000px,100%);border-radius:30px;display:flex;flex-direction:column;height:min(640px,calc(100vh - 150px));min-height:520px;overflow:hidden}
+/* window — full width: the main content stretches edge to edge,
+   no centered max-width column (sidebar untouched). */
+.win{width:100%;border-radius:30px;display:flex;flex-direction:column;height:min(640px,calc(100vh - 150px));min-height:520px;overflow:hidden}
 .win > *{position:relative;z-index:1}
 .bar{display:flex;align-items:center;gap:10px;padding:14px 18px}
 .clock{font-size:15px;font-weight:500;font-variant-numeric:tabular-nums;margin-inline-end:auto}
@@ -203,7 +208,15 @@ svg{display:block}
 /* Mascot image replaces the SVG bot face. object-fit:contain + max sizes
    so the WHOLE robot is always visible — never a clipped half-head. */
 .bubble img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
-.stand img.mascot{width:170px;max-height:230px;object-fit:contain;z-index:1;
+/* Shared face circle (island pill + expanded stand, main-window hero):
+   mascot.webp is RGB with NO alpha (dark background baked in) — the
+   face is ONLY ever shown inside this circular crop, never as the raw
+   square. object-position 50% 28% centers the face in the crop. */
+.mascot-face{border-radius:50%;overflow:hidden;flex:none;cursor:pointer}
+.mascot-face img{width:100%;height:100%;object-fit:cover;object-position:50% 28%;display:block}
+.mascot-face.bounce{animation:face-bounce .6s ease}
+@keyframes face-bounce{0%{transform:scale(1)}30%{transform:scale(1.14) rotate(-4deg)}55%{transform:scale(.95) rotate(3deg)}75%{transform:scale(1.05)}100%{transform:scale(1)}}
+.stand .mascot-face{width:150px;height:150px;position:relative;z-index:1;
   filter:drop-shadow(0 10px 16px rgba(0,0,0,.28));animation:float 4s ease-in-out infinite}
 .hero{display:flex;flex-direction:column;align-items:center;gap:14px;
   padding:34px 20px 10px;text-align:center}
@@ -275,11 +288,9 @@ body.island-page{background:transparent;overflow:hidden}
 .island-page .i-reply{padding:12px 18px;font-size:13.5px;line-height:1.8;color:var(--ink-2);
   max-height:110px;overflow-y:auto}
 .island-page .i-reply:empty{display:none}
-.mic-live .wave i{animation-duration:.55s}
-.mic-live .i-status{color:var(--gold-2)}
 /* Main window fills its pywebview window (no island above it here) */
 body.main-page{background:var(--base)}
-.main-page .stage{min-height:100vh;padding:6px 4px}
+.main-page .stage{min-height:100vh;padding:6px}
 .main-page .win{height:calc(100vh - 12px);min-height:520px}
 
 /* Slim theme-colored scrollbars (~6px, same slim thickness as the
