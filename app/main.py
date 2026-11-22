@@ -376,7 +376,7 @@ try:
 except Exception:
     wakeword_mod = None
 
-VERSION = "1.6.4-rc.1"
+VERSION = "1.6.4-rc.2"
 # v1.6.2: bigger default main window (was 960x720) -- more room for
 # the chat. Frameless since v1.6.2: the native title bar is gone and
 # the in-app header owns minimize/maximize/close + drag.

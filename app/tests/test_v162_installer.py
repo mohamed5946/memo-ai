@@ -168,12 +168,12 @@ class TestRemoveOldInstallBounded:
 
 class TestVersionManifest:
     def test_version_is_rc_with_v163_urls(self):
-        # v1.6.4 reskin: the manifest version is the RC (1.6.4-rc.1)
+        # v1.6.4 reskin: the manifest version is the RC (1.6.4-rc.2)
         # while its URLs INTENTIONALLY still point at the v1.6.3
         # release — the RC tag is gated out of the in-app updater
         # manifest. (Renamed from test_version_bumped_with_v162_urls.)
         m = _manifest()
-        assert m["version"] == "1.6.4-rc.1"
+        assert m["version"] == "1.6.4-rc.2"
         assert m["url"] == (
             "https://github.com/mohamed5946/memo-ai/releases/download/"
             "v1.6.3/memo-ai-v1.6.3.zip")
@@ -205,9 +205,9 @@ class TestVersionManifest:
             "من غير نوافذ سودا",
             "واتساب أهدى",
         ]
-        # Notes now open with the لونا v1.6.4-rc.1 entry; the v1.6.2
+        # Notes now open with the لونا v1.6.4-rc.2 entry; the v1.6.2
         # history text was NOT carried into the rewritten RC notes.
-        assert m["notes"].startswith("لونا v1.6.4-rc.1")
+        assert m["notes"].startswith("لونا v1.6.4-rc.2")
         assert "v1.6.2: إصلاح تعليق المثبّت" not in m["notes"]
 
 

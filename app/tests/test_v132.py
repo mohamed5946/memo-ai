@@ -357,11 +357,11 @@ class TestSelfTestAndInstaller(unittest.TestCase):
 
     def test_version_consistency(self):
         import main
-        # v1.6.4 reskin: the version is 1.6.4-rc.1 everywhere it is
+        # v1.6.4 reskin: the version is 1.6.4-rc.2 everywhere it is
         # stamped; version.json carries the RC version while its
         # download URLs still point at the v1.6.3 release (the RC tag
         # is gated out of the in-app updater manifest).
-        self.assertEqual(main.VERSION, "1.6.4-rc.1")
+        self.assertEqual(main.VERSION, "1.6.4-rc.2")
         # index.html renders the version live ("LONA v" + VERSION) in
         # the General section — no hardcoded version string in the UI.
         self.assertIn("LONA v\" + B.escapeHtml(VERSION ||",
@@ -369,12 +369,12 @@ class TestSelfTestAndInstaller(unittest.TestCase):
         # The binary version tuple must track the release too.
         # REAL GAP (reskin, left failing on purpose): filevers /
         # prodvers are still (1, 6, 3, 0) while FileVersion is
-        # '1.6.4.0' and ProductVersion is '1.6.4-rc.1' in the same file.
+        # '1.6.4.0' and ProductVersion is '1.6.4-rc.2' in the same file.
         self.assertIn("filevers=(1, 6, 4, 0)",
                       _read("installer/file_version_info.txt"))
         self.assertIn("prodvers=(1, 6, 4, 0)",
                       _read("installer/file_version_info.txt"))
-        self.assertIn("'1.6.4-rc.1'",
+        self.assertIn("'1.6.4-rc.2'",
                       _read("installer/file_version_info.txt"))
         # version.json is updated BY THE CI after the tag build (it
         # carries the real release hashes) - and the post-release commit

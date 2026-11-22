@@ -26,7 +26,7 @@ VSVersionInfo(
             StringStruct('LegalCopyright', 'Mohamed El Sayed'),
             StringStruct('OriginalFilename', 'LONA.exe'),
             StringStruct('ProductName', 'LONA'),
-            StringStruct('ProductVersion', '1.6.4-rc.1'),
+            StringStruct('ProductVersion', '1.6.4-rc.2'),
           ]
         ),
       ]

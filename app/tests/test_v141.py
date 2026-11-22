@@ -881,13 +881,13 @@ class TestVersionAndInstaller(unittest.TestCase):
 
     def test_version_consistency_v141(self):
         import main
-        # v1.6.4 reskin: the version is 1.6.4-rc.1; version.json carries
+        # v1.6.4 reskin: the version is 1.6.4-rc.2; version.json carries
         # the RC version while its URLs still point at the v1.6.3
         # release (the RC tag is gated out of the updater manifest).
-        self.assertEqual(main.VERSION, "1.6.4-rc.1")
+        self.assertEqual(main.VERSION, "1.6.4-rc.2")
         self.assertIn("LONA v\" + B.escapeHtml(VERSION ||",
                       _read("app/ui/index.html"))
-        self.assertIn("'1.6.4-rc.1'",
+        self.assertIn("'1.6.4-rc.2'",
                       _read("installer/file_version_info.txt"))
         self.assertIn("'1.6.4.0'",
                       _read("installer/file_version_info.txt"))
@@ -896,7 +896,7 @@ class TestVersionAndInstaller(unittest.TestCase):
         # version now, not lag one behind. Checked after that commit.
         manifest = json.loads(_read("version.json"))
         self.assertEqual(manifest["version"], main.VERSION)
-        self.assertIn("1.6.4-rc.1", manifest["notes"])
+        self.assertIn("1.6.4-rc.2", manifest["notes"])
         self.assertIn("v1.6.3", manifest["url"])
         self.assertIn("v1.6.3", manifest["setup_url"])
 
