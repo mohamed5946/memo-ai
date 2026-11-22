@@ -997,11 +997,11 @@ def export_backup(api, password):
 # The region re-application itself is GATED (WindyLand/Nusa study
 # pending) - this adapter only calls the existing functions and
 # changes no region logic. Sizes are the approved fixed ones:
-# collapsed 380x60, expanded 720x400.
+# collapsed 220x60, expanded 520x300.
 
 def island_expand(api):
-    return api.island_resize(720, 400)
+    return api.island_resize(520, 300)
 
 
 def island_collapse(api):
-    return api.island_resize(380, 60)
+    return api.island_resize(220, 60)

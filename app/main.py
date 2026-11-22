@@ -386,7 +386,10 @@ MAIN_W, MAIN_H = 1280, 860
 ISLAND_IDLE_W, ISLAND_IDLE_H = 380, 60
 # v1.6.4 reskin (fixed canvas, WindyLand/Nusa method): the island window
 # is created ONCE at the expanded canvas size and never resized.
-ISLAND_CANVAS_W, ISLAND_CANVAS_H = 720, 400
+# v1.6.4-rc.2: 520x300 (was 720x400) - must match ISLAND_CANVAS_W/H in
+# island_canvas.py and the .island.open CSS in island.html; the
+# expanded check in Api.island_resize compares against this value.
+ISLAND_CANVAS_W, ISLAND_CANVAS_H = 520, 300
 PET_SIZE = 150
 
 # Single-instance mutex (Windows named mutex, no admin needed).
@@ -459,7 +462,7 @@ def _find_hwnd_by_title(title: str, max_width: int | None = None,
                         max_height: int | None = None):
     """Fallback HWND lookup (EnumWindows): first top-level window whose
     title matches exactly. max_width distinguishes the small island
-    ("LONA", <=400px) from the big main window (same title).
+    ("LONA", <=520px) from the big main window (same title).
 
     v1.3.2: this is the ONLY HWND lookup now. The old _window_hwnd()
     read window.native.Handle from background threads - WinForms creates
@@ -498,7 +501,7 @@ def _find_hwnd_by_title(title: str, max_width: int | None = None,
 
 def _find_main_hwnd():
     """HWND of the MAIN window: title "LONA" (shared with the
-    island), picked as the WIDEST match (main is 960px, island <=400px).
+    island), picked as the WIDEST match (main is 1280px, island <=520px).
     EnumWindows-only (v1.3.2 hang fix - never .native/.Handle)."""
     try:
         user32 = ctypes.windll.user32
@@ -1927,10 +1930,10 @@ class Api:
         # v1.6.4 fixed canvas (WindyLand/Nusa): the island window is
         # NEVER resized anymore. This is a STATE SHIM for the old call
         # path (island.html calls island_expand/island_collapse, which
-        # call this with 720x400 / 380x60): it records the state and
+        # call this with 520x300 / 220x60): it records the state and
         # toggles WS_EX_TRANSPARENT so the invisible canvas band stays
         # click-through while collapsed. The visual animation is the
-        # .open class in island.html, inside the fixed 720x400 canvas.
+        # .open class in island.html, inside the fixed 520x300 canvas.
         # No window resize, no region re-application - the region was
         # applied once at creation and the shape is drawn, not cut.
         try:
@@ -3500,7 +3503,7 @@ class MemoApp:
         if wakeword_mod is None:
             warn("wakeword", "Wake-word module unavailable - feature off")
             return
-        if not self.settings.get("wakeword_enabled", True):
+        if not self.settings.get("wakeword_enabled", False):
             return
         if self._wakeword is not None and self._wakeword.running:
             return
@@ -3938,7 +3941,7 @@ class MemoApp:
         # is False (default) - the code stays, behind the flag.
         if self.settings.get("island_enabled", False) and not not_activated:
             # v1.6.4 fixed canvas (WindyLand/Nusa): created ONCE at the
-            # expanded canvas size (720x400 logical) and NEVER resized.
+            # expanded canvas size (520x300 logical) and NEVER resized.
             # The pill/panel animation is pure HTML/CSS inside it.
             # Centered with the system DPI scale (the passthrough loop
             # re-places it from the real HWND DPI once known).
@@ -4151,7 +4154,7 @@ class MemoApp:
         deadline = time.time() + 60
         while time.time() < deadline and any(pending.values()):
             if pending.get("island"):
-                # v1.6.4 fixed canvas: the window is already 720x400 -
+                # v1.6.4 fixed canvas: the window is already 520x300 -
                 # find it by title + canvas height (main is 860 tall),
                 # apply the region ONCE, then start the passthrough +
                 # clipboard loops. No region is ever applied again by

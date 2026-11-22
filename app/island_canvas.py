@@ -43,12 +43,12 @@
 # gives no evidence that works inside a layered window. So LONA takes
 # the fixed-canvas half of the method instead:
 #   - the island window is created ONCE at the expanded canvas size
-#     (720x400 logical) and NEVER resized;
+#     (520x300 logical) and NEVER resized;
 #   - SetWindowRgn is applied ONCE at creation for the full canvas
 #     (rounded rect, radius 26) and never touched again - it then
 #     verifies cleanly by read-back, because nothing moves under it;
 #   - collapsed <-> expanded animates purely in HTML/CSS inside the
-#     fixed canvas (the pill is 380x60, the panel 720x400);
+#     fixed canvas (the pill is 380x60, the panel 520x300);
 #   - when collapsed, WS_EX_TRANSPARENT makes the invisible band
 #     click-through, with a 90 ms GetCursorPos poll that removes the
 #     flag and opens the island the moment the cursor is over the pill
@@ -76,9 +76,10 @@ IS_WINDOWS = winshape.IS_WINDOWS
 
 # Fixed canvas (logical px). The window is created at this size once
 # and never resized. Mohamed's laptop is 150% scaling, so the canvas
-# is 1080x600 physical there.
-ISLAND_CANVAS_W = 720
-ISLAND_CANVAS_H = 400
+# is 780x450 physical there. Must match ISLAND_CANVAS_W/H in main.py
+# (main.py duplicates these constants - it does not import them).
+ISLAND_CANVAS_W = 520
+ISLAND_CANVAS_H = 300
 ISLAND_PILL_W = 380
 ISLAND_PILL_H = 60
 ISLAND_CANVAS_RADIUS = 26
@@ -280,7 +281,7 @@ def island_passthrough_loop(hwnd: int, is_expanded, on_hover_open,
                             stop_flag, poll_seconds: float = PASSTHROUGH_POLL_SEC):
     """Daemon loop. Preference order (Nusa finding #5):
     1. WindyLand toggle (PREFERRED): while collapsed the window is
-       click-through (WS_EX_TRANSPARENT) so the invisible 720x400 band
+       click-through (WS_EX_TRANSPARENT) so the invisible 520x300 band
        never eats clicks on the apps underneath. Every ~90 ms it polls
        the cursor: over the pill -> remove the flag and open the island
        (on_hover_open); anywhere else -> keep the flag. While expanded
