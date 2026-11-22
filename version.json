@@ -42,9 +42,9 @@
     }
   ],
   "notes": "v2.0.0: إعادة بناء من الصفر — حزمة lona2/ جديدة بالكامل (نافذة رئيسية frameless بأزرار شغالة، جزيرة ديناميكية في نافذة منفصلة بـ SetWindowRgn، شات Groq ← Gemini مع Deep Think ومبدّل موديلات، صفحة جهاز حية بحرارة LHM على اسم السينسور، مهام، 5 ثيمات Liquid Glass الافتراضي، إعدادات 13 قسم كلها شغالة، كود دعوة hash بس، كود مالك PBKDF2، نسخة احتياطية مشفرة، سجل تشخيص، محدّث آمن). التثبيت بيحدّث v1.6.3 في مكانه وبينقل الإعدادات وكود الدعوة والمفاتيح. اللي لسه متأجل للمرحلة 2: الملفات العميقة، تنظيف الكاش مع التراجع، التحية الصباحية، واتساب، إضافة كروم، الصوت وكلمة التنبيه. دي نسخة معاينة (prerelease) — النسخة المستقرة لسه v1.6.3.",
-  "setup_sha256": "8cac02998f350743c07a292bd9763a6f5bbc3e61c07e98c1d3baa9c9b842fc8b",
-  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.6.3/LONA-Setup-1.6.3.exe",
-  "sha256": "7a5dfa08061e7589e20da162a911f5435f4cb581dca279ac993daa0f2ede9289",
-  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v1.6.3/memo-ai-v1.6.3.zip",
-  "version": "1.6.3"
+  "setup_sha256": "10196f276ec8ab366ed5e13d366e006e1ae0c99f28f0d9a58e2638dddf5e542a",
+  "setup_url": "https://github.com/mohamed5946/memo-ai/releases/download/v2.0.0-rebuild.4/LONA-Setup-2.0.0.exe",
+  "sha256": "504c409ca6c62825be57bf7a19f88c736826fe09e8170ae011c8f46dd13ec88c",
+  "url": "https://github.com/mohamed5946/memo-ai/releases/download/v2.0.0-rebuild.4/lona-v2.0.0.zip",
+  "version": "2.0.0"
 }
