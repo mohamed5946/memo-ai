@@ -143,10 +143,27 @@ header .spacer { flex: 1; }
 /* ---------- chat ---------- */
 .chat {
   flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
-  padding: 12px 6px; scroll-behavior: smooth;
+  /* v1.6.1: bottom padding clears the sticky composer, so the last
+     messages can be scrolled up above the bar instead of hiding
+     behind it. */
+  padding: 12px 6px 96px; scroll-behavior: smooth;
 }
-.chat::-webkit-scrollbar { width: 6px; }
-.chat::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 3px; }
+/* v1.6.1 item 17 — ONE themed scrollbar everywhere. The white classic
+   bar (thick, with arrows) Mohamed saw was .main-col's default
+   scrollbar: overflow-y:auto with no webkit rules at all. The global *
+   rule below covers every scrollable container (.chat, .main-col,
+   .modal, .perm-detail, .log-box, .proc-list, and any added later):
+   thin 6px, transparent track, thumb from the theme variables
+   (--m-muted, --m-accent on hover) so it follows the active theme,
+   no buttons/arrows, no white anywhere. Firefox: scrollbar-width/color.
+   The old .chat-only rules (hardcoded near-white thumb) are replaced. */
+* { scrollbar-width: thin; scrollbar-color: var(--m-muted) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--m-muted); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--m-accent); }
+*::-webkit-scrollbar-button { display: none; }
+*::-webkit-scrollbar-corner { background: transparent; }
 .msg {
   max-width: 82%; padding: 12px 16px; border-radius: 20px; font-size: 15px; line-height: 1.65;
   animation: msg-in 0.35s var(--ease); word-wrap: break-word; white-space: pre-wrap;
@@ -159,8 +176,8 @@ header .spacer { flex: 1; }
   box-shadow: 0 6px 18px rgba(0,0,0,0.35);
 }
 .msg.ai {
-  align-self: flex-end; background: var(--glass-2);
-  border: 1px solid var(--border); border-end-end-radius: 6px;
+  align-self: flex-end; background: var(--m-bubble);
+  border: 1px solid var(--m-line); border-end-end-radius: 6px;
 }
 .msg .meta { display: block; font-size: 11px; color: var(--muted); margin-top: 6px; }
 .msg.gen-image { padding: 6px; }
@@ -486,12 +503,14 @@ header .spacer { flex: 1; }
 /* ================= v1.6.0 LONA redesign =================
    4 themes (3 new directions + old v1.5.0 theme, never deleted).
    Switching = smooth animated MORPH (~450ms ease, no flash). */
-/* Theme variables: D1 night-glass, D2 calm-space, D3 dashboard, old. */
+/* Theme variables: D1 night-glass (deep sapphire + bright gold, glassy),
+   D2 calm-space (light, unchanged), D3 dashboard (graphite + vivid orange),
+   old (true v1.5.0 values — see git show v1.5.0:app/ui/styles.css :root). */
 :root, [data-theme="night-glass"] {
-  --m-bg:#0A0E14; --m-chrome:#0D131C; --m-side:#0D141F; --m-card:#121A26; --m-listbg:#0D141F;
-  --m-bubble:#16202F; --m-pill:rgba(232,201,122,.13); --m-track:#1D2939; --m-line:rgba(140,170,200,.16);
-  --m-text:#EDF2F7; --m-muted:#8FA5B8; --m-accent:#E8C97A; --m-accent2:#67E8F9; --m-on-accent:#131A08;
-  --m-glass:rgba(16,24,36,.72); --m-radius:18px;
+  --m-bg:#0A1A2C; --m-chrome:#0C1E30; --m-side:#0D2033; --m-card:#14273D; --m-listbg:#0C1C2C;
+  --m-bubble:#1B3249; --m-pill:rgba(240,199,94,.18); --m-track:#22384F; --m-line:rgba(125,180,220,.22);
+  --m-text:#EFF4FA; --m-muted:#93A9C2; --m-accent:#F0C75E; --m-accent2:#8FF4FF; --m-on-accent:#241A02;
+  --m-glass:rgba(10,26,44,.55); --m-radius:18px;
 }
 [data-theme="calm-space"] {
   --m-bg:#F4F6F3; --m-chrome:#E9EDE8; --m-side:#EEF1EC; --m-card:#FFFFFF; --m-listbg:#FFFFFF;
@@ -500,25 +519,61 @@ header .spacer { flex: 1; }
   --m-glass:rgba(255,255,255,.75); --m-radius:18px;
 }
 [data-theme="dashboard"] {
-  --m-bg:#101014; --m-chrome:#141419; --m-side:#141419; --m-card:#1A1A21; --m-listbg:#141419;
-  --m-bubble:#1F1F28; --m-pill:rgba(255,176,102,.13); --m-track:#26262F; --m-line:rgba(200,200,220,.13);
-  --m-text:#F2F0EB; --m-muted:#A3A0A8; --m-accent:#FFB066; --m-accent2:#8FD0C5; --m-on-accent:#241203;
-  --m-glass:rgba(22,22,28,.72); --m-radius:9px;
+  --m-bg:#22222C; --m-chrome:#26262F; --m-side:#26262F; --m-card:#2C2C38; --m-listbg:#20202A;
+  --m-bubble:#34343F; --m-pill:rgba(255,154,61,.20); --m-track:#3A3A46; --m-line:rgba(255,255,255,.10);
+  --m-text:#F5F2EA; --m-muted:#A8A5AD; --m-accent:#FF9A3D; --m-accent2:#8FD0C5; --m-on-accent:#2A1500;
+  --m-glass:rgba(34,34,44,.78); --m-radius:9px;
 }
+/* old = the true v1.5.0 palette, restored (never deleted):
+   --bg #0a0e14, --bg-2 #10151f, --gold #e8c97a, --cyan #67e8f9,
+   --gold-soft rgba(232,201,122,.16), --border rgba(255,255,255,.09),
+   --text #f2f4f8, --muted #9aa3b2, --radius 22px, card surface #121826,
+   track #1e293b. --m-bubble is the v1.5.0 AI bubble flattened:
+   rgba(255,255,255,.08) over #0a0e14 = #1e2127. */
 [data-theme="old"] {
   --m-bg:#0a0e14; --m-chrome:#10151f; --m-side:#0d121c; --m-card:#121826; --m-listbg:#0d121c;
-  --m-bubble:#16202f; --m-pill:rgba(232,201,122,.16); --m-track:#1d2939; --m-line:rgba(255,255,255,.09);
+  --m-bubble:#1e2127; --m-pill:rgba(232,201,122,.16); --m-track:#1e293b; --m-line:rgba(255,255,255,.09);
   --m-text:#f2f4f8; --m-muted:#9aa3b2; --m-accent:#e8c97a; --m-accent2:#67e8f9; --m-on-accent:#231a05;
   --m-glass:rgba(13,18,28,.72); --m-radius:22px;
 }
 /* Morph transition: every themed surface eases between themes. */
-body, .app, header, .modal, .msg, .sidebar, .stat-card, .proc-list, .composer,
-.text-input, .theme-card, .choice-card, .action-msg, .invite-box {
+body, .app, header, .modal, .msg, .sidebar, .side-nav, .stat-card, .proc-list, .composer,
+.text-input, .send-btn, .theme-card, .choice-card, .action-msg, .invite-box {
   transition: background-color .45s ease, color .45s ease, border-color .45s ease,
     box-shadow .45s ease, border-radius .45s ease;
 }
 body[data-theme="night-glass"], body[data-theme="calm-space"],
 body[data-theme="dashboard"], body[data-theme="old"] { background: var(--m-bg); color: var(--m-text); }
+
+/* Per-theme large surfaces: the user bubble + send button were frozen
+   v1.5.0 blue gradients in every theme (hardcoded, never themed), which
+   is a big part of why the dark themes looked identical — the chat area
+   is the largest thing on screen. Each theme now paints them in its own
+   colours. Old keeps the true v1.5.0 blue (base rules above), so it needs
+   no override here. Dashboard orange is a full button / bubble / active
+   nav, not a dot. */
+body[data-theme="night-glass"] .msg.user {
+  background: linear-gradient(150deg, #2E4E74, #16283C);
+}
+body[data-theme="dashboard"] .msg.user {
+  background: linear-gradient(150deg, #FF9A3D, #E56E00); color: var(--m-on-accent);
+}
+body[data-theme="calm-space"] .msg.user {
+  background: linear-gradient(150deg, #3E8F66, #2E7D57); color: #FFFFFF;
+}
+body[data-theme="night-glass"] .send-btn {
+  background: linear-gradient(160deg, #F0C75E, #C9A227); color: #241A02;
+}
+body[data-theme="dashboard"] .send-btn {
+  background: linear-gradient(160deg, #FF9A3D, #E56E00); color: #2A1500;
+}
+body[data-theme="calm-space"] .send-btn {
+  background: linear-gradient(160deg, #3E8F66, #2E7D57); color: #FFFFFF;
+}
+/* Dashboard active nav = solid orange, not a faint tint. */
+body[data-theme="dashboard"] .side-nav.active {
+  background: var(--m-accent); color: var(--m-on-accent); border-color: transparent;
+}
 
 /* ---------- window bar ---------- */
 .window-bar { display: flex; align-items: center; gap: 8px; padding: 2px 4px 0; }
@@ -625,20 +680,20 @@ body[data-theme="dashboard"], body[data-theme="old"] { background: var(--m-bg); 
 .replay-btn { align-self: flex-start; font-size: 12.5px; padding: 6px 12px; border-radius: 999px;
   border: 1px solid var(--m-line); background: var(--m-pill); color: var(--m-text); }
 
+/* ---------- temperature hint (v1.6.1 11b): shown once per session,
+   only while the temperature is unavailable — never a made-up number ---------- */
+.temp-hint { background: var(--m-card); border: 1px solid var(--m-line); border-radius: var(--m-radius);
+  padding: 12px 14px; display: flex; align-items: center; gap: 10px; font-size: 13.5px; line-height: 1.6; }
+.temp-hint[hidden] { display: none; }
+.temp-hint a { color: var(--m-accent); font-weight: 700; white-space: nowrap; }
+.temp-hint-dismiss { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+  border: 1px solid var(--m-line); background: var(--m-pill); color: var(--m-text); font-size: 13px; }
+
 /* ---------- quick-scan card ---------- */
 .quick-scan { order: 4; background: var(--m-card); border: 1px solid var(--m-line); border-radius: var(--m-radius); padding: 12px 14px;
   display: flex; align-items: center; gap: 12px; font-size: 14px; }
 .quick-scan .qs-dot { width: 10px; height: 10px; border-radius: 50%; background: #3ECF8E; box-shadow: 0 0 8px #3ECF8E; flex-shrink: 0; }
 .quick-scan button { margin-inline-start: auto; }
-
-/* ---------- floating glass pill nav (TRANSPARENT corners) ---------- */
-.pill-nav { position: fixed; bottom: 74px; left: 50%; transform: translateX(-50%); z-index: 40;
-  display: flex; gap: 4px; padding: 8px 10px; border-radius: 999px;
-  background: var(--m-glass); border: 1px solid var(--m-line);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 12px 32px rgba(0,0,0,.4); }
-.pill-nav button { padding: 8px 14px; border-radius: 999px; font-size: 13.5px; font-weight: 700; color: var(--m-text); }
-.pill-nav button.active { background: var(--m-pill); }
 
 /* ---------- choice cards ---------- */
 .choice-cards { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
@@ -664,7 +719,13 @@ body[data-theme="dashboard"], body[data-theme="old"] { background: var(--m-bg); 
 .action-msg .action-state { font-size: 12.5px; color: var(--m-muted); }
 
 /* ---------- composer: + attach menu + Deep Think ---------- */
-.composer { order: 5; }
+/* v1.6.1: the composer is STICKY at the bottom of the main column —
+   it never scrolls away with the chat. The glass background + blur
+   keep scrolled messages from showing through the bar. */
+.composer { order: 5; position: sticky; bottom: 0; z-index: 20;
+  background: var(--m-glass); border: 1px solid var(--m-line);
+  border-radius: 18px; padding: 8px 10px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 .attach-wrap { position: relative; flex-shrink: 0; }
 .attach-btn { width: 44px; height: 44px; border-radius: 50%; font-size: 22px; flex-shrink: 0;
   background: var(--m-card); border: 1px solid var(--m-line); color: var(--m-text);
@@ -721,6 +782,10 @@ body[data-theme="dashboard"], body[data-theme="old"] { background: var(--m-bg); 
 /* ---------- main views (sidebar-switched) ---------- */
 .main-view[hidden] { display: none; }
 .chat-view { order: 3; }
+/* v1.6.1 (item 20): the settings menu + sections are full views now, so
+   their headings keep the styling the old .modal h2/h3 rules gave them. */
+.main-view h2 { font-size: 20px; margin-bottom: 4px; }
+.main-view h3 { font-size: 15px; color: var(--gold); margin: 20px 0 10px; }
 
 /* ================= v1.6.0 scope addition (3)(4)(6)(7)(10) ================= */
 /* (3) Image / screenshot warning card — shown BEFORE any image leaves

@@ -59,11 +59,11 @@ def _model_status() -> str:
     except Exception:
         online = False
     if groq_key and online:
-        return "Groq متصل ✅ (المفتاح موجود)"
+        return "Groq متصل (المفتاح موجود)"
     if groq_key and not online:
         return "Groq: المفتاح موجود بس مفيش نت دلوقتي"
     if not groq_key and online:
-        return "Groq: مفيش مفتاح — دخّل مفتاحك من الإعدادات ← مفاتيح API"
+        return "Groq: مفيش مفتاح — دخّل مفتاحك من الإعدادات » مفاتيح API"
     return "Groq مش متصل (مفيش مفتاح ومفيش نت)"
 
 
@@ -99,7 +99,7 @@ def get_self_view(mood: str = "", monitor=None, settings: dict | None = None,
         if temp_c is not None:
             temp_txt = f"{temp_c}°م"
             if float(temp_c) >= 90:
-                temp_txt += " — سخنة جداً ⚠️"
+                temp_txt += " — سخنة جداً"
             elif float(temp_c) >= 85:
                 temp_txt += " — عالية"
             else:
@@ -119,10 +119,10 @@ def get_self_view(mood: str = "", monitor=None, settings: dict | None = None,
         {"label": "استهلاك لونا نفسها", "value": own_txt},
         {"label": "حرارة الجهاز", "value": temp_txt},
         {"label": "الملفات العميقة",
-         "value": ("مقفولة 🔒 — محتاجة إذنك الأول" if deep_locked
+         "value": ("مقفولة — محتاجة إذنك الأول" if deep_locked
                    else "مفتوحة بإذنك")},
         {"label": "إضافة Chrome",
-         "value": ("متصلة ✅" if _extension_connected()
+         "value": ("متصلة" if _extension_connected()
                    else "مش متصلة — افتح Chrome وثبّت الإضافة")},
         {"label": "حالة المخ", "value": _model_status()},
     ]

@@ -1,4 +1,4 @@
-# Memo AI — build the Windows installer + source zip, attach both to a release.
+# LONA — build the Windows installer + source zip, attach both to a release.
 #
 # Triggers: a version tag push (v*) or a manual dispatch.
 # Runs on windows-latest: PyInstaller (one-folder exe) -> Inno Setup
@@ -9,7 +9,7 @@
 # release URLs + SHA-256 hashes (zip + setup) and pushed back, so the
 # in-app updater's manifest always matches the real release files.
 
-name: Build Memo AI installer
+name: Build LONA installer
 
 on:
   push:
@@ -102,15 +102,15 @@ jobs:
           $ErrorActionPreference = "Stop"
           pyinstaller installer/memo-ai.spec
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
-          if (-not (Test-Path "dist\Memo AI\Memo AI.exe")) { throw "Memo AI.exe was not produced" }
-          if (-not (Test-Path "dist\Memo AI\_internal\app\ui\index.html")) { throw "Bundled UI is missing from dist (expected under _internal)" }
-          if (-not (Test-Path "dist\Memo AI\_internal\webview\js\api.js")) { throw "webview/js/api.js missing from bundle — window.pywebview would never exist" }
-          if (-not (Test-Path "dist\Memo AI\_internal\app\ui\assets\cat-run.png")) { throw "cat-run.png missing from bundle — the pet run animation would have no sprite" }
+          if (-not (Test-Path "dist\LONA\LONA.exe")) { throw "LONA.exe was not produced" }
+          if (-not (Test-Path "dist\LONA\_internal\app\ui\index.html")) { throw "Bundled UI is missing from dist (expected under _internal)" }
+          if (-not (Test-Path "dist\LONA\_internal\webview\js\api.js")) { throw "webview/js/api.js missing from bundle — window.pywebview would never exist" }
+          if (-not (Test-Path "dist\LONA\_internal\app\ui\assets\cat-run.png")) { throw "cat-run.png missing from bundle — the pet run animation would have no sprite" }
           # v1.4.0: the WhatsApp sidecar + bundled Node runtime must be in
           # the bundle, or linking silently does nothing on the user's PC.
-          if (-not (Test-Path "dist\Memo AI\_internal\app\whatsapp_sidecar\sidecar.js")) { throw "whatsapp sidecar.js missing from bundle" }
-          if (-not (Test-Path "dist\Memo AI\_internal\app\whatsapp_sidecar\node_modules\@whiskeysockets\baileys\package.json")) { throw "Baileys missing from bundle" }
-          if (-not (Test-Path "dist\Memo AI\_internal\app\whatsapp_sidecar\node\node.exe")) { throw "bundled node.exe missing from bundle — WhatsApp cannot run" }
+          if (-not (Test-Path "dist\LONA\_internal\app\whatsapp_sidecar\sidecar.js")) { throw "whatsapp sidecar.js missing from bundle" }
+          if (-not (Test-Path "dist\LONA\_internal\app\whatsapp_sidecar\node_modules\@whiskeysockets\baileys\package.json")) { throw "Baileys missing from bundle" }
+          if (-not (Test-Path "dist\LONA\_internal\app\whatsapp_sidecar\node\node.exe")) { throw "bundled node.exe missing from bundle — WhatsApp cannot run" }
           # v1.3.1: the chroma-key is DELETED for good - it left the magenta
           # box visible AND made both windows fully click-through. Fail the
           # build loudly if the color or the mechanism ever comes back.
@@ -139,13 +139,13 @@ jobs:
           if (-not (Test-Path $iscc)) { $iscc = "ISCC.exe" }
           & $iscc /DAppVersion=$env:MEMO_VERSION installer\memo-ai.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed" }
-          if (-not (Test-Path "release\MemoAI-Setup-$env:MEMO_VERSION.exe")) { throw "setup.exe was not produced" }
+          if (-not (Test-Path "release\LONA-Setup-$env:MEMO_VERSION.exe")) { throw "setup.exe was not produced" }
 
       - name: Upload setup.exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MemoAI-Setup-${{ github.ref_name }}
-          path: release/MemoAI-Setup-*.exe
+          name: LONA-Setup-${{ github.ref_name }}
+          path: release/LONA-Setup-*.exe
           if-no-files-found: error
 
       - name: Create or update GitHub release
@@ -155,7 +155,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $tag = $env:MEMO_TAG
-          $setup = (Get-ChildItem release\MemoAI-Setup-*.exe | Select-Object -First 1).FullName
+          $setup = (Get-ChildItem release\LONA-Setup-*.exe | Select-Object -First 1).FullName
           $zip = (Get-ChildItem release\memo-ai-*.zip | Select-Object -First 1).FullName
           if (-not $setup -or -not $zip) { throw "Release files missing" }
           gh release view $tag *> $null
@@ -179,15 +179,15 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = $env:MEMO_TAG
           $ver = $env:MEMO_VERSION
-          $setup = (Get-ChildItem release\MemoAI-Setup-*.exe | Select-Object -First 1).FullName
+          $setup = (Get-ChildItem release\LONA-Setup-*.exe | Select-Object -First 1).FullName
           $zip = (Get-ChildItem release\memo-ai-*.zip | Select-Object -First 1).FullName
           $setupSha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
           $zipSha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           git fetch origin main
           git checkout main
-          python -c "import json; p='version.json'; m=json.load(open(p, encoding='utf-8')); m.update({'version':'$ver','url':'https://github.com/mohamed5946/memo-ai/releases/download/$tag/memo-ai-v$ver.zip','sha256':'$zipSha','setup_url':'https://github.com/mohamed5946/memo-ai/releases/download/$tag/MemoAI-Setup-$ver.exe','setup_sha256':'$setupSha'}); json.dump(m, open(p,'w',encoding='utf-8'), ensure_ascii=False, indent=2)"
+          python -c "import json; p='version.json'; m=json.load(open(p, encoding='utf-8')); m.update({'version':'$ver','url':'https://github.com/mohamed5946/memo-ai/releases/download/$tag/memo-ai-v$ver.zip','sha256':'$zipSha','setup_url':'https://github.com/mohamed5946/memo-ai/releases/download/$tag/LONA-Setup-$ver.exe','setup_sha256':'$setupSha'}); json.dump(m, open(p,'w',encoding='utf-8'), ensure_ascii=False, indent=2)"
           if ($LASTEXITCODE -ne 0) { throw "version.json update failed" }
-          git config user.name "Memo AI builder"
+          git config user.name "LONA builder"
           git config user.email "memo-ai-builder@users.noreply.github.com"
           git add version.json
           git diff --cached --quiet

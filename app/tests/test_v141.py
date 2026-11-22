@@ -53,28 +53,38 @@ def _read(rel: str) -> str:
 
 class TestPetIslandRemoved(unittest.TestCase):
     def test_flags_default_off(self):
+        # v1.6.1: deliberate behavior change - the island is ON by
+        # default now (rebuilt in v1.6.0; the v1.4.1 kill-switch default
+        # was never flipped and no toggle ever existed). The pet stays
+        # OFF. Only the island default changed; everything else below
+        # (windows behind flags, self-test file set) is unchanged.
         import main
         from settings_store import DEFAULTS
         self.assertIs(DEFAULTS["pet_enabled"], False)
-        self.assertIs(DEFAULTS["island_enabled"], False)
+        self.assertIs(DEFAULTS["island_enabled"], True)
         app = main.MemoApp()
         try:
-            # Flags off (default): only the main window, and the
-            # self-test never requires the disabled pages' files.
-            self.assertEqual(app._enabled_windows(), ["main"])
-            self.assertEqual(app._watchdog_pages(), {"main"})
-            self.assertNotIn("island.html", app._selftest_ui_files())
+            # Defaults: main + island windows, pet still disabled; the
+            # self-test requires the island page but never the pet's.
+            self.assertEqual(app._enabled_windows(), ["main", "island"])
+            self.assertEqual(app._watchdog_pages(), {"main", "island"})
+            self.assertIn("island.html", app._selftest_ui_files())
             self.assertNotIn("pet.html", app._selftest_ui_files())
-            # Flags on (user re-enables them later): the windows and
-            # their files come back behind the flags.
+            # Pet on (user re-enables it later): its window and files
+            # come back behind the flag.
             app.settings["pet_enabled"] = True
-            app.settings["island_enabled"] = True
             self.assertEqual(sorted(app._enabled_windows()),
                              ["island", "main", "pet"])
-            self.assertIn("island.html", app._selftest_ui_files())
             self.assertIn("pet.html", app._selftest_ui_files())
             self.assertEqual(app._watchdog_pages(),
                              {"main", "island", "pet"})
+            # Island off (user turns it off in Settings): back to the
+            # main window only, like the old default.
+            app.settings["pet_enabled"] = False
+            app.settings["island_enabled"] = False
+            self.assertEqual(app._enabled_windows(), ["main"])
+            self.assertEqual(app._watchdog_pages(), {"main"})
+            self.assertNotIn("island.html", app._selftest_ui_files())
         finally:
             main._APP = None
 
@@ -294,7 +304,7 @@ class TestVoiceAvatarPersistence(unittest.TestCase):
         # The old "cat only" early return is gone.
         self.assertNotIn('if (opt.dataset.avatar !== "cat") return;', js)
         # The load path restores + applies the avatar (was hardcoded cat).
-        self.assertIn('selectedAvatar = st.settings.avatar || "cat";', js)
+        self.assertIn('selectedAvatar = st.settings.avatar || "robot";', js)
         self.assertIn("applyAvatar();", js)
         # The General save payload carries the avatar too (safety net).
         self.assertIn("avatar: selectedAvatar,", js)
@@ -448,7 +458,9 @@ class TestSettingsReorg(unittest.TestCase):
             self.assertIn(f'id="section-{section}"', html)
         # v1.6.0 adds 5 sections (themes, api-keys, self-view,
         # first-run, backup), each with its own back button: 9 + 5.
-        self.assertEqual(html.count('class="back-btn'), 14)
+        # v1.6.1: the invite code left Settings for the first-launch
+        # gate, so first-run has no section/back button anymore: 9 + 4.
+        self.assertEqual(html.count('class="back-btn'), 13)
         self.assertIn('id="settings-menu"', html)
         # Quit lives on the menu; Save lives in its own section.
         self.assertIn('id="quit-btn"', html)
@@ -835,17 +847,17 @@ class TestVersionAndInstaller(unittest.TestCase):
 
     def test_version_consistency_v141(self):
         import main
-        self.assertEqual(main.VERSION, "1.4.2")
-        self.assertIn("v1.4.2", _read("app/ui/index.html"))
-        self.assertIn("1, 4, 2, 0",
+        self.assertEqual(main.VERSION, "1.6.1")
+        self.assertIn("v1.6.1", _read("app/ui/index.html"))
+        self.assertIn("1, 6, 1, 0",
                       _read("installer/file_version_info.txt"))
-        self.assertIn("'1.4.2'", _read("installer/file_version_info.txt"))
+        self.assertIn("'1.6.1'", _read("installer/file_version_info.txt"))
         # v1.4.2: the manifest is updated by the post-release commit
         # (af85c62 did this for v1.4.1) - so it must EQUAL the app
         # version now, not lag one behind. Checked after that commit.
         manifest = json.loads(_read("version.json"))
         self.assertEqual(manifest["version"], main.VERSION)
-        self.assertIn("1.4.2", manifest["notes"])
+        self.assertIn("1.6.1", manifest["notes"])
 
 
 if __name__ == "__main__":

@@ -152,7 +152,7 @@ class TestSystemStatusTool(unittest.TestCase):
         self.assertIn("4096MB مستخدمة من 8192MB", text)
         self.assertIn("فاضي 42.0GB من 256.0GB", text)
         self.assertIn("المعالج: 12.5%", text)
-        self.assertIn("البطارية: 99% (بتشحن 🔌)", text)
+        self.assertIn("البطارية: 99% (بتشحن)", text)
 
 
 class TestHiddenSpawn(unittest.TestCase):

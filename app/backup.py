@@ -2,8 +2,9 @@
 #
 # export_settings_backup(path, password) -> a ZIP containing:
 #   settings.json  (plain - settings hold no secrets)
-#   keys.enc       (Groq + Gemini keys, encrypted with a password-derived
-#                   Fernet key: PBKDF2HMAC-SHA256, 100k iterations)
+#   keys.enc       (Groq + Gemini voice/chat keys, encrypted with a
+#                   password-derived Fernet key: PBKDF2HMAC-SHA256,
+#                   100k iterations)
 #   manifest.json  ({"salt": base64, "kdf": "PBKDF2HMAC-SHA256",
 #                    "iterations": 100000, "version": 1})
 # import_settings_backup(path, password) restores settings + keys into

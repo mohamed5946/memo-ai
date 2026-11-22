@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from logger import error, warn
+from logger import error, info, warn
 
 
 def resolve_app_paths() -> tuple:
@@ -43,9 +43,9 @@ DEFAULTS = {
     "voice": "girl_warm",        # boy_calm | boy_fun | girl_warm | girl_fast
     "voice_output": True,        # v1.3.0: speaker toggle - speak replies?
     "greeting_enabled": True,
-    "avatar": "cat",
+    "avatar": "robot",
     # v1.3.1: the pet is HIDDEN by default - it only ever appears when
-    # the user shows it (Settings toggle / 🐾 button), never on its own
+    # the user shows it (Settings toggle / pet button), never on its own
     # at startup or at Windows boot. The state persists once he chooses.
     "pet_visible": False,
     "pet_parked": False,
@@ -55,13 +55,26 @@ DEFAULTS = {
     # pet_visible=True, so the new hidden-by-default rule is applied
     # once on the first v1.3.1 run, then the user's own choice rules.
     "pet_default_v131": False,
-    # v1.4.1: the pet + island are DISABLED by the user's decision
+    # v1.4.1: the pet + island were DISABLED by the user's decision
     # (2026-11-07: "they still have problems") - their windows are
     # NEVER created and no pet/island code runs at startup. The code
-    # stays behind these flags (not deleted) so they can come back
-    # once fixed - flip them in settings.json to re-enable.
+    # stays behind these flags (not deleted).
+    # v1.6.1: the island was rebuilt in v1.6.0, so it is ON by default
+    # now - the pill shows at startup and the main window opens from
+    # it. The pet stays OFF (still disabled by that decision).
     "pet_enabled": False,
-    "island_enabled": False,
+    "island_enabled": True,
+    # v1.6.1 one-time migration: existing installs saved
+    # island_enabled=False, but no Settings toggle ever existed, so
+    # nobody could have explicitly turned it off - the first v1.6.1
+    # run enables it once (see load_settings), then the user's own
+    # choice rules.
+    "island_migrated_v161": False,
+    # v1.6.1 one-time identity migration (rename Memo -> LONA).
+    # The pre-rename default identity was ai_name "Memo" + whatever
+    # avatar was picked; it migrates as ONE unit (see load_settings).
+    # A custom name is never touched by it.
+    "identity_migrated_v161": False,
     # v1.3.0: NO owner_code setting anymore. The owner code is stored
     # ONLY as a SHA-256 hash in main.py (OWNER_CODE_HASH) - never as
     # plaintext in settings.json, logs, or anywhere else.
@@ -155,7 +168,60 @@ def load_settings() -> dict:
     except Exception as exc:
         error("app", f"Could not load settings.json, using defaults: {exc}")
     settings["owner_unlocked"] = False  # owner mode never survives a restart
+    # v1.6.1: one-time island migration (see DEFAULTS) - existing
+    # installs saved island_enabled=False under the old kill-switch.
+    # The marker persists on the next save_settings() call; until then
+    # re-applying True on every load is harmless (a user's own choice
+    # is only ever written through save_settings, which also persists
+    # the marker, so it can never be re-enabled against their will).
+    if not settings.get("island_migrated_v161", False):
+        was_off = settings.get("island_enabled") is False
+        settings["island_enabled"] = True
+        settings["island_migrated_v161"] = True
+        if was_off:
+            info("app", "Island enabled by v1.6.1 migration "
+                        "(was off under the v1.4.1 kill-switch)")
+    # v1.6.1: one-time identity migration (rename Memo -> LONA).
+    # The pre-rename default identity was ai_name "Memo" (or empty)
+    # + the picked avatar; it migrates as ONE unit - the name becomes
+    # "LONA" and the header/identity avatar becomes the gold robot.
+    # A custom name is left alone, avatar included: only the old
+    # default moves. The canned self-introductions in qa.json /
+    # rules.json ("أنا Memo") move with it, so the bot never
+    # introduces itself by the old name again.
+    if not settings.get("identity_migrated_v161", False):
+        name = str(settings.get("ai_name") or "").strip()
+        if name == "" or name == "Memo":
+            settings["ai_name"] = "LONA"
+            settings["avatar"] = "robot"
+            _migrate_identity_answers()
+            info("app", "Identity migrated to LONA + robot avatar "
+                        "(was the pre-rename default)")
+        settings["identity_migrated_v161"] = True
     return settings
+
+
+def _migrate_identity_answers() -> None:
+    """One-time rewrite of the canned self-introductions in
+    app/data/qa.json + rules.json ("أنا Memo" -> "أنا LONA").
+    Exact strings only; a missing/unreadable file is skipped."""
+    for fname, pairs in (("qa.json", (("أنا Memo،", "أنا LONA،"),
+                                     ("I'm Memo,", "I'm LONA,"))),
+                         ("rules.json", (("أنا Memo،", "أنا LONA،"),))):
+        try:
+            path = DATA_DIR / fname
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            new = text
+            for old, new_s in pairs:
+                new = new.replace(old, new_s)
+            if new != text:
+                path.write_text(new, encoding="utf-8")
+                info("app", f"Identity answers updated in {fname}")
+        except Exception as exc:
+            warn("app", f"Could not migrate identity answers in {fname}: "
+                        f"{exc}")
 
 
 def save_settings(settings: dict) -> bool:
@@ -181,7 +247,13 @@ def read_key(name: str, quiet: bool = False) -> str:
     value is never logged. (Lazy import: apikeys imports this module
     for paths, so a top-level import would be a cycle.)"""
     provider = {"groq-key.txt": "groq",
-                "gemini-key.txt": "gemini"}.get(str(name or "").strip())
+                # v1.6.1: two separate Gemini keys - voice (TTS) and
+                # chat (LLM fallback + vision). The old single
+                # "gemini-key.txt" is migrated by apikeys (see
+                # migrate_gemini_split) and no longer maps anywhere.
+                "gemini-voice-key.txt": "gemini-voice",
+                "gemini-chat-key.txt": "gemini-chat"}.get(
+                    str(name or "").strip())
     if provider:
         try:
             import apikeys
@@ -232,10 +304,12 @@ def read_azure() -> tuple:
 def keys_status() -> dict:
     """Which optional keys are present (presence only, never values)."""
     groq = bool(read_key("groq-key.txt", quiet=True))
-    gemini = bool(read_key("gemini-key.txt", quiet=True))
+    gemini_voice = bool(read_key("gemini-voice-key.txt", quiet=True))
+    gemini_chat = bool(read_key("gemini-chat-key.txt", quiet=True))
     azure_key, azure_region = read_azure()
     return {
         "groq": groq,
-        "gemini": gemini,
+        "gemini-voice": gemini_voice,
+        "gemini-chat": gemini_chat,
         "azure": bool(azure_key and azure_region),
     }

@@ -76,7 +76,7 @@ def whatsapp_status_line(language: str = "ar") -> str:
             return ("الواتساب مربوط بس رسايله مش بتتفك (مشكلة تشفير) — "
                     f"وصلت {failures} رسايل مش مقروءة ومش بتوصلني، "
                     "فمتقولش إنك استقبلتها؛ الحل إعادة الربط من "
-                    "الإعدادات ← واتساب ← إعادة الربط، وبعدها امسح "
+                    "الإعدادات » واتساب » إعادة الربط، وبعدها امسح "
                     "الـ QR الجديد من واتساب على الرقم التالت.")
         return (f"WhatsApp is linked but its messages are NOT decrypting "
                 f"(encryption failure) — {failures} messages arrived "
@@ -119,12 +119,12 @@ def whatsapp_status_line(language: str = "ar") -> str:
 
 def _linked_line(language: str, masked_phone: str | None) -> str:
     if language == "ar":
-        line = ("الواتساب مربوط ✅ — بتستقبل رسايل واتساب وترد عليها من هنا؛ "
+        line = ("الواتساب مربوط — بتستقبل رسايل واتساب وترد عليها من هنا؛ "
                 "رسايل الرقم الأساسي أوامر للابتوب، وأي رقم تاني ردود شات بس.")
         if masked_phone:
             line += f" (الرقم المربوط: {masked_phone})"
         return line
-    line = ("WhatsApp is linked ✅ — you can receive and reply to WhatsApp "
+    line = ("WhatsApp is linked — you can receive and reply to WhatsApp "
             "messages from here; messages from the main number are laptop "
             "commands, any other number gets chat replies only.")
     if masked_phone:

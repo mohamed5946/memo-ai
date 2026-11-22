@@ -104,7 +104,7 @@ class TestPersonaAndCapabilities(unittest.TestCase):
         self.assertIn("مش مربوط", line)
         self.assertIn("QR", line)
         # The brain must never claim WhatsApp works yet.
-        self.assertNotIn("مربوط ✅", line)
+        self.assertNotIn("الواتساب مربوط", line)
 
     def test_tools_directive_calls_tool_directly(self):
         p = brain.system_prompt("Memo", "Mohamed", "ar", tools_available=True)
@@ -146,7 +146,7 @@ class TestToolLoop(unittest.TestCase):
                 {"id": "call_1", "type": "function",
                  "function": {"name": "open_app",
                               "arguments": json.dumps({"app": "vscode"})}}]},
-            {"content": "فتحت VS Code يا محمد ✅", "tool_calls": []},
+            {"content": "فتحت VS Code يا محمد", "tool_calls": []},
         ]
         with mock.patch.object(brain, "is_online", return_value=True), \
                 mock.patch.object(brain, "_groq_message",
@@ -174,7 +174,7 @@ class TestToolLoop(unittest.TestCase):
                                   "arguments": json.dumps(
                                       {"path": target,
                                        "content": "hello memo"})}}]},
-                {"content": "عملت الملف يا محمد ✅", "tool_calls": []},
+                {"content": "عملت الملف يا محمد", "tool_calls": []},
             ]
             with mock.patch.object(brain, "is_online", return_value=True), \
                     mock.patch.object(brain, "_groq_message",
@@ -352,7 +352,7 @@ class TestSelfTestAndInstaller(unittest.TestCase):
 
     def test_installer_refuses_running_instance(self):
         iss = _read("installer/memo-ai.iss")
-        self.assertIn("AppMutex=Local\\MemoAI-SingleInstance", iss)
+        self.assertIn("AppMutex=Local\\LONA-SingleInstance", iss)
         self.assertIn("CloseApplications=yes", iss)
 
     def test_chroma_key_stays_deleted(self):
@@ -365,9 +365,9 @@ class TestSelfTestAndInstaller(unittest.TestCase):
 
     def test_version_consistency(self):
         import main
-        self.assertEqual(main.VERSION, "1.4.2")
-        self.assertIn("v1.4.2", _read("app/ui/index.html"))
-        self.assertIn("1, 4, 2, 0",
+        self.assertEqual(main.VERSION, "1.6.1")
+        self.assertIn("v1.6.1", _read("app/ui/index.html"))
+        self.assertIn("1, 6, 1, 0",
                       _read("installer/file_version_info.txt"))
         # version.json is updated BY THE CI after the tag build (it
         # carries the real release hashes) - and the post-release commit

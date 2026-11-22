@@ -283,6 +283,22 @@ def tier_for(action: str) -> str:
         "delete_user_file": RED,
         "change_driver": RED,
         "hardware_fault": RED,
+        # -- in-chat permission kinds (tools.request_permission) --
+        # Same rule, one registry: GREEN is harmless, YELLOW needs the
+        # card's ask, RED is dangerous / explicit permission only.
+        # Mapped by what the kind DOES. Unknown kinds stay RED.
+        "clean_cache": GREEN,          # == clear_temp
+        "browser_open": GREEN,         # opens a URL, nothing changes
+        "browser_play_youtube": GREEN,  # plays a video, reversible
+        "open_app": GREEN,             # launches an app, no data change
+        "fix_hung_process": YELLOW,    # the card only appears when the
+        # process may hold unsaved work (tools._tool_fix_hung_process)
+        "create_file": YELLOW,         # a new file, no overwrite
+        "send_whatsapp": YELLOW,       # a message leaves the device
+        "write_file": RED,             # overwrites an existing file
+        "edit_file": RED,              # modifies an existing file
+        "run_command": RED,            # arbitrary command execution
+        "deep_file_access": RED,       # deep files need explicit grant
     }
     return tiers.get(str(action or ""), RED)
 

@@ -4,11 +4,15 @@
 # no model ever touches the laptop by itself.
 #
 # Routing: online -> Groq gpt-oss-120b (free tier, rate limits only).
-#          offline -> local Ollama qwen2.5:3b.
-#          Groq HTTP 429 (daily limit hit) -> fall back to local Qwen 3B.
+#          Groq down -> Gemini 2.5 Flash (CHAT key only, item 23).
+#          offline / all online down -> local Ollama qwen2.5:3b.
+#          Groq HTTP 429 -> read the REAL limit from the response
+#          (body names it, headers carry retry-after); the failure
+#          note names the limit kind.
 
 import json
 import re
+import shutil
 import socket
 
 import requests
@@ -66,13 +70,15 @@ def _capability_block(language: str) -> str:
     """
     keys = keys_status()
     groq_ok = bool(keys.get("groq"))
-    gemini_ok = bool(keys.get("gemini"))
+    gemini_voice_ok = bool(keys.get("gemini-voice"))
+    gemini_chat_ok = bool(keys.get("gemini-chat"))
     if language == "ar":
         lines = [
             "قدراتك الحقيقية (من حالة التطبيق الفعلية — متخترعش غيرها):",
-            f"- المخ الأونلاين (Groq): {'متصل ✅' if groq_ok else 'مش متصل — مفتاح Groq مش متسجل (الإعدادات ← مفاتيح API)'}",
-            f"- الصوت الأونلاين (Gemini TTS): {'متصل ✅' if gemini_ok else 'مش متصل — مفتاح Gemini مش متسجل'}",
-            "- الأدوات على اللابتوب ✅: تقدر تفتح برامج، تعمل ملفات وتكتب فيها، تعدّل ملفات، تقرأ ملفات، وتشغّل أوامر، وتبعت رسايل واتساب، وتدور على النت، وتشوف حالة اللابتوب (رام، قرص، حرارة، بطارية)، وتولّد صور (خدمة مجانية من غير مفتاح) — عن طريق أدواتك. كل إجراء بيظهر لصاحبك رسالة في الشات فيها زرارين: سماح ورفض، فماتسألوش عن الإذن في الكلام — نادي الأداة على طول.",
+            f"- المخ الأونلاين (Groq): {'متصل' if groq_ok else 'مش متصل — مفتاح Groq مش متسجل (الإعدادات » مفاتيح API)'}",
+            f"- الصوت الأونلاين (Gemini TTS): {'متصل' if gemini_voice_ok else 'مش متصل — مفتاح Gemini للصوت مش متسجل'}",
+            f"- المخ البديل (Gemini 2.5 Flash): {'متصل' if gemini_chat_ok else 'مش متصل — مفتاح Gemini للمحادثة مش متسجل (بيشتغل بديل Groq لما Groq يوصل للحد)'}",
+            "- الأدوات على اللابتوب: تقدر تفتح برامج، تعمل ملفات وتكتب فيها، تعدّل ملفات، تقرأ ملفات، وتشغّل أوامر، وتبعت رسايل واتساب، وتدور على النت، وتشوف حالة اللابتوب (رام، قرص، حرارة، بطارية)، وتولّد صور (خدمة مجانية من غير مفتاح) — عن طريق أدواتك. كل إجراء بيظهر لصاحبك رسالة في الشات فيها زرارين: سماح ورفض، فماتسألوش عن الإذن في الكلام — نادي الأداة على طول.",
             "- " + capabilities.whatsapp_status_line("ar"),
             "- " + capabilities.not_built_line("ترجمة الشاشة", "Screen translation", "ar"),
             "- " + capabilities.not_built_line("المجلس متعدد النماذج", "Multi-model council", "ar"),
@@ -86,9 +92,10 @@ def _capability_block(language: str) -> str:
         return " ".join(lines)
     lines = [
         "Your real capabilities (from the app's actual state — never invent others):",
-        f"- Online brain (Groq): {'connected ✅' if groq_ok else 'not connected — no Groq key saved (Settings → API Keys)'}",
-        f"- Online voice (Gemini TTS): {'connected ✅' if gemini_ok else 'not connected — no Gemini key saved'}",
-        "- Laptop tools ✅: you can open apps, create/write/edit/read files, run commands, send WhatsApp messages, search the web, check the laptop's status (RAM, disk, temperature, battery), and generate images (free service, no key) — through your tools. Every action appears to the user as a chat message with Allow / Deny buttons, so do NOT ask for permission in text — call the tool directly.",
+        f"- Online brain (Groq): {'connected' if groq_ok else 'not connected — no Groq key saved (Settings > API Keys)'}",
+        f"- Online voice (Gemini TTS): {'connected' if gemini_voice_ok else 'not connected — no Gemini voice key saved'}",
+        f"- Backup brain (Gemini 2.5 Flash): {'connected' if gemini_chat_ok else 'not connected — no Gemini chat key saved (answers instead of Groq when Groq hits its limit)'}",
+        "- Laptop tools: you can open apps, create/write/edit/read files, run commands, send WhatsApp messages, search the web, check the laptop's status (RAM, disk, temperature, battery), and generate images (free service, no key) — through your tools. Every action appears to the user as a chat message with Allow / Deny buttons, so do NOT ask for permission in text — call the tool directly.",
         "- " + capabilities.whatsapp_status_line("en"),
         "- " + capabilities.not_built_line("Screen translation", "Screen translation", "en"),
         "- " + capabilities.not_built_line("Multi-model council", "Multi-model council", "en"),
@@ -470,6 +477,110 @@ def _ollama(messages: list, timeout: int = 120) -> str:
     return content.strip()
 
 
+class GroqRateLimit(RuntimeError):
+    """A Groq HTTP 429 with the limit kind actually read from the
+    response (v1.6.1 - the old bare "groq-429" threw the body away,
+    so every 429 was reported as the daily limit, which was wrong).
+
+    limit: "tpm" | "rpm" | "tpd" | "rpd" | "unknown".
+    retry_after: seconds from the retry-after header (or the body's
+    "try again in Xs"), or None when Groq did not say.
+    str() stays "groq-429" so old handlers/tests keep matching."""
+
+    def __init__(self, limit: str = "unknown",
+                 retry_after: float | None = None):
+        self.limit = limit
+        self.retry_after = retry_after
+        super().__init__("groq-429")
+
+
+def _classify_groq_429(resp) -> GroqRateLimit:
+    """Read a Groq 429 response and say WHICH limit tripped.
+
+    What Groq actually sends (console.groq.com/docs/rate-limits):
+    - Body: {"error": {"message": "Rate limit reached for model
+      `openai/gpt-oss-120b` in organization `org_...` service tier
+      `on_demand` on tokens per minute (TPM): Limit 8000, Used 7600,
+      Requested 950. Please try again in 4.1s. ...",
+      "type": "tokens" | "requests", "code": "rate_limit_exceeded"}}
+      The message names the window: "tokens per minute (TPM)",
+      "requests per minute (RPM)", "tokens per day (TPD)",
+      "requests per day (RPD)".
+    - Headers (retry-after only on 429): retry-after (seconds),
+      x-ratelimit-limit-requests (always RPD), x-ratelimit-limit-tokens
+      (always TPM), x-ratelimit-remaining-requests (RPD),
+      x-ratelimit-remaining-tokens (TPM), x-ratelimit-reset-requests
+      (duration like "2m59.56s"), x-ratelimit-reset-tokens ("7.66s").
+    Free tier for gpt-oss-120b: 30 RPM, 1000 RPD, 8000 TPM, 200000 TPD.
+    When neither body nor headers name the limit, the kind is
+    "unknown" - the caller must then NEVER claim it was the daily
+    limit."""
+    text = ""
+    err_type = ""
+    try:
+        text = str(getattr(resp, "text", "") or "")
+    except Exception:
+        text = ""
+    try:
+        err = (resp.json() or {}).get("error") or {}
+        err_type = str(err.get("type") or "")
+        if err.get("message"):
+            text = str(err["message"])
+    except Exception:
+        pass
+    low = text.lower()
+    if "tokens per day" in low or "tpd" in low:
+        limit = "tpd"
+    elif "requests per day" in low or "rpd" in low:
+        limit = "rpd"
+    elif "tokens per minute" in low or "tpm" in low:
+        limit = "tpm"
+    elif "requests per minute" in low or "rpm" in low:
+        limit = "rpm"
+    else:
+        limit = "unknown"
+    if limit == "unknown":
+        # Header fallback: limit-tokens is always TPM and
+        # limit-requests is always RPD, so a zero remaining counter
+        # names the tripped counter even when the body is empty.
+        try:
+            headers = getattr(resp, "headers", None) or {}
+            if str(headers.get("x-ratelimit-remaining-tokens")) == "0":
+                limit = "tpm"
+            elif str(headers.get("x-ratelimit-remaining-requests")) == "0":
+                limit = "rpd"
+        except Exception:
+            pass
+    retry_after = None
+    try:
+        headers = getattr(resp, "headers", None) or {}
+        raw = headers.get("retry-after")
+        if raw is not None:
+            retry_after = float(raw)
+    except Exception:
+        retry_after = None
+    if retry_after is None:
+        m = re.search(r"try again in\s*([0-9]+(?:\.[0-9]+)?)\s*s", low)
+        if m:
+            try:
+                retry_after = float(m.group(1))
+            except Exception:
+                retry_after = None
+    return GroqRateLimit(limit=limit, retry_after=retry_after)
+
+
+def _groq_429_info(exc) -> tuple:
+    """Map a caught Groq exception to (failure-note kind, retry_after).
+    A plain RuntimeError("groq-429") from old code/tests has no limit
+    info, so it stays the neutral "groq-429" kind."""
+    if isinstance(exc, GroqRateLimit):
+        kind = ("groq-429-" + exc.limit
+                if exc.limit in ("tpm", "rpm", "tpd", "rpd")
+                else "groq-429")
+        return kind, exc.retry_after
+    return str(exc), None
+
+
 def _groq_message(messages: list, use_tools: bool = False,
                   timeout: int = 60, deep_think: bool = False,
                   privacy_mode: bool | None = None) -> dict:
@@ -504,7 +615,9 @@ def _groq_message(messages: list, use_tools: bool = False,
         timeout=timeout,
     )
     if resp.status_code == 429:
-        raise RuntimeError("groq-429")
+        # v1.6.1: read WHICH limit from the body/headers - never
+        # report "daily" for a per-minute 429.
+        raise _classify_groq_429(resp)
     resp.raise_for_status()
     message = dict(resp.json()["choices"][0]["message"] or {})
     message.pop("reasoning", None)  # v1.6.0: reasoning is never surfaced
@@ -534,7 +647,9 @@ def _groq(messages: list, timeout: int = 60, deep_think: bool = False,
         timeout=timeout,
     )
     if resp.status_code == 429:
-        raise RuntimeError("groq-429")
+        # v1.6.1: read WHICH limit from the body/headers - never
+        # report "daily" for a per-minute 429.
+        raise _classify_groq_429(resp)
     resp.raise_for_status()
     content = (resp.json()["choices"][0]["message"] or {}).get("content")
     if not isinstance(content, str) or not content.strip():
@@ -557,6 +672,27 @@ def _looks_like_action(text: str) -> bool:
     return any(w in low for w in _ACTION_WORDS)
 
 
+# v1.6.1 (item 21d): media tools run ONLY on an explicit play/open
+# request in THIS turn's message. The tool schemas already say so in
+# words, but words do not bind the model - a misfire (or a stale call
+# from an old turn) once surfaced a YouTube-play card in the middle
+# of an unrelated question ("ازاي وصل للحد"). The gate below enforces
+# it in code, before any permission is asked or anything executes.
+_MEDIA_TOOLS = ("browser_play_youtube", "browser_open")
+_MEDIA_INTENT_WORDS = {"شغل", "افتح", "افتحلي", "افتحي", "play", "open"}
+
+
+def _media_intent(text: str) -> bool:
+    """Does this turn's message explicitly ask to play/open something?
+    Diacritics are stripped so "شغّل" reads as "شغل", then whole
+    words are matched - "الشغل" (work) is NOT "شغل" (play), and a
+    bare "يوتيوب" or a question about the limit is not an intent."""
+    low = (text or "").lower()
+    low = re.sub(r"[\u064B-\u0652\u0640]", "", low)
+    words = set(re.findall(r"[\u0600-\u06FFa-z]+", low))
+    return bool(words & _MEDIA_INTENT_WORDS)
+
+
 def _browser_intent_reply(user_text: str, lang: str, hist: list,
                           memory_enabled: bool):
     """Deterministic voice-browser fast path (v1.6.0): "افتح يوتيوب" /
@@ -574,9 +710,9 @@ def _browser_intent_reply(user_text: str, lang: str, hist: list,
         if intent["action"] == "play_youtube":
             result = browser_mod.play_youtube_first(intent["query"])
             if result.get("ok"):
-                reply = (f"بشغّل «{intent['query']}» من يوتيوب ✅"
+                reply = (f"بشغّل «{intent['query']}» من يوتيوب"
                          if lang == "ar" else
-                         f"Playing «{intent['query']}» from YouTube ✅")
+                         f"Playing «{intent['query']}» from YouTube")
             else:
                 reply = (f"فتحت صفحة البحث عن «{intent['query']}» على "
                          "يوتيوب — دوس على أول فيديو عشان يشتغل "
@@ -588,8 +724,8 @@ def _browser_intent_reply(user_text: str, lang: str, hist: list,
                          f"connected right now).")
         else:
             browser_mod.open_youtube()
-            reply = ("فتحت يوتيوب في المتصفح ✅" if lang == "ar" else
-                     "Opened YouTube in the browser ✅")
+            reply = ("فتحت يوتيوب في المتصفح" if lang == "ar" else
+                     "Opened YouTube in the browser")
     except Exception as exc:
         warn("brain", f"Browser intent failed: {exc}")
         reply = ("مقدرتش أفتح المتصفح دلوقتي — شوف السجل للسبب."
@@ -722,8 +858,20 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                     args = {}
                 if not isinstance(args, dict):
                     args = {}
-                result = tools.execute_tool(name, args)
-                tools_used += 1
+                if name in _MEDIA_TOOLS and not _media_intent(user_text):
+                    # v1.6.1 (item 21d): no play/open request in this
+                    # turn - the call is refused WITHOUT asking
+                    # permission and WITHOUT executing, and the model
+                    # is told why so it does not retry it.
+                    warn("brain", f"Media tool {name} blocked: no "
+                                  "play/open intent in this turn "
+                                  f"(user said: {user_text[:60]!r})")
+                    result = ("مش هشغّل/هفتح حاجة من يوتيوب أو المتصفح "
+                              "من غير ما تطلبها صراحة في الرسالة دي — "
+                              "لو عايز تشغّل حاجة قولي اسمها.")
+                else:
+                    result = tools.execute_tool(name, args)
+                    tools_used += 1
                 # v1.6.0 dangerous-action safety: a tool result is DATA,
                 # never a command. If it carries an injected instruction
                 # ("delete all files", "ignore previous instructions",
@@ -749,32 +897,47 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         return {"reply": reply, "engine": "groq", "tools_used": tools_used,
                 "tools_disabled": False}
     except RuntimeError as exc:
-        kind = str(exc)
-        if kind == "groq-429":
-            warn("brain", "Groq rate limit (429) - tools disabled, local Qwen 3B")
+        kind, retry_after = _groq_429_info(exc)
+        if kind.startswith("groq-429"):
+            warn("brain", f"Groq rate limit (429: {kind[9:] or 'unknown'}) "
+                          f"retry_after={retry_after} - tools disabled, "
+                          "local Qwen 3B")
         elif kind == "no-groq-key":
             warn("brain", "No Groq key - tools disabled, local Qwen 3B")
         else:
             warn("brain", f"Groq failed ({type(exc).__name__}: {exc}) - "
                           f"tools disabled, local Qwen 3B")
             kind = "failed"
-        reply, engine = _ask_local(messages, lang)
-        if not engine:
-            # v1.4.1: the fallback failed too - name BOTH failures.
-            reply = _groq_failure_note(kind, lang) + " " + reply
+            retry_after = None
+        reply, engine = _ask_fallback_chain(messages, lang, kind,
+                                            retry_after)
         if _looks_like_action(user_text):
-            reply += ("\n\nالأدوات (فتح برامج، ملفات، أوامر) محتاجة Groq "
-                      "أونلاين — دلوقتي شغال على المخ المحلي فأقدر أجاوب بس.")
+            # v1.6.1: the tools suffix names the engine that actually
+            # answered - Gemini (text-only, no tools) or local. When
+            # nothing answered, the failure message already says
+            # everything, so no suffix.
+            if engine == "gemini":
+                reply += ("\n\nالأدوات (فتح برامج، ملفات، أوامر) محتاجة "
+                          "Groq أونلاين — دلوقتي شغال على Gemini فأقدر "
+                          "أجاوب بس.")
+            elif engine == "ollama":
+                reply += ("\n\nالأدوات (فتح برامج، ملفات، أوامر) محتاجة "
+                          "Groq أونلاين — دلوقتي شغال على المخ المحلي "
+                          "فأقدر أجاوب بس.")
         _record_turn(user_text, reply, engine, hist,
                      learn=memory_enabled, language=lang)
         return {"reply": reply, "engine": engine, "tools_used": 0,
                 "tools_disabled": True}
     except Exception as exc:
         warn("brain", f"Groq tool loop failed ({type(exc).__name__}: {exc}) "
-                      f"- falling back to local Qwen 3B")
-        reply, engine = _ask_local(messages, lang)
-        if not engine:
-            reply = _groq_failure_note("failed", lang) + " " + reply
+                      f"- falling back to Gemini / local Qwen 3B")
+        reply, engine = _ask_fallback_chain(messages, lang, "failed")
+        if _looks_like_action(user_text) and engine in ("gemini",
+                                                        "ollama"):
+            reply += ("\n\nالأدوات (فتح برامج، ملفات، أوامر) محتاجة "
+                      "Groq أونلاين — دلوقتي شغال على "
+                      + ("Gemini" if engine == "gemini" else "المخ المحلي")
+                      + " فأقدر أجاوب بس.")
         _record_turn(user_text, reply, engine, hist,
                      learn=memory_enabled, language=lang)
         return {"reply": reply, "engine": engine, "tools_used": 0,
@@ -876,23 +1039,22 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
             info("brain", "Answered via Groq gpt-oss-120b")
             engine = "groq"
         except RuntimeError as exc:
-            kind = str(exc)
-            if kind == "groq-429":
-                warn("brain", "Groq rate limit (429) - falling back to local Qwen 3B")
+            kind, retry_after = _groq_429_info(exc)
+            if kind.startswith("groq-429"):
+                warn("brain", f"Groq rate limit (429: {kind[9:] or 'unknown'}) "
+                              f"retry_after={retry_after} - falling back "
+                              "to Gemini / local Qwen 3B")
             elif kind == "no-groq-key":
-                warn("brain", "No Groq key in keys/groq-key.txt - using local Qwen 3B")
+                warn("brain", "No Groq key in keys/groq-key.txt - using Gemini / local Qwen 3B")
             else:
-                warn("brain", f"Groq failed ({type(exc).__name__}: {exc}) - falling back to local Qwen 3B")
+                warn("brain", f"Groq failed ({type(exc).__name__}: {exc}) - falling back to Gemini / local Qwen 3B")
                 kind = "failed"
-            reply, engine = _ask_local(messages, lang)
-            if not engine:
-                # v1.4.1: the fallback failed too - name BOTH failures.
-                reply = _groq_failure_note(kind, lang) + " " + reply
+                retry_after = None
+            reply, engine = _ask_fallback_chain(messages, lang, kind,
+                                                retry_after)
         except Exception as exc:
-            warn("brain", f"Groq request failed ({type(exc).__name__}: {exc}) - falling back to local Qwen 3B")
-            reply, engine = _ask_local(messages, lang)
-            if not engine:
-                reply = _groq_failure_note("failed", lang) + " " + reply
+            warn("brain", f"Groq request failed ({type(exc).__name__}: {exc}) - falling back to Gemini / local Qwen 3B")
+            reply, engine = _ask_fallback_chain(messages, lang, "failed")
     else:
         info("brain", "Offline - using local Qwen 3B")
         reply, engine = _ask_local(messages, lang)
@@ -904,13 +1066,42 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
     return {"reply": reply, "engine": engine}
 
 
-def _groq_failure_note(kind: str, lang: str) -> str:
+def _groq_failure_note(kind: str, lang: str,
+                       retry_after: float | None = None) -> str:
     """Short honest clause for a Groq failure, prefixed to the local
     fallback's own message when the fallback ALSO fails (v1.4.1) -
-    so the user hears BOTH reasons, not just the local one."""
+    so the user hears BOTH reasons, not just the local one.
+    v1.6.1: the 429 kind is the limit actually read from Groq's
+    response - per-minute limits say "try again in a minute", daily
+    limits say the counter resets 02:00 Cairo time (00:00 UTC), and
+    an unclassified 429 NEVER claims "daily" (it says the request
+    was refused temporarily)."""
+    wait_ar = "دقيقتين" if (retry_after or 0) > 90 else "دقيقة"
+    wait_en = "two minutes" if (retry_after or 0) > 90 else "a minute"
     notes = {
-        "groq-429": ("Groq وصل للحد اليومي،",
-                     "Groq hit its daily limit,"),
+        "groq-429-tpm": (
+            "Groq وصل لحد التوكنز في الدقيقة "
+            f"(8000 توكن/دقيقة)، جرّب كمان {wait_ar}،",
+            "Groq hit the per-minute token limit "
+            f"(8000 tokens/min), try again in {wait_en},"),
+        "groq-429-rpm": (
+            "Groq وصل لحد الطلبات في الدقيقة "
+            f"(30 طلب/دقيقة)، جرّب كمان {wait_ar}،",
+            "Groq hit the per-minute request limit "
+            f"(30 requests/min), try again in {wait_en},"),
+        "groq-429-tpd": (
+            "Groq وصل للحد اليومي للتوكنز "
+            "(200 ألف توكن/يوم)، بيتصفّر 02:00 بتوقيت القاهرة،",
+            "Groq hit the daily token limit "
+            "(200K tokens/day), it resets at 02:00 Cairo time,"),
+        "groq-429-rpd": (
+            "Groq وصل للحد اليومي للطلبات "
+            "(1000 طلب/يوم)، بيتصفّر 02:00 بتوقيت القاهرة،",
+            "Groq hit the daily request limit "
+            "(1000 requests/day), it resets at 02:00 Cairo time,"),
+        "groq-429": ("Groq رفض الطلب مؤقتًا — جرّب كمان دقيقة،",
+                     "Groq temporarily refused the request — "
+                     "try again in a minute,"),
         "no-groq-key": ("مفيش مفتاح Groq،",
                         "There's no Groq key,"),
         "offline": ("مفيش نت،",
@@ -920,6 +1111,157 @@ def _groq_failure_note(kind: str, lang: str) -> str:
     }
     ar, en = notes.get(kind, notes["failed"])
     return ar if lang == "ar" else en
+
+
+# ---------------------------------------------------------------------------
+# Gemini 2.5 Flash chat fallback (v1.6.1, item 23)
+# ---------------------------------------------------------------------------
+
+GEMINI_CHAT_MODEL = "gemini-2.5-flash"
+_GEMINI_CHAT_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{GEMINI_CHAT_MODEL}:generateContent")
+
+
+def _messages_for_gemini(messages: list) -> tuple:
+    """Convert our OpenAI-style messages to a Gemini generateContent
+    payload. Returns (system_text, contents). The system message
+    becomes systemInstruction; user/assistant become user/model
+    contents; tool messages are DROPPED (the Gemini fallback is a
+    text-only reply - it never executes tools, and tool payloads
+    would 400). Consecutive same-role turns are merged, because
+    Gemini requires alternating user/model turns, and a leading
+    model turn is dropped (contents must start with user)."""
+    system_parts = []
+    contents = []
+    for m in _sanitize_messages(messages):
+        role = m.get("role")
+        content = str(m.get("content") or "").strip()
+        if role == "system":
+            if content:
+                system_parts.append(content)
+            continue
+        if role == "tool":
+            continue
+        if role == "assistant":
+            gemini_role = "model"
+        elif role == "user":
+            gemini_role = "user"
+        else:
+            continue
+        if not content:
+            continue
+        if contents and contents[-1]["role"] == gemini_role:
+            contents[-1]["parts"][0]["text"] += "\n" + content
+        else:
+            contents.append({"role": gemini_role,
+                             "parts": [{"text": content}]})
+    while contents and contents[0]["role"] != "user":
+        contents.pop(0)
+    return "\n".join(system_parts), contents
+
+
+def _gemini_chat(messages: list, timeout: int = 60) -> str:
+    """One Gemini 2.5 Flash call (chat fallback). Uses the CHAT key
+    ONLY - the voice key is never sent here. Raises
+    RuntimeError("no-gemini-chat-key") / ("gemini-429") /
+    ("gemini-key-rejected") / ("gemini-empty-reply"); other HTTP
+    errors surface as requests.HTTPError."""
+    api_key = read_key("gemini-chat-key.txt", quiet=True)
+    if not api_key:
+        raise RuntimeError("no-gemini-chat-key")
+    system_text, contents = _messages_for_gemini(messages)
+    payload = {"contents": contents}
+    if system_text:
+        payload["systemInstruction"] = {"parts": [{"text": system_text}]}
+    resp = requests.post(
+        _GEMINI_CHAT_URL,
+        headers={"x-goog-api-key": api_key,
+                 "Content-Type": "application/json"},
+        json=payload,
+        timeout=timeout,
+    )
+    if resp.status_code == 429:
+        raise RuntimeError("gemini-429")
+    if resp.status_code in (401, 403):
+        raise RuntimeError("gemini-key-rejected")
+    resp.raise_for_status()
+    try:
+        parts = resp.json()["candidates"][0]["content"]["parts"]
+        text = "".join(str(p.get("text") or "") for p in parts
+                       if isinstance(p, dict)).strip()
+    except Exception:
+        text = ""
+    if not text:
+        raise RuntimeError("gemini-empty-reply")
+    return text
+
+
+def _ask_gemini_chat(messages: list, lang: str = "ar") -> tuple:
+    """Gemini chat fallback. Returns (reply, engine, fail_kind) with
+    engine "gemini" on success and "" on failure (fail_kind names
+    the reason - see _gemini_failure_note). Never raises."""
+    try:
+        reply = _gemini_chat(messages)
+        info("brain", "Answered via Gemini 2.5 Flash (chat key)")
+        return reply, "gemini", ""
+    except RuntimeError as exc:
+        kind = str(exc)
+        if kind == "gemini-429":
+            warn("brain", "Gemini chat rate limit (429) - falling back "
+                          "to local Qwen 3B")
+        elif kind == "no-gemini-chat-key":
+            info("brain", "No Gemini chat key - skipping Gemini, "
+                          "local Qwen 3B next")
+        else:
+            warn("brain", f"Gemini chat failed ({kind}) - falling back "
+                          "to local Qwen 3B")
+        return "", "", kind
+    except Exception as exc:
+        warn("brain", f"Gemini chat failed ({type(exc).__name__}: {exc}) "
+                      "- falling back to local Qwen 3B")
+        return "", "", "gemini-failed"
+
+
+def _gemini_failure_note(kind: str, lang: str) -> str:
+    """Short honest clause for a Gemini chat failure, used when the
+    whole chain is down (item 23) - the user hears WHY Gemini did
+    not answer, next to the Groq and Ollama reasons."""
+    notes = {
+        "no-gemini-chat-key": (
+            "مفتاح Gemini للمحادثة مش متسجل — دخّله من الإعدادات » "
+            "مفاتيح API،",
+            "No Gemini chat key saved — add it in Settings > API keys,"),
+        "gemini-429": ("Gemini وصل للحد — جرّب كمان دقيقة،",
+                       "Gemini hit its limit — try again in a minute,"),
+        "gemini-key-rejected": (
+            "مفتاح Gemini للمحادثة مرفوض — اتأكد من المفتاح،",
+            "The Gemini chat key was rejected — check the key,"),
+        "gemini-failed": ("Gemini فشل،",
+                          "Gemini failed,"),
+        "gemini-empty-reply": ("Gemini رجّع رد فاضي،",
+                               "Gemini returned an empty reply,"),
+    }
+    ar, en = notes.get(kind, notes["gemini-failed"])
+    return ar if lang == "ar" else en
+
+
+def _ask_fallback_chain(messages: list, lang: str, groq_kind: str,
+                        groq_retry_after: float | None = None) -> tuple:
+    """The chat fallback chain after Groq fails (v1.6.1, item 23):
+    Gemini 2.5 Flash (CHAT key only) -> local Ollama. Returns
+    (reply, engine). When EVERYTHING is down the reply names each
+    engine and why: Groq (limit kind + when it clears, item 22),
+    Gemini (the reason), Ollama (not installed / not running).
+    No chat key -> the chain is Groq -> Ollama exactly as before."""
+    reply, engine, gemini_kind = _ask_gemini_chat(messages, lang)
+    if engine:
+        return reply, engine
+    reply, engine = _ask_local(messages, lang)
+    if engine:
+        return reply, engine
+    groq_note = _groq_failure_note(groq_kind, lang, groq_retry_after)
+    gemini_note = _gemini_failure_note(gemini_kind, lang)
+    return f"{groq_note} {gemini_note} {reply}", ""
 
 
 def _ask_local(messages: list, lang: str = "ar") -> tuple:
@@ -945,11 +1287,27 @@ def _ask_local(messages: list, lang: str = "ar") -> tuple:
         error("brain", f"Ollama is not running on http://localhost:11434 "
                        f"({type(exc).__name__}: {exc}) "
                        f"- start it with: ollama serve")
+        # v1.6.1: a refused connection cannot tell "not installed"
+        # from "not running" - check the binary. On Mohamed's machine
+        # Ollama was UNINSTALLED (2026-11-12), so telling him to run
+        # "ollama serve" would be a dead instruction; say plainly
+        # which state it is in instead.
+        installed = shutil.which("ollama") is not None
         if lang == "ar":
-            return ("المخ المحلي مش شغال — شغّل Ollama الأول "
-                    "(افتح PowerShell واكتب: ollama serve)", "")
-        return ("The local brain isn't running — start Ollama first "
-                "(open PowerShell and type: ollama serve)", "")
+            if installed:
+                return ("المخ المحلي مش شغال — Ollama متثبت بس مش شغال "
+                        "دلوقتي. شغّله (افتح PowerShell واكتب: "
+                        "ollama serve)", "")
+            return ("المخ المحلي مش متثبت — Ollama مش موجود على الجهاز، "
+                    "فمفيش مخ محلي يرد. نزّله من ollama.com لو عايز "
+                    "مخ محلي.", "")
+        if installed:
+            return ("The local brain isn't running — Ollama is installed "
+                    "but not running right now. Start it (open PowerShell "
+                    "and type: ollama serve)", "")
+        return ("The local brain isn't installed — Ollama is not on this "
+                "machine, so there is no local brain to answer. Download "
+                "it from ollama.com if you want a local brain.", "")
     except requests.HTTPError as exc:
         error("brain", f"Ollama refused the request "
                        f"({type(exc).__name__}: {exc})")

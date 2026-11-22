@@ -388,7 +388,9 @@ class TestCapabilitiesDegradedLine(unittest.TestCase):
             en = capabilities.whatsapp_status_line("en")
         for line in (ar, en):
             self.assertIn("5", line)
-            self.assertNotIn("✅", line)  # never a green "linked" claim
+        # v1.6.1: never a green "linked" claim (no checkmark anymore).
+        self.assertNotIn("الواتساب مربوط —", ar)
+        self.assertNotIn("WhatsApp is linked —", en)
         self.assertIn("مش بتتفك", ar)
         self.assertIn("إعادة الربط", ar)
         self.assertIn("NOT decrypting", en)

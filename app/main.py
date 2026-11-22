@@ -176,7 +176,7 @@
 #       enabled toggle) back to their old values, and the handler then
 #       read the wiped DOM values and saved THOSE (empty number,
 #       disabled) - so the sidecar never started and no QR ever
-#       appeared, while the UI still said "saved ✅". Fixed three ways:
+#       appeared, while the UI still said "saved". Fixed three ways:
 #       the save handler snapshots the WhatsApp fields BEFORE any
 #       bridge call; the WhatsApp section saves ONLY via whatsapp_save
 #       (no save_settings first); and save_settings no longer
@@ -280,6 +280,7 @@
 #       installs (see _apply_pet_default_migration).
 
 import ctypes
+import functools
 import hashlib
 import hmac
 import json
@@ -365,7 +366,7 @@ try:
 except Exception:
     wakeword_mod = None
 
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 MAIN_W, MAIN_H = 960, 720
 ISLAND_W, ISLAND_H = 380, 56
 ISLAND_EXPANDED_H = 120
@@ -373,7 +374,7 @@ ISLAND_IDLE_W, ISLAND_IDLE_H = 190, 52
 PET_SIZE = 150
 
 # Single-instance mutex (Windows named mutex, no admin needed).
-_MUTEX_NAME = "Local\\MemoAI-SingleInstance"
+_MUTEX_NAME = "Local\\LONA-SingleInstance"
 _mutex_handle = None
 
 # v1.3.0 TOOLS ("hands") + VOICE-OUTPUT TOGGLE + OWNER CODE (2026-11-07):
@@ -530,7 +531,8 @@ def _check_bridge_files(ui_files=None) -> bool:
     # 3. Keys (presence only - never values).
     ks = keys_status()
     info("selftest", f"Keys present: groq={ks['groq']} "
-                     f"gemini={ks['gemini']} azure={ks['azure']}")
+                     f"gemini-voice={ks['gemini-voice']} "
+                     f"gemini-chat={ks['gemini-chat']} azure={ks['azure']}")
     if not ks["groq"]:
         warn("selftest", "No Groq key in keys/groq-key.txt - online brain "
                          "unavailable, local Qwen 3B only")
@@ -671,6 +673,23 @@ def _acquire_single_instance_lock() -> bool:
 # (app, windows, ...) gets walked and can crash the bridge (see note above).
 _APP = None
 
+# v1.6.1 item 21: shared fallback monitor for the rare path where the
+# main monitor never started (_APP._monitor is None). It used to be a
+# throwaway SystemMonitor constructed + synchronously sampled on EVERY
+# poll -- a fresh PowerShell spawn per 5 s poll on the UI thread. One
+# shared instance whose sampler thread feeds the background cache.
+_FALLBACK_MONITOR = None
+
+
+def _fallback_monitor():
+    """The shared fallback monitor (sampler thread started once)."""
+    global _FALLBACK_MONITOR
+    if _FALLBACK_MONITOR is None:
+        import monitor as monitor_mod
+        _FALLBACK_MONITOR = monitor_mod.SystemMonitor(_APP.settings)
+        _FALLBACK_MONITOR.start_sampler()
+    return _FALLBACK_MONITOR
+
 
 def screen_size() -> tuple:
     try:
@@ -678,6 +697,24 @@ def screen_size() -> tuple:
         return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
     except Exception:
         return 1920, 1080
+
+
+def _log_slow(fn):
+    """v1.6.1 item 21: diagnostics evidence for the next freeze. Any
+    bridge call taking over 1 s is logged with its name and duration --
+    the UI thread must never block silently. Applied to every bridge
+    method that can touch the disk, the network, a subprocess or psutil."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        t0 = time.time()
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            dt = time.time() - t0
+            if dt > 1.0:
+                warn("app", f"Slow bridge call {fn.__name__} "
+                     f"took {dt:.1f}s")
+    return wrapper
 
 
 class Api:
@@ -716,6 +753,7 @@ class Api:
         for key in ("ai_name", "user_name", "language", "voice",
                     "greeting_enabled", "voice_output", "avatar",
                     "pet_visible", "pet_parked", "autostart",
+                    "island_enabled",  # v1.6.1: Settings island toggle
                     "wakeword_enabled", "wakeword_phrase", "theme",
                     "deep_think_enabled", "focus_mode",
                     "quiet_hours_enabled", "companion_enabled",
@@ -742,6 +780,15 @@ class Api:
         text = (text or "").strip()
         if not text:
             return {"reply": "", "engine": ""}
+        # v1.6.1 (item 21c): a new message supersedes any permission
+        # still pending from an older turn - cancel it now, so its
+        # card never appears in this turn's context and the old brain
+        # thread finishes fast (denied) instead of hanging to the
+        # 120s timeout.
+        try:
+            tools.cancel_pending()
+        except Exception:
+            pass
         # Owner code unlocks owner mode (v1.3.0: compared as a SHA-256 hash
         # only - the plaintext code is nowhere in the repo, settings, or
         # logs, and the typed text is never echoed back). v1.3.2: owner
@@ -772,6 +819,14 @@ class Api:
                              "(كل إجراء هيطلب إذنك الأول).",
                     "engine": "owner"}
         lang = _APP.settings.get("language", "ar")
+        # v1.6.1: the mood reacts to how he talks to it - note the
+        # message tone (best effort; a missing monitor never blocks
+        # the chat). The owner-code hash text above is never noted.
+        try:
+            if _APP._monitor is not None:
+                _APP._monitor.note_user_message(text)
+        except Exception:
+            pass
         hit = rules.check(text, _APP.owner_unlocked, lang)
         if hit:
             _APP.speak_async(hit["reply"])
@@ -797,6 +852,15 @@ class Api:
                         _chats.pop(old_id, None)
         threading.Thread(target=_APP.run_tool_chat,
                          args=(chat_id, text), daemon=True).start()
+        # v1.6.1: push the thinking mood to the island AT ONCE (it also
+        # picks it up from get_mood() on its 5s poll). Guarded - a
+        # missing/closed island window never breaks the chat.
+        try:
+            if _APP.island_window is not None:
+                _APP.island_window.evaluate_js("setMood(\"بيفكر\")")
+        except Exception:
+            pass
+        info("app", "Chat started in background (thinking mood on)")
         return {"reply": "", "engine": "groq", "pending": True,
                 "chat_id": chat_id}
 
@@ -815,6 +879,7 @@ class Api:
             info("app", "Owner mode unlocked from Settings")
         return {"ok": ok, "owner_unlocked": bool(_APP.owner_unlocked)}
 
+    @_log_slow
     def chat_result(self, chat_id):
         """Poll the result of an async (tool) chat. {"done": False} while
         the brain thread is still working (possibly waiting on permission)."""
@@ -822,6 +887,17 @@ class Api:
             entry = _chats.get(str(chat_id or ""))
         if not entry:
             return {"done": False}
+        if entry.get("done"):
+            # v1.6.1: the reply arrived - restore the island robot from
+            # "بيفكر" to the stabilized mood at once (its 5s poll would
+            # do the same, this just skips the wait). Guarded.
+            try:
+                if _APP.island_window is not None:
+                    mood = self.get_mood().get("mood", "صاحي")
+                    _APP.island_window.evaluate_js(
+                        f"setMood({json.dumps(mood, ensure_ascii=False)})")
+            except Exception:
+                pass
         return {"done": bool(entry["done"]), "reply": entry.get("reply", ""),
                 "engine": entry.get("engine", "groq"),
                 "tools_used": entry.get("tools_used", 0),
@@ -902,6 +978,7 @@ class Api:
                 "status": _APP.get_wakeword_status()}
 
     # -- tool permissions (v1.3.0, in-chat cards since v1.4.2) --------------
+    @_log_slow
     def get_pending_permission(self):
         """Permission state for the in-chat Allow/Deny cards: the oldest
         unresolved request (if any) + recently resolved ones, so a card
@@ -912,6 +989,19 @@ class Api:
     def resolve_permission(self, req_id, allowed):
         ok = tools.resolve_permission(str(req_id or ""), bool(allowed))
         return {"ok": ok}
+
+    def cancel_pending_permissions(self):
+        """Cancel every still-pending permission (v1.6.1, item 21c):
+        a new user message supersedes the old turn's unanswered
+        requests - their cards must not surface in the new turn.
+        Called from chat() on every new turn and from the UI when a
+        message is queued while a turn is still running."""
+        try:
+            count = tools.cancel_pending()
+        except Exception as exc:
+            error("app", f"cancel_pending_permissions failed: {exc}")
+            count = 0
+        return {"ok": True, "cancelled": count}
 
     # -- generated images (v1.4.3) -----------------------------------------
     def get_generated_image(self, filename):
@@ -951,15 +1041,22 @@ class Api:
         themes = [
             {"id": "old", "name": "القديم"},
             {"id": "night-glass", "name": "زجاج الليل الداكن"},
-            {"id": "calm-light", "name": "المساحة الهادية الفاتحة"},
-            {"id": "graphite", "name": "لوحة القيادة الجرافيتية"},
+            {"id": "calm-space", "name": "المساحة الهادية الفاتحة"},
+            {"id": "dashboard", "name": "لوحة القيادة الجرافيتية"},
         ]
-        return {"themes": themes,
-                "current": _APP.settings.get("theme", "old")}
+        # Legacy ids from v1.6.0's Python side (calm-light/graphite) never
+        # existed in the frontend; map them to the real ids so a stored
+        # legacy value still round-trips instead of silently falling back.
+        _legacy = {"calm-light": "calm-space", "graphite": "dashboard"}
+        current = _APP.settings.get("theme", "old")
+        current = _legacy.get(current, current)
+        return {"themes": themes, "current": current}
 
     def set_theme(self, theme_id):
         theme_id = str(theme_id or "").strip()
-        known = {"old", "night-glass", "calm-light", "graphite"}
+        theme_id = {"calm-light": "calm-space",
+                    "graphite": "dashboard"}.get(theme_id, theme_id)
+        known = {"old", "night-glass", "calm-space", "dashboard"}
         if theme_id not in known:
             return {"ok": False, "error": "unknown_theme"}
         _APP.settings["theme"] = theme_id
@@ -967,22 +1064,41 @@ class Api:
         info("app", f"Theme set to {theme_id}")
         return {"ok": ok, "theme": theme_id}
 
+    @_log_slow
     def get_device_overview(self):
         """Live device overview (RAM/CPU/battery/temp/storage/processes/
-        mood) - sampled FRESH on every call, never cached (live cards)."""
+        mood) - served from the monitor's background sample cache
+        (v1.6.1 item 21), never sampled synchronously on the UI thread."""
         try:
             if _APP._monitor is not None:
                 overview = _APP._monitor.get_device_overview()
             else:
-                import monitor as monitor_mod
-                overview = monitor_mod.SystemMonitor(
-                    _APP.settings).get_device_overview()
+                overview = _fallback_monitor().get_device_overview()
             return {"ok": True, "overview": overview}
         except Exception as exc:
             error("app", f"get_device_overview failed: {exc}")
             return {"ok": False, "overview": None}
 
+    @_log_slow
     def get_mood(self):
+        # v1.6.1 THINKING MOOD: while any tool chat is still running
+        # (background thread, incl. Deep Think reasoning / tool calls),
+        # the robot shows "بيفكر" in BOTH the main window and the
+        # island - both poll this same method every 5s. This is a
+        # TEMPORARY display override only: it bypasses the stabilizer
+        # entirely, so it never resets the hold/confirm counters, and
+        # the stabilized mood returns on the next poll after the reply.
+        try:
+            with _chats_lock:
+                thinking = any(
+                    not e.get("done")
+                    and time.time() - float(e.get("created", 0)) < 180
+                    for e in _chats.values())
+            if thinking:
+                return {"mood": "بيفكر",
+                        "reason": "بيفكر في ردك…"}
+        except Exception:
+            pass
         try:
             result = self.get_device_overview()
             overview = result.get("overview") or {}
@@ -992,6 +1108,7 @@ class Api:
             error("app", f"get_mood failed: {exc}")
             return {"mood": "صاحي", "reason": ""}
 
+    @_log_slow
     def get_self_view(self):
         """LONA seeing herself inside her own program (8 rows)."""
         if selfview_mod is None:
@@ -1008,15 +1125,18 @@ class Api:
             error("app", f"get_self_view failed: {exc}")
             return {"ok": False, "rows": []}
 
+    @_log_slow
     def get_api_keys_status(self):
         if apikeys_mod is None:
-            return {"ok": False, "groq": False, "gemini": False}
+            return {"ok": False, "groq": False, "gemini-voice": False,
+                    "gemini-chat": False}
         try:
             status = apikeys_mod.get_api_keys_status()
             return {"ok": True, **status}
         except Exception as exc:
             error("app", f"get_api_keys_status failed: {exc}")
-            return {"ok": False, "groq": False, "gemini": False}
+            return {"ok": False, "groq": False, "gemini-voice": False,
+                    "gemini-chat": False}
 
     def save_api_key(self, provider, value):
         """Save a Groq/Gemini key from Settings (never logged)."""
@@ -1028,6 +1148,7 @@ class Api:
             error("app", f"save_api_key failed: {exc}")
             return {"ok": False, "error": str(exc)}
 
+    @_log_slow
     def test_api_key(self, provider):
         """Tiny live validity check (15s timeout). Presence/validity
         only - the key value is never returned or logged."""
@@ -1040,6 +1161,7 @@ class Api:
             error("app", f"test_api_key failed: {exc}")
             return {"ok": False, "valid": False, "detail": str(exc)}
 
+    @_log_slow
     def check_invite(self, code):
         """First-install invite check (local only). On success the
         install is marked activated and the screen never shows again."""
@@ -1074,6 +1196,7 @@ class Api:
         return {"deep_think_enabled": bool(_APP.settings.get(
             "deep_think_enabled", False))}
 
+    @_log_slow
     def get_proactive_feed(self):
         """Companion feed (morning brief, check-ins, battery warnings,
         routine suggestions) + the next exam countdown."""
@@ -1086,6 +1209,7 @@ class Api:
         exam = self.get_exam_countdown()
         return {"feed": feed, "exam": exam}
 
+    @_log_slow
     def get_exam_countdown(self):
         """Nearest upcoming exam + days left, or an honest 'no date
         set' state - never an invented date."""
@@ -1280,6 +1404,7 @@ class Api:
             error("app", f"set_privacy_mode failed: {exc}")
             return {"ok": False, "error": str(exc)}
 
+    @_log_slow
     def analyze_image(self, data_url):
         """Send an attached image to Gemini 2.5 Flash (vision).
         The UI shows the 'this leaves the device' warning and the
@@ -1335,6 +1460,7 @@ class Api:
             error("app", f"import_backup failed: {exc}")
             return {"ok": False, "detail": str(exc)}
 
+    @_log_slow
     def understand_image(self, image_path, prompt, confirmed=False):
         """Image/screenshot understanding (Gemini vision). Refused
         unless confirmed=True (the UI warning + the user's yes)."""
@@ -1435,9 +1561,11 @@ class Api:
         return {"ok": True}
 
     # -- in-app updates (v1.2) ---------------------------------------------
+    @_log_slow
     def check_updates(self):
         return updater.check_update()
 
+    @_log_slow
     def get_update_progress(self):
         """v1.3.1: the Settings UI polls this while an update downloads
         (downloaded/total/percent/state) to render the progress bar."""
@@ -1607,6 +1735,7 @@ class Api:
             return {"alerts": [dict(a) for a in _APP._alerts]}
 
     # -- system monitor (v1.4.2) -------------------------------------------
+    @_log_slow
     def get_monitor_status(self):
         """Live system numbers + thresholds for the Settings System
         section. temp_available says honestly whether the CPU
@@ -1617,9 +1746,7 @@ class Api:
             if _APP._monitor is not None:
                 status = _APP._monitor.get_status()
             else:
-                import monitor as monitor_mod
-                status = monitor_mod.SystemMonitor(
-                    _APP.settings).get_status()
+                status = _fallback_monitor().get_status()
         except Exception as exc:
             error("app", f"get_monitor_status failed: {exc}")
         keys = ("monitor_enabled", "monitor_ram_free_mb",
@@ -2753,9 +2880,15 @@ class MemoApp:
             daemon=True).start()
         sw, sh = screen_size()
         ui_dir = APP_DIR / "ui"
+        # v1.6.1 invite gate: on first launch (not activated) the main
+        # window MUST be visible - the gate lives inside it, and the
+        # island pill would hide it. The island is skipped until
+        # activation (it appears on the next launch, once activated).
+        not_activated = invite_mod is not None and \
+            not invite_mod.is_activated()
         # v1.4.1: the island window is NEVER created while island_enabled
         # is False (default) - the code stays, behind the flag.
-        if self.settings.get("island_enabled", False):
+        if self.settings.get("island_enabled", False) and not not_activated:
             # The island starts in its IDLE compact state (v1.2.3).
             island_x = max(0, (sw - ISLAND_IDLE_W) // 2)
             self.island_window = webview.create_window(
@@ -2767,12 +2900,15 @@ class MemoApp:
         # while the island is enabled - the old morph opened it from the
         # pill). min_size=(640,520): the morph to a 190x52 pill is gone
         # with the island, so the window keeps its full minimum.
+        # v1.6.1 invite gate: never hidden on first launch - the gate
+        # must be seen, even with the island on.
         self.main_window = webview.create_window(
             "LONA", str(ui_dir / "index.html"),
             width=MAIN_W, height=MAIN_H,
-            hidden=self.settings.get("island_enabled", False),
+            hidden=self.settings.get("island_enabled", False)
+            and not not_activated,
             min_size=(640, 520), js_api=self.api)
-        if not self.settings.get("island_enabled", False):
+        if not self.settings.get("island_enabled", False) or not_activated:
             # The window starts visible: _main_visible must agree, or
             # hide_main() would refuse to hide it on X (tray).
             self._main_visible = True
@@ -2790,13 +2926,14 @@ class MemoApp:
                 resizable=False, background_color=PET_BG, js_api=self.api,
                 hidden=not self.settings.get("pet_visible", False))
 
-        # v1.4.1: system tray (the island is gone - the tray is the way
-        # back after closing the window). A missing tray backend never
+        # v1.4.1: system tray (the way back after closing the window
+        # while the island is off). A missing tray backend never
         # blocks startup; X then minimizes to the taskbar instead.
+        # v1.6.1: the tray icon is the gold robot logo, not the cat.
         try:
             self._tray = tray_mod.TrayManager(
                 on_open=self.show_main, on_quit=self.quit,
-                icon_path=APP_DIR / "ui" / "assets" / "avatar-cat.png")
+                icon_path=APP_DIR / "ui" / "assets" / "avatar-robot.png")
             if self._tray.start():
                 info("app", "System tray icon started")
             else:
@@ -2818,9 +2955,10 @@ class MemoApp:
         except Exception as exc:
             warn("app", f"Notification watcher did not start: {exc}")
         # v1.6.0: proactive companion + TempWatch registration + invite
-        # gate (best effort, like the monitor). The invite screen is a
-        # UI concern: it shows only when not activated; Python only
-        # answers get_activation_state()/check_invite().
+        # gate (best effort, like the monitor). The gate is a UI
+        # concern: the full-screen #invite-gate overlay shows only
+        # when not activated (main window forced visible above);
+        # Python only answers get_activation_state()/check_invite().
         try:
             self._start_companion()
         except Exception as exc:
@@ -2950,6 +3088,18 @@ def main():
             a.startswith("chrome-extension://") for a in sys.argv[1:]):
         from native_host import run_host_main
         raise SystemExit(run_host_main())
+    # v1.6.1 rename: first launch of LONA migrates data from an old
+    # "Memo AI" install (settings, invite state, memory, keys) before
+    # anything loads settings - otherwise the app would ask for the
+    # invite code again. Frozen installs only (a source checkout never
+    # migrates into itself); the installer already does this for a
+    # setup.exe upgrade, so this is the fallback. Never blocks startup.
+    if getattr(sys, "frozen", False):
+        try:
+            import migrate as migrate_mod
+            migrate_mod.migrate_from_old_install(BASE_DIR, DATA_DIR)
+        except Exception as exc:
+            error("app", f"Old-install migration failed ({exc}) - continuing")
     MemoApp().run()
 
 

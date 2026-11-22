@@ -1,35 +1,35 @@
-# Memo AI v1.4.3 — headless tests for the compact permission card
+# Memo AI v1.6.1 (items 12+18) — tests for the redesigned permission card
 # (run on Linux, no Windows, no keys, no network except mocked):
 #
 #   python -m unittest app.tests.test_v143_perm_card -v
 #
-# What is proven here:
-#   * the card is small: computed max-width 320px (was 82% of the chat
-#     = 751px at the 960px window), tight padding/type, detail clamped
-#     to 2 lines with a tap-to-expand toggle — estimated area ~1/4.4 of
-#     the v1.4.2 card (60,480 vs 263,601 px^2 for the same sample
-#     permission). The literal 1/8 the user asked for is NOT reached:
-#     the floor is two tappable buttons + readable title/summary/
-#     detail; 1/8 would need the detail hidden by default, which the
-#     spec rules out (2-3 lines visible). Width -57%, height -46%.
+# What is proven here (supersedes the v1.4.3 detail-clamp spec --
+# Mohamed approved the redesign 2026-11-22 01:37):
+#   * the card is small: computed max-width 320px, tight padding/type.
 #   * entrance animation: perm-in keyframes scale 0.9 -> 1 + fade,
 #     0.22s ease-out; press: buttons scale to 0.96 on :active;
 #     resolved state fades in (perm-state-in). No sudden pop.
-#   * DOM behaviour (jsdom harness app/tests/perm_card_dom.js, runs
-#     the REAL addPermCard/finalizePermCard from app/ui/app.js):
-#     Allow calls resolve_permission(id, true) and flips the card to
-#     "تم السماح ✅" with dead buttons; Deny mirrors it; the detail
-#     expands/collapses on tap; timeout state still works; polling
-#     (1s) and resolve logic are untouched.
+#   * the new shape: Allow/Deny are dashed .choice-card rectangles
+#     (same as the option cards); the picked one goes solid (.picked),
+#     the other dims (.dimmed). The old collapsible detail is GONE --
+#     no .perm-detail element, no .perm-more toggle; the summary
+#     carries the request.
+#   * the severity dot (item 18) sits inside the card next to the
+#     buttons, coloured by the backend tier (green/yellow/red) with a
+#     tooltip; unknown/missing tier fails closed to red.
+#   * DOM behaviour (jsdom harness app/tests/severity_dom.js, runs the
+#     REAL addPermCard/finalizePermCard/renderActionMessage/
+#     pollProactiveFeed from app/ui/app.js): Allow calls
+#     resolve_permission(id, true) and flips the card to "تم السماح"
+#     with dead buttons and the result line ON the same card (no
+#     separate message); Deny mirrors it; timeout dims both with no
+#     pick; a trial action message shows the dot pulsing while running;
+#     routine suggestions render as action messages with the dot.
 #
 # The jsdom part needs `jsdom` installed where node can see it, e.g.:
 #   npm install jsdom --prefix /tmp/jsdom-test
 #   NODE_PATH=/tmp/jsdom-test/node_modules python -m unittest ...
 # Without jsdom the DOM test skips; the static CSS/JS checks still run.
-# jsdom has no layout engine, so heights are computed from
-# getComputedStyle with a documented line-count model (see the
-# harness header) — same model for old and new, so the ratio is
-# apples-to-apples.
 #
 # NOT proven here (needs real Windows + WebView2): how the card looks
 # and feels on the user's laptop — field check pending.
@@ -87,17 +87,56 @@ class TestPermCardStatic(unittest.TestCase):
             ".msg.perm .perm-btns button:not(:disabled):active { transform: scale(0.96); }",
             css)
 
-    def test_detail_clamped_with_expand(self):
-        css = _read("app/ui/styles.css")
-        self.assertIn("-webkit-line-clamp: 2;", css)
-        self.assertIn(".msg.perm .perm-detail.expanded", css)
-        self.assertIn("max-height: 140px;", css)
+    def test_no_collapsible_detail(self):
+        # Item 12: the old collapsible detail is gone -- the summary
+        # carries the request. The CSS rules may stay (dead), but the
+        # card must never build a detail element or a toggle.
         js = _read("app/ui/app.js")
-        self.assertIn('detail.classList.toggle("expanded")', js)
-        self.assertIn('className = "perm-more"', js)
-        self.assertIn('perm_more: "عرض المزيد ▾"', js)
-        self.assertIn('perm_less: "عرض أقل ▴"', js)
-        self.assertIn('perm_more: "Show more ▾"', js)
+        block = js.split("function addPermCard(p)")[1].split(
+            "function finalizePermCard")[0]
+        self.assertNotIn("perm-detail", block)
+        self.assertNotIn("perm-more", block)
+        self.assertNotIn("toggleDetail", block)
+        self.assertNotIn("classList.toggle(\"expanded\")", block)
+
+    def test_buttons_are_choice_cards(self):
+        # Item 12: Allow/Deny are dashed .choice-card rectangles.
+        js = _read("app/ui/app.js")
+        block = js.split("function addPermCard(p)")[1].split(
+            "function finalizePermCard")[0]
+        self.assertEqual(block.count('className = "choice-card btn-3d"'), 2)
+        self.assertNotIn("gold-btn", block)
+        self.assertNotIn("danger-btn", block)
+        css = _read("app/ui/styles.css")
+        self.assertIn(".choice-card { border: 1.5px dashed", css)
+        self.assertIn(".choice-card.picked { border-style: solid;", css)
+        self.assertIn(".choice-card.dimmed { opacity: .45; }", css)
+
+    def test_pick_dims_the_other(self):
+        js = _read("app/ui/app.js")
+        block = js.split("function finalizePermCard")[1].split(
+            "function startPermPolling")[0]
+        self.assertIn('classList.add("picked")', block)
+        self.assertIn('classList.add("dimmed")', block)
+
+    def test_severity_dot_inside_card(self):
+        # Item 18: the dot sits in the card next to the buttons.
+        js = _read("app/ui/app.js")
+        block = js.split("function addPermCard(p)")[1].split(
+            "function finalizePermCard")[0]
+        self.assertIn("severityDot(p.tier)", block)
+        self.assertIn("btns.appendChild(severityDot(p.tier));", block)
+        dot = js.split("const SEVERITY = {")[1].split(
+            "function addPermCard")[0]
+        for tier, color, title in (("green", "#3ECF8E", "آمن"),
+                                   ("yellow", "#F2B544", "محتاج إذن"),
+                                   ("red", "#EF6461", "خطير — إذن صريح")):
+            self.assertIn(f'{tier}: {{ color: "{color}", title: "{title}" }}',
+                          dot, tier)
+        # Unknown tier fails closed to red.
+        self.assertIn('const lv = SEVERITY[tier] ? tier : "red";',
+                      js.split("function severityDot(tier)")[1].split(
+                          "function addPermCard")[0])
 
     def test_resolved_state_animates(self):
         css = _read("app/ui/styles.css")
@@ -129,7 +168,7 @@ class TestPermCardDom(unittest.TestCase):
                 "jsdom not installed; run "
                 "`npm install jsdom --prefix /tmp/jsdom-test` and set "
                 "NODE_PATH=/tmp/jsdom-test/node_modules")
-        harness = APP_DIR / "tests" / "perm_card_dom.js"
+        harness = APP_DIR / "tests" / "severity_dom.js"
         proc = subprocess.run(
             ["node", str(harness)],
             capture_output=True, text=True, cwd=str(ROOT),
@@ -138,20 +177,16 @@ class TestPermCardDom(unittest.TestCase):
             result = json.loads(proc.stdout)
         except json.JSONDecodeError:
             self.fail("harness did not print JSON:\n" + proc.stdout + proc.stderr)
-        failed = result.get("failed") or []
+        failed = [k for k, v in result.items() if not v["pass"]]
         self.assertEqual([], failed,
                          "jsdom checks failed: " + json.dumps(result, ensure_ascii=False))
-        self.assertTrue(result.get("passed"), "harness reported failure")
-        m = result["measurements"]
-        # the headline numbers — keep them in the test output
-        print(f"\n  perm card area: old {m['old']['area']} px^2 "
-              f"({m['old']['width']}x{m['old']['height']}) -> "
-              f"new {m['new']['area']} px^2 "
-              f"({m['new']['width']}x{m['new']['height']}), "
-              f"ratio {m['ratio']} ({m['ratio_fraction']})")
-        self.assertLess(m["ratio"], 0.34)
-        self.assertEqual(m["new"]["width"], 320)
-        self.assertIn("perm-in", m["card_animation"])
+        # The headline checks -- keep them in the test output.
+        for name in ("green_dot_color", "allow_picked_solid",
+                     "allow_other_dimmed", "allow_result_on_card",
+                     "allow_no_separate_message", "deny_picked_solid",
+                     "timeout_both_dimmed", "action_dot_pulsing",
+                     "feed_routine_is_action_msg"):
+            self.assertTrue(result[name]["pass"], name)
 
 
 if __name__ == "__main__":

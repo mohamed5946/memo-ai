@@ -11,28 +11,27 @@
   <div class="window-bar"><span class="win-dot red"></span><span class="win-dot yellow"></span><span class="win-dot green"></span><span class="win-title">LONA</span></div>
 
   <header>
-    <div class="logo"><img src="assets/avatar-cat.png" alt="LONA"></div>
+    <div class="logo"><img src="assets/avatar-robot.png" alt="LONA"></div>
     <div class="title">
       <h1>LONA</h1>
       <p data-i18n="subtitle">محلي • آمن • أوفلاين</p>
     </div>
     <div class="spacer"></div>
     <span class="pill" id="net-pill"><span class="dot"></span><span id="net-text">Online</span></span>
-    <button class="icon-btn btn-3d" id="voice-btn" title="تشغيل / إيقاف صوت المساعد">🔊</button>
-    <button class="icon-btn btn-3d" id="settings-btn" title="الإعدادات">⚙️</button>
+    <button class="icon-btn btn-3d" id="voice-btn" title="تشغيل / إيقاف صوت المساعد"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#sounds"/></svg></button>
+    <button class="icon-btn btn-3d" id="settings-btn" title="الإعدادات"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#settings"/></svg></button>
   </header>
 
   <div class="shell">
   <aside class="sidebar" id="sidebar">
     <div class="side-avatar" id="side-robot"></div>
-    <button class="side-nav active btn-3d" data-view="chat" type="button"><span class="ico">&#128172;</span><span class="lbl">المحادثة</span></button>
-    <button class="side-nav btn-3d" data-view="device" type="button"><span class="ico">&#128187;</span><span class="lbl">حالة الجهاز</span></button>
-    <button class="side-nav btn-3d" data-view="themes" type="button"><span class="ico">&#127912;</span><span class="lbl">الثيمات</span></button>
-    <button class="side-nav btn-3d" data-view="api-keys" type="button"><span class="ico">&#128272;</span><span class="lbl">مفاتيح API</span></button>
-    <button class="side-nav btn-3d" data-view="self-view" type="button"><span class="ico">&#129302;</span><span class="lbl">لونا الآن</span></button>
-    <button class="side-nav btn-3d" data-view="first-run" type="button"><span class="ico">&#9993;</span><span class="lbl">أول تشغيل</span></button>
-    <button class="side-nav btn-3d" data-view="logs" type="button"><span class="ico">&#128203;</span><span class="lbl">سجل التشخيص</span></button>
-    <button class="side-nav btn-3d" data-view="settings" type="button"><span class="ico">&#9881;</span><span class="lbl">الإعدادات</span></button>
+    <button class="side-nav active btn-3d" data-view="chat" type="button"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#chat"/></svg></span><span class="lbl">المحادثة</span></button>
+    <button class="side-nav btn-3d" data-view="device" type="button"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#device"/></svg></span><span class="lbl">حالة الجهاز</span></button>
+    <button class="side-nav btn-3d" data-view="themes" type="button"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#themes"/></svg></span><span class="lbl">الثيمات</span></button>
+    <button class="side-nav btn-3d" data-view="api-keys" type="button"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#api-key"/></svg></span><span class="lbl">مفاتيح API</span></button>
+    <button class="side-nav btn-3d" data-view="self-view" type="button"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#lona-now"/></svg></span><span class="lbl">لونا الآن</span></button>
+    <button class="side-nav btn-3d" data-view="logs" type="button"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#logs"/></svg></span><span class="lbl">سجل التشخيص</span></button>
+    <button class="side-nav btn-3d" data-view="settings" type="button"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#settings"/></svg></span><span class="lbl">الإعدادات</span></button>
   </aside>
   <div class="main-col" id="main-col">
   <div class="robot-stage" id="robot-stage">
@@ -43,7 +42,7 @@
   </div>
   <div class="avatar-wrap" hidden>
     <div class="avatar-frame" id="avatar-frame">
-      <img src="assets/avatar-cat.png" alt="LONA">
+      <img src="assets/avatar-robot.png" alt="LONA">
     </div>
     <div class="avatar-name" id="avatar-name">LONA</div>
   </div>
@@ -52,9 +51,14 @@
 
   <div class="main-view" id="view-device" hidden>
     <div class="stats-row" id="stats-row">
-      <div class="stat-card" data-stat="ram"><div class="stat-label">الرام</div><div class="stat-value"><span class="count-up" data-target="62" data-suffix="%">0%</span></div><div class="stat-bar"><i style="--bar-w:62%"></i></div></div>
-      <div class="stat-card" data-stat="cpu"><div class="stat-label">المعالج</div><div class="stat-value"><span class="count-up" data-target="18" data-suffix="%">0%</span></div><div class="stat-bar"><i style="--bar-w:18%"></i></div></div>
-      <div class="stat-card" data-stat="battery"><div class="stat-label">البطارية</div><div class="stat-value"><span class="count-up" data-target="87" data-suffix="%">0%</span></div><div class="stat-bar"><i style="--bar-w:87%"></i></div></div>
+      <div class="stat-card" data-stat="ram"><div class="stat-label">الرام</div><div class="stat-value"><span class="count-up" data-target="0" data-suffix="%" data-sampled="false">—</span></div><div class="stat-bar"><i style="--bar-w:0%"></i></div></div>
+      <div class="stat-card" data-stat="cpu"><div class="stat-label">المعالج</div><div class="stat-value"><span class="count-up" data-target="0" data-suffix="%" data-sampled="false">—</span></div><div class="stat-bar"><i style="--bar-w:0%"></i></div></div>
+      <div class="stat-card" data-stat="battery"><div class="stat-label">البطارية</div><div class="stat-value"><span class="count-up" data-target="0" data-suffix="%" data-sampled="false">—</span></div><div class="stat-bar"><i style="--bar-w:0%"></i></div></div>
+    </div>
+    <div class="temp-hint" id="temp-hint" hidden>
+      <span id="temp-hint-text"></span>
+      <a id="temp-hint-link" href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases" target="_blank" rel="noopener">LibreHardwareMonitor</a>
+      <button class="temp-hint-dismiss btn-3d" id="temp-hint-dismiss" type="button" title="تجاهل"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#x"/></svg></button>
     </div>
     <div class="exam-countdown" id="exam-countdown">
       <div class="exam-days" id="exam-days">—</div>
@@ -78,6 +82,328 @@
   <div class="chat" id="chat"></div>
   </div>
 
+
+  <!-- MENU (v1.4.2: DeliveryFlow-style - a vertical list of buttons,
+       each opening its own section with a back button) -->
+  <div id="settings-menu" class="main-view settings-view" hidden>
+    <h2 data-i18n="settings_title">الإعدادات</h2>
+    <button class="menu-btn btn-3d" data-section="general"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#general"/></svg></span><span data-i18n="menu_general">عام</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="whatsapp"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#whatsapp"/></svg></span><span data-i18n="menu_whatsapp">WhatsApp</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="memory"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#memory"/></svg></span><span data-i18n="menu_memory">الذاكرة</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="system"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#device-health"/></svg></span><span data-i18n="menu_system">صحة الجهاز</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="notifications"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#notifications"/></svg></span><span data-i18n="menu_notifications">الإشعارات</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="voices"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#sounds"/></svg></span><span data-i18n="menu_voices">الأصوات</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="avatar"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#avatar"/></svg></span><span data-i18n="menu_avatar">الأفاتار</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="logs"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#logs"/></svg></span><span data-i18n="menu_logs">سجل التشخيص</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="updates"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#updates"/></svg></span><span data-i18n="menu_updates">التحديثات</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="themes"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#themes"/></svg></span><span>الثيمات</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="api-keys"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#api-key"/></svg></span><span>مفاتيح API</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="self-view"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#lona-now"/></svg></span><span>لونا شايفة نفسها</span><span class="menu-arrow">‹</span></button>
+    <button class="menu-btn btn-3d" data-section="backup"><span class="menu-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#backup"/></svg></span><span>نسخة احتياطية</span><span class="menu-arrow">‹</span></button>
+    <button class="danger-btn btn-3d" id="quit-btn" style="margin-top:14px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#power"/></svg> <span data-i18n="quit">إغلاق البرنامج</span></button>
+    <div class="todo-note" style="margin-top:16px" data-i18n="todo_note">
+      قيد التطوير (v2): ترجمة الشاشة، المجلس متعدد النماذج، تنبيهات الجيميل والتقويم في التحية الصباحية، أصوات XTTS، وموديل 7B.
+    </div>
+  </div>
+
+  <!-- GENERAL -->
+  <div id="section-general" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_general">عام</h3>
+    <div class="field">
+      <label data-i18n="ai_name">اسم المساعد</label>
+      <input type="text" id="set-ai-name" value="LONA">
+    </div>
+    <div class="field">
+      <label data-i18n="user_name">المساعد يناديك بإيه؟</label>
+      <input type="text" id="set-user-name" value="Mohamed">
+    </div>
+    <div class="field">
+      <label data-i18n="language">لغة الواجهة</label>
+      <select id="set-language">
+        <option value="ar">العربية</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+    <label class="toggle"><input type="checkbox" id="set-greeting" checked>
+      <span data-i18n="greeting_toggle">التحية الصباحية عند التشغيل (مع الطقس)</span></label>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-voice-output" checked>
+      <span data-i18n="speaker">صوت المساعد</span></label>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-autostart" checked>
+      <span data-i18n="autostart_toggle">تشغيل LONA تلقائياً مع بدء ويندوز (يفتح النافذة الرئيسية)</span></label>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-island" checked>
+      <span data-i18n="island_toggle">الجزيرة الديناميكية (تظهر عند التشغيل — التغيير يسري بعد إعادة التشغيل)</span></label>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-wakeword" checked>
+      <span id="wakeword-toggle-label" data-i18n="wakeword_toggle">الاستماع الدايم — نادي «يا لونا» بصوتك فيرد عليك من غير ما تدوس المايك</span></label>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-privacy-mode" checked>
+      <span>وضع الخصوصية</span></label>
+    <div class="field"><div class="hint" id="wakeword-status" data-i18n="wakeword_status_loading">الاستماع الدايم: بيجهّز…</div></div>
+    <div class="field" style="margin-top:14px">
+      <label data-i18n="owner_code">كود المالك</label>
+      <input type="password" id="set-owner-code" data-i18n-ph="owner_code_ph" placeholder="اكتب الكود السري">
+    </div>
+    <div class="row">
+      <button class="ghost-btn btn-3d" id="owner-unlock-btn" data-i18n="owner_unlock">تفعيل وضع المالك</button>
+      <span class="save-status" id="owner-status"></span>
+    </div>
+    <h3 data-i18n="sec_about">عن المطور</h3>
+    <div class="about-box">
+      <div><b>LONA</b> v1.6.1</div>
+      <div data-i18n="about_by">صمم بواسطة <b>ENG/Mohamed El Sayed</b></div>
+      <div style="margin-top:8px"><button class="gold-btn btn-3d" id="portfolio-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#globe"/></svg> <span data-i18n="visit_site">زور الموقع</span></button>
+      <button class="ghost-btn btn-3d" id="github-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#github"/></svg> <span data-i18n="github">GitHub</span></button></div>
+    </div>
+    <div class="row" style="margin-top:20px">
+      <button class="gold-btn btn-3d" id="save-general"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#save"/></svg> <span data-i18n="save">حفظ</span></button>
+      <span class="save-status" id="save-status-general"></span>
+    </div>
+  </div>
+
+  <!-- WHATSAPP -->
+  <div id="section-whatsapp" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_whatsapp">واتساب — ربط كجهاز مرتبط</h3>
+    <div class="field"><div class="hint" data-i18n="wa_hint">
+      LONA بيتربط بواتساب <b>الرقم التالت</b> اللي شبه مش بيستخدمه (مش رقم الشغل ومش الرقم الأساسي) كجهاز مرتبط عبر QR — زي WhatsApp Web. الرقم الأساسي اللي هتكتبه تحت بيقدر يأمر اللابتوب، وأي رقم تاني بياخد ردود شات بس.</div></div>
+    <label class="toggle"><input type="checkbox" id="set-whatsapp">
+      <span data-i18n="wa_toggle">تفعيل ربط الواتساب</span></label>
+    <div class="field" style="margin-top:10px">
+      <label data-i18n="wa_owner_label">رقمك الأساسي (owner) — اللي يأمر اللابتوب من الواتساب</label>
+      <input type="text" id="set-wa-owner" placeholder="01xxxxxxxxx" dir="ltr">
+    </div>
+    <div class="field"><div class="hint" id="wa-status" data-i18n="wa_status_off">الواتساب مش مفعّل.</div></div>
+    <div class="wa-qr-wrap" id="wa-qr-wrap" style="display:none">
+      <img id="wa-qr" alt="WhatsApp QR">
+      <div class="hint" data-i18n="wa_scan_hint">افتح واتساب على <b>الرقم التالت</b> » الإعدادات » الأجهزة المرتبطة » ربط جهاز، وامسح الكود ده.</div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="gold-btn btn-3d" id="wa-relink-btn" style="display:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#refresh"/></svg> <span data-i18n="wa_relink">إعادة الربط (QR جديد)</span></button>
+      <button class="ghost-btn btn-3d" id="wa-disconnect-btn"><span data-i18n="wa_disconnect">فصل وإلغاء الربط</span></button>
+    </div>
+    <div class="row" style="margin-top:20px">
+      <button class="gold-btn btn-3d" id="save-whatsapp"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#save"/></svg> <span data-i18n="save">حفظ</span></button>
+      <span class="save-status" id="save-status-whatsapp"></span>
+    </div>
+  </div>
+
+  <!-- MEMORY (v1.4.2: long-term memory - view + delete + wipe) -->
+  <div id="section-memory" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_memory">الذاكرة الطويلة</h3>
+    <div class="field"><div class="hint" data-i18n="mem_hint">
+      دي الحاجات اللي LONA فاكرها عنك من المحادثات — محفوظة على جهازك بس، ومبتترفعش لأي مكان. تقدر تمسح أي حاجة منها، أو تمسح الكل.</div></div>
+    <div class="mem-group-title" data-i18n="mem_style">أسلوبك اللي اتعلمته</div>
+    <div class="field"><div class="hint" id="memory-style">—</div></div>
+    <div id="memory-list"></div>
+    <div class="mem-group-title" data-i18n="mem_summary">ملخص محادثات سابقة</div>
+    <div class="field"><div class="hint" id="memory-summary">—</div></div>
+    <div class="row" style="margin-top:14px">
+      <button class="danger-btn btn-3d" id="memory-clear-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#delete"/></svg> <span data-i18n="mem_clear">مسح كل الذاكرة</span></button>
+    </div>
+  </div>
+
+  <!-- SYSTEM HEALTH (v1.4.2: monitor + alerts) -->
+  <div id="section-system" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_system">صحة الجهاز</h3>
+    <div class="field"><div class="hint" id="sys-status">…</div></div>
+    <div class="field"><div class="hint" id="sys-temp-note"></div></div>
+    <label class="toggle"><input type="checkbox" id="set-monitor-enabled" checked>
+      <span data-i18n="mon_enable">مراقبة صحة الجهاز والتنبيه عند الخطر</span></label>
+    <div class="field"><label data-i18n="mon_ram_free">تنبيه لما الرام الفاضية تقل عن (MB)</label>
+      <input type="number" id="set-mon-ram-free" value="500" dir="ltr"></div>
+    <div class="field"><label data-i18n="mon_ram_pct">أو لما استهلاك الرام يزيد عن (%)</label>
+      <input type="number" id="set-mon-ram-pct" value="92" dir="ltr"></div>
+    <div class="field"><label data-i18n="mon_disk_free">تنبيه لما القرص الفاضي يقل عن (GB)</label>
+      <input type="number" id="set-mon-disk-free" value="10" dir="ltr"></div>
+    <div class="field"><label data-i18n="mon_disk_pct">أو لما القرص الفاضي يقل عن (%)</label>
+      <input type="number" id="set-mon-disk-pct" value="10" dir="ltr"></div>
+    <div class="field"><label data-i18n="mon_temp_warn">تنبيه حرارة المعالج (°م)</label>
+      <input type="number" id="set-mon-temp-warn" value="85" dir="ltr"></div>
+    <div class="field"><label data-i18n="mon_cpu">تنبيه حمل معالج مستمر فوق (%) لمدة (دقائق)</label>
+      <div class="row"><input type="number" id="set-mon-cpu-pct" value="85" dir="ltr" style="width:90px">
+      <input type="number" id="set-mon-cpu-min" value="5" dir="ltr" style="width:90px"></div></div>
+    <div class="field"><label data-i18n="mon_battery">تنبيه بطارية منخفضة تحت (%)</label>
+      <input type="number" id="set-mon-batt" value="20" dir="ltr"></div>
+    <div class="field"><label data-i18n="mon_cooldown">عدم تكرار نفس التنبيه قبل (دقيقة)</label>
+      <input type="number" id="set-mon-cooldown" value="30" dir="ltr"></div>
+    <label class="toggle"><input type="checkbox" id="set-mon-in-app" checked>
+      <span data-i18n="mon_in_app">التنبيه داخل التطبيق</span></label>
+    <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-mon-toast" checked>
+      <span data-i18n="mon_toast">التنبيه كـ toast من ويندوز</span></label>
+    <div class="row" style="margin-top:20px">
+      <button class="gold-btn btn-3d" id="save-system"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#save"/></svg> <span data-i18n="save">حفظ</span></button>
+      <span class="save-status" id="save-status-system"></span>
+    </div>
+  </div>
+
+  <!-- IMPORTANT NOTIFICATIONS (v1.4.2) -->
+  <div id="section-notifications" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_notifications">الإشعارات المهمة</h3>
+    <div class="field"><div class="hint" id="notif-status">…</div></div>
+    <label class="toggle"><input type="checkbox" id="set-notif-enabled" checked>
+      <span data-i18n="notif_enable">التنبيه عند إشعار مهم من ويندوز</span></label>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost-btn btn-3d" id="notif-access-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#notifications"/></svg> <span data-i18n="notif_access">طلب إذن الوصول للإشعارات</span></button>
+    </div>
+    <div class="field" style="margin-top:14px"><label data-i18n="notif_apps">تطبيقات مهمة (سطر لكل تطبيق)</label>
+      <textarea id="set-notif-apps" rows="4" dir="ltr"></textarea></div>
+    <div class="field"><label data-i18n="notif_keywords">كلمات مفتاحية مهمة (سطر لكل كلمة)</label>
+      <textarea id="set-notif-keywords" rows="4"></textarea></div>
+    <div class="row" style="margin-top:20px">
+      <button class="gold-btn btn-3d" id="save-notifications"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#save"/></svg> <span data-i18n="save">حفظ</span></button>
+      <span class="save-status" id="save-status-notifications"></span>
+    </div>
+  </div>
+
+  <!-- VOICES -->
+  <div id="section-voices" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_voice">الأصوات</h3>
+    <div class="voice-grid" id="voice-grid">
+      <button class="voice-card btn-3d" data-voice="boy_calm">
+        <div class="v-name"><span data-i18n="v_boy1">ولد 1</span></div>
+        <div class="v-style" data-i18n="v_boy1_style">هادي ورزين</div>
+      </button>
+      <button class="voice-card btn-3d" data-voice="boy_fun">
+        <div class="v-name"><span data-i18n="v_boy2">ولد 2</span></div>
+        <div class="v-style" data-i18n="v_boy2_style">مرح وخفيف</div>
+      </button>
+      <button class="voice-card btn-3d" data-voice="girl_warm">
+        <div class="v-name"><span data-i18n="v_girl1">بنت 1</span></div>
+        <div class="v-style" data-i18n="v_girl1_style">دافية وودودة</div>
+      </button>
+      <button class="voice-card btn-3d" data-voice="girl_fast">
+        <div class="v-name"><span data-i18n="v_girl2">بنت 2</span></div>
+        <div class="v-style" data-i18n="v_girl2_style">عملية وسريعة</div>
+      </button>
+    </div>
+    <div class="field" style="margin-top:8px"><div class="hint" data-i18n="voice_hint">
+      الصوت اللي تختاره بيتحفظ على طول وبيتطبق بعد إعادة التشغيل. الأصوات الأونلاين من Gemini، ولو مفيش نت الصوت الاحتياطي Piper (صوت واحد عربي).</div></div>
+    <span class="save-status" id="save-status-voice"></span>
+  </div>
+
+  <!-- AVATAR -->
+  <div id="section-avatar" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_avatar">الأفاتار</h3>
+    <div class="avatar-pick" id="avatar-pick">
+      <button class="avatar-opt selected btn-3d" data-avatar="cat">
+        <img src="assets/avatar-cat.png" alt="Cat"><span data-i18n="av_cat">قطة</span>
+      </button>
+      <button class="avatar-opt btn-3d" data-avatar="dog">
+        <img src="assets/avatar-dog.png" alt="Dog"><span data-i18n="av_dog">كلب</span></span>
+      </button>
+      <button class="avatar-opt btn-3d" data-avatar="boy">
+        <img src="assets/avatar-boy.png" alt="Boy"><span data-i18n="av_boy">ولد</span></span>
+      </button>
+      <button class="avatar-opt btn-3d" data-avatar="girl">
+        <img src="assets/avatar-girl.png" alt="Girl"><span data-i18n="av_girl">بنت</span></span>
+      </button>
+    </div>
+    <div class="field" style="margin-top:8px"><div class="hint" data-i18n="avatar_hint">
+      الشخصية اللي تختارها بتتحفظ على طول وبتتطبق بعد إعادة التشغيل.</div></div>
+    <span class="save-status" id="save-status-avatar"></span>
+  </div>
+
+  <!-- LOGS -->
+  <div id="section-logs" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_logs">سجل التشخيص</h3>
+    <div class="log-box" id="log-box">...</div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost-btn btn-3d" id="logs-refresh"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#refresh"/></svg> <span data-i18n="logs_refresh">تحديث</span></button>
+      <button class="ghost-btn btn-3d" id="logs-copy"><span data-i18n="logs_copy">نسخ السجل</span></button>
+    </div>
+  </div>
+
+
+  <!-- THEMES (v1.6.0) -->
+  <div id="section-themes" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3>الثيمات</h3>
+    <div class="theme-grid" id="theme-grid"></div>
+    <div class="field" style="margin-top:10px"><div class="hint" id="theme-status"></div></div>
+  </div>
+
+  <!-- API KEYS (v1.6.0: no bundled key — user enters their own) -->
+  <div id="section-api-keys" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3>مفاتيح API</h3>
+    <div class="field">
+      <label>مفتاح Gemini للصوت</label>
+      <div class="api-key-row"><input type="password" id="api-key-gemini-voice" placeholder="مفتاح Gemini للصوت" dir="ltr" autocomplete="off"><button class="ghost-btn btn-3d" id="api-show-gemini-voice" type="button">إظهار</button></div>
+      <div class="row" style="margin-top:8px"><button class="gold-btn btn-3d" id="api-save-gemini-voice" type="button">حفظ</button><button class="ghost-btn btn-3d" id="api-test-gemini-voice" type="button">اختبار الاتصال</button><span class="saved-badge" id="api-badge-gemini-voice"></span><span class="save-status" id="api-status-gemini-voice"></span></div>
+    </div>
+    <div class="field">
+      <label>مفتاح Gemini للمحادثة (بديل Groq)</label>
+      <div class="api-key-row"><input type="password" id="api-key-gemini-chat" placeholder="مفتاح Gemini للمحادثة" dir="ltr" autocomplete="off"><button class="ghost-btn btn-3d" id="api-show-gemini-chat" type="button">إظهار</button></div>
+      <div class="row" style="margin-top:8px"><button class="gold-btn btn-3d" id="api-save-gemini-chat" type="button">حفظ</button><button class="ghost-btn btn-3d" id="api-test-gemini-chat" type="button">اختبار الاتصال</button><span class="saved-badge" id="api-badge-gemini-chat"></span><span class="save-status" id="api-status-gemini-chat"></span></div>
+    </div>
+    <div class="field">
+      <label>Groq</label>
+      <div class="api-key-row"><input type="password" id="api-key-groq" placeholder="مفتاح Groq" dir="ltr" autocomplete="off"><button class="ghost-btn btn-3d" id="api-show-groq" type="button">إظهار</button></div>
+      <div class="row" style="margin-top:8px"><button class="gold-btn btn-3d" id="api-save-groq" type="button">حفظ</button><button class="ghost-btn btn-3d" id="api-test-groq" type="button">اختبار الاتصال</button><span class="saved-badge" id="api-badge-groq"></span><span class="save-status" id="api-status-groq"></span></div>
+    </div>
+  </div>
+
+  <!-- SELF VIEW (v1.6.0: LONA sees herself) -->
+  <div id="section-self-view" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3>لونا شايفة نفسها</h3>
+    <div class="self-view-rows" id="self-view-rows">
+      <div class="self-view-row"><span class="k">المود الحالي</span><span class="v" id="sv-mood">—</span></div>
+      <div class="self-view-row"><span class="k">المهمة الحالية</span><span class="v" id="sv-task">—</span></div>
+      <div class="self-view-row"><span class="k">آخر إجراء</span><span class="v" id="sv-last-action">—</span></div>
+      <div class="self-view-row"><span class="k">استهلاكها هي</span><span class="v" id="sv-usage">—</span></div>
+      <div class="self-view-row"><span class="k">الحرارة</span><span class="v" id="sv-temp">—</span></div>
+      <div class="self-view-row"><span class="k">الملفات العميقة</span><span class="v" id="sv-deep">مقفولة</span></div>
+      <div class="self-view-row"><span class="k">Chrome</span><span class="v" id="sv-chrome">—</span></div>
+      <div class="self-view-row"><span class="k">الموديل</span><span class="v" id="sv-model">—</span></div>
+    </div>
+  </div>
+
+  <!-- BACKUP (v1.6.0: local export/import, password-protected) -->
+  <div id="section-backup" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3>نسخة احتياطية</h3>
+    <div class="backup-box">
+      <div class="field"><label>كلمة سر النسخة (للتصدير)</label>
+        <input type="password" id="backup-export-pass" placeholder="كلمة السر" autocomplete="off" dir="ltr"></div>
+      <div class="field"><label>تأكيد كلمة السر</label>
+        <input type="password" id="backup-export-pass2" placeholder="اكتبها تاني" autocomplete="off" dir="ltr"></div>
+      <div class="row"><button class="gold-btn btn-3d" id="backup-export-btn" type="button">تصدير نسخة احتياطية</button><span class="save-status" id="backup-export-status"></span></div>
+    </div>
+    <div class="backup-box">
+      <div class="field"><label>كلمة سر النسخة (للاستيراد)</label>
+        <input type="password" id="backup-import-pass" placeholder="كلمة السر" autocomplete="off" dir="ltr"></div>
+      <div class="row"><button class="ghost-btn btn-3d" id="backup-import-btn" type="button">استيراد نسخة احتياطية</button><span class="save-status" id="backup-import-status"></span></div>
+    </div>
+  </div>
+
+  <!-- UPDATES -->
+  <div id="section-updates" class="main-view settings-view" hidden>
+    <button class="back-btn btn-3d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#back"/></svg><span data-i18n="back">رجوع</span></button>
+    <h3 data-i18n="sec_updates">التحديثات</h3>
+    <div class="field"><div class="hint" id="update-status" data-i18n="update_idle">اضغط «التحقق من التحديثات» عشان تشوف لو فيه نسخة جديدة.</div></div>
+    <div class="field"><div class="hint" id="version-line"></div></div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost-btn btn-3d" id="check-updates-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#refresh"/></svg> <span data-i18n="check_updates">التحقق من التحديثات</span></button>
+      <button class="gold-btn btn-3d" id="install-downloaded-btn" class="update-install-btn" style="display:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#updates"/></svg> <span data-i18n="install_downloaded">تثبيت التحديث المنزّل</span></button>
+    </div>
+    <!-- v1.4.3: Apple-style "What's new" slide - rendered by JS
+         (renderUpdateSlide): hero icon + big version + one card per
+         feature + Install now / Install later in the same slide.
+         No plain-text status line, no confirm() dialog. -->
+    <div class="update-slide" id="update-slide" hidden></div>
+    <div class="update-installing-label" id="update-installing-label" hidden>بيتثبّت دلوقتي…</div>
+    <div class="update-progress" id="update-progress" style="display:none">
+      <div class="update-progress-track"><div class="update-progress-fill" id="update-progress-fill"></div></div>
+      <div class="update-progress-label" id="update-progress-label"></div>
+    </div>
+  </div>
+
   <div class="quick-scan" id="quick-scan"><span class="qs-dot"></span><span id="quick-scan-text">الجهاز تمام — مفيش حاجة محتاجة انتباه دلوقتي</span><button class="ghost-btn btn-3d" id="quick-scan-btn" type="button">فحص سريع</button></div>
 
   <div class="status" id="status"></div>
@@ -93,361 +419,40 @@
         <button type="button" data-kind="مستندات">مستندات</button>
       </div>
     </div>
-    <button class="deepthink-btn btn-3d" id="deepthink-btn" type="button" title="تفكير عميق">🧠</button>
+    <button class="deepthink-btn btn-3d" id="deepthink-btn" type="button" title="تفكير عميق"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#deep-think"/></svg></button>
     <input class="text-input" id="text-input" type="text"
            data-i18n-ph="input_placeholder" placeholder="اكتب رسالتك هنا...">
-    <button class="send-btn btn-3d" id="send-btn" title="إرسال">➤</button>
-    <button class="mic-btn" id="mic-btn" title="تحدث">🎙️</button>
+    <button class="send-btn btn-3d" id="send-btn" title="إرسال"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#send"/></svg></button>
+    <button class="mic-btn" id="mic-btn" title="تحدث"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#mic"/></svg></button>
   </div>
   <div class="mic-hint" data-i18n="mic_hint">اضغط على المايك وتكلم 5 ثواني</div>
 
 </div>
 </div>
-<nav class="pill-nav" id="pill-nav">
-  <button type="button" data-view="chat" class="active">المحادثة</button>
-  <button type="button" data-view="device">الجهاز</button>
-  <button type="button" data-view="themes">الثيمات</button>
-  <button type="button" data-view="settings">الإعدادات</button>
-</nav>
-
 </div>
 
-<!-- ================= Settings ================= -->
-<div class="modal-backdrop" id="settings-modal">
-  <div class="modal">
-    <button class="close-x btn-3d" id="settings-close">✕</button>
-    <h2 data-i18n="settings_title">الإعدادات</h2>
-
-    <!-- MENU (v1.4.2: DeliveryFlow-style - a vertical list of buttons,
-         each opening its own section with a back button) -->
-    <div id="settings-menu" class="settings-view">
-      <button class="menu-btn btn-3d" data-section="general"><span class="menu-ico">⚙️</span><span data-i18n="menu_general">عام</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="whatsapp"><span class="menu-ico">💬</span><span data-i18n="menu_whatsapp">WhatsApp</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="memory"><span class="menu-ico">🧠</span><span data-i18n="menu_memory">الذاكرة</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="system"><span class="menu-ico">🖥️</span><span data-i18n="menu_system">صحة الجهاز</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="notifications"><span class="menu-ico">🔔</span><span data-i18n="menu_notifications">الإشعارات</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="voices"><span class="menu-ico">🔊</span><span data-i18n="menu_voices">الأصوات</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="avatar"><span class="menu-ico">🐱</span><span data-i18n="menu_avatar">الأفاتار</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="logs"><span class="menu-ico">📋</span><span data-i18n="menu_logs">سجل التشخيص</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="updates"><span class="menu-ico">⬇️</span><span data-i18n="menu_updates">التحديثات</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="themes"><span class="menu-ico">⬇️</span><span>الثيمات</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="api-keys"><span class="menu-ico">⬇️</span><span>مفاتيح API</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="self-view"><span class="menu-ico">⬇️</span><span>لونا شايفة نفسها</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="first-run"><span class="menu-ico">⬇️</span><span>أول تشغيل</span><span class="menu-arrow">‹</span></button>
-      <button class="menu-btn btn-3d" data-section="backup"><span class="menu-ico">⬇️</span><span>نسخة احتياطية</span><span class="menu-arrow">‹</span></button>
-      <button class="danger-btn btn-3d" id="quit-btn" style="margin-top:14px">⏻ <span data-i18n="quit">إغلاق البرنامج</span></button>
-      <div class="todo-note" style="margin-top:16px" data-i18n="todo_note">
-        قيد التطوير (v2): ترجمة الشاشة، المجلس متعدد النماذج، تنبيهات الجيميل والتقويم في التحية الصباحية، أصوات XTTS، وموديل 7B.
-      </div>
+<!-- INVITE GATE (v1.6.1): first launch only, before the main window.
+     Shown when the install is not activated yet; a correct code hides
+     it forever, a wrong code stays here with a message and a retry.
+     NOT a browsable view: no sidebar/menu entry, no back button, no
+     dismiss. The 6 boxes + hash check + activation save are unchanged
+     (see wireInvite in app.js); only the container moved out of the
+     settings modal into this full-screen gate. Inline positioning only
+     (no styles.css change); the boxes/buttons reuse existing classes. -->
+<div id="invite-gate" hidden style="position:fixed;inset:0;z-index:9999;background:var(--bg,#0a0e14)">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;height:100%;text-align:center;padding:24px">
+    <h2 style="margin:0">كود الدعوة</h2>
+    <p style="margin:0;opacity:.8">اكتب كود الدعوة المكوّن من 6 أرقام عشان تفتح البرنامج</p>
+    <div class="invite-boxes" id="invite-boxes">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 1" dir="ltr">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 2" dir="ltr">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 3" dir="ltr">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 4" dir="ltr">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 5" dir="ltr">
+      <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 6" dir="ltr">
     </div>
-
-    <!-- GENERAL -->
-    <div id="section-general" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_general">عام</h3>
-      <div class="field">
-        <label data-i18n="ai_name">اسم المساعد</label>
-        <input type="text" id="set-ai-name" value="LONA">
-      </div>
-      <div class="field">
-        <label data-i18n="user_name">المساعد يناديك بإيه؟</label>
-        <input type="text" id="set-user-name" value="Mohamed">
-      </div>
-      <div class="field">
-        <label data-i18n="language">لغة الواجهة</label>
-        <select id="set-language">
-          <option value="ar">العربية</option>
-          <option value="en">English</option>
-        </select>
-      </div>
-      <label class="toggle"><input type="checkbox" id="set-greeting" checked>
-        <span data-i18n="greeting_toggle">التحية الصباحية عند التشغيل (مع الطقس)</span></label>
-      <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-voice-output" checked>
-        <span data-i18n="speaker">صوت المساعد</span></label>
-      <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-autostart" checked>
-        <span data-i18n="autostart_toggle">تشغيل LONA تلقائياً مع بدء ويندوز (يفتح النافذة الرئيسية)</span></label>
-      <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-wakeword" checked>
-        <span id="wakeword-toggle-label" data-i18n="wakeword_toggle">الاستماع الدايم — نادي «يا لونا» بصوتك فيرد عليك من غير ما تدوس المايك</span></label>
-      <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-privacy-mode" checked>
-        <span>وضع الخصوصية</span></label>
-      <div class="field"><div class="hint" id="wakeword-status" data-i18n="wakeword_status_loading">الاستماع الدايم: بيجهّز…</div></div>
-      <div class="field" style="margin-top:14px">
-        <label data-i18n="owner_code">كود المالك</label>
-        <input type="password" id="set-owner-code" data-i18n-ph="owner_code_ph" placeholder="اكتب الكود السري">
-      </div>
-      <div class="row">
-        <button class="ghost-btn btn-3d" id="owner-unlock-btn" data-i18n="owner_unlock">تفعيل وضع المالك</button>
-        <span class="save-status" id="owner-status"></span>
-      </div>
-      <h3 data-i18n="sec_about">عن المطور</h3>
-      <div class="about-box">
-        <div><b>LONA</b> v1.6.0</div>
-        <div data-i18n="about_by">صمم بواسطة <b>ENG/Mohamed El Sayed</b></div>
-        <div style="margin-top:8px"><button class="gold-btn btn-3d" id="portfolio-btn">🌐 <span data-i18n="visit_site">زور الموقع</span></button>
-        <button class="ghost-btn btn-3d" id="github-btn">🐙 <span data-i18n="github">GitHub</span></button></div>
-      </div>
-      <div class="row" style="margin-top:20px">
-        <button class="gold-btn btn-3d" id="save-general">💾 <span data-i18n="save">حفظ</span></button>
-        <span class="save-status" id="save-status-general"></span>
-      </div>
-    </div>
-
-    <!-- WHATSAPP -->
-    <div id="section-whatsapp" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_whatsapp">واتساب — ربط كجهاز مرتبط</h3>
-      <div class="field"><div class="hint" data-i18n="wa_hint">
-        LONA بيتربط بواتساب <b>الرقم التالت</b> اللي شبه مش بيستخدمه (مش رقم الشغل ومش الرقم الأساسي) كجهاز مرتبط عبر QR — زي WhatsApp Web. الرقم الأساسي اللي هتكتبه تحت بيقدر يأمر اللابتوب، وأي رقم تاني بياخد ردود شات بس.</div></div>
-      <label class="toggle"><input type="checkbox" id="set-whatsapp">
-        <span data-i18n="wa_toggle">تفعيل ربط الواتساب</span></label>
-      <div class="field" style="margin-top:10px">
-        <label data-i18n="wa_owner_label">رقمك الأساسي (owner) — اللي يأمر اللابتوب من الواتساب</label>
-        <input type="text" id="set-wa-owner" placeholder="01xxxxxxxxx" dir="ltr">
-      </div>
-      <div class="field"><div class="hint" id="wa-status" data-i18n="wa_status_off">الواتساب مش مفعّل.</div></div>
-      <div class="wa-qr-wrap" id="wa-qr-wrap" style="display:none">
-        <img id="wa-qr" alt="WhatsApp QR">
-        <div class="hint" data-i18n="wa_scan_hint">افتح واتساب على <b>الرقم التالت</b> ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز، وامسح الكود ده.</div>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <button class="gold-btn btn-3d" id="wa-relink-btn" style="display:none">🔄 <span data-i18n="wa_relink">إعادة الربط (QR جديد)</span></button>
-        <button class="ghost-btn btn-3d" id="wa-disconnect-btn">🔌 <span data-i18n="wa_disconnect">فصل وإلغاء الربط</span></button>
-      </div>
-      <div class="row" style="margin-top:20px">
-        <button class="gold-btn btn-3d" id="save-whatsapp">💾 <span data-i18n="save">حفظ</span></button>
-        <span class="save-status" id="save-status-whatsapp"></span>
-      </div>
-    </div>
-
-    <!-- MEMORY (v1.4.2: long-term memory - view + delete + wipe) -->
-    <div id="section-memory" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_memory">الذاكرة الطويلة</h3>
-      <div class="field"><div class="hint" data-i18n="mem_hint">
-        دي الحاجات اللي LONA فاكرها عنك من المحادثات — محفوظة على جهازك بس، ومبتترفعش لأي مكان. تقدر تمسح أي حاجة منها، أو تمسح الكل.</div></div>
-      <div class="mem-group-title" data-i18n="mem_style">أسلوبك اللي اتعلمته</div>
-      <div class="field"><div class="hint" id="memory-style">—</div></div>
-      <div id="memory-list"></div>
-      <div class="mem-group-title" data-i18n="mem_summary">ملخص محادثات سابقة</div>
-      <div class="field"><div class="hint" id="memory-summary">—</div></div>
-      <div class="row" style="margin-top:14px">
-        <button class="danger-btn btn-3d" id="memory-clear-btn">🗑️ <span data-i18n="mem_clear">مسح كل الذاكرة</span></button>
-      </div>
-    </div>
-
-    <!-- SYSTEM HEALTH (v1.4.2: monitor + alerts) -->
-    <div id="section-system" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_system">صحة الجهاز</h3>
-      <div class="field"><div class="hint" id="sys-status">…</div></div>
-      <div class="field"><div class="hint" id="sys-temp-note"></div></div>
-      <label class="toggle"><input type="checkbox" id="set-monitor-enabled" checked>
-        <span data-i18n="mon_enable">مراقبة صحة الجهاز والتنبيه عند الخطر</span></label>
-      <div class="field"><label data-i18n="mon_ram_free">تنبيه لما الرام الفاضية تقل عن (MB)</label>
-        <input type="number" id="set-mon-ram-free" value="500" dir="ltr"></div>
-      <div class="field"><label data-i18n="mon_ram_pct">أو لما استهلاك الرام يزيد عن (%)</label>
-        <input type="number" id="set-mon-ram-pct" value="92" dir="ltr"></div>
-      <div class="field"><label data-i18n="mon_disk_free">تنبيه لما القرص الفاضي يقل عن (GB)</label>
-        <input type="number" id="set-mon-disk-free" value="10" dir="ltr"></div>
-      <div class="field"><label data-i18n="mon_disk_pct">أو لما القرص الفاضي يقل عن (%)</label>
-        <input type="number" id="set-mon-disk-pct" value="10" dir="ltr"></div>
-      <div class="field"><label data-i18n="mon_temp_warn">تنبيه حرارة المعالج (°م)</label>
-        <input type="number" id="set-mon-temp-warn" value="85" dir="ltr"></div>
-      <div class="field"><label data-i18n="mon_cpu">تنبيه حمل معالج مستمر فوق (%) لمدة (دقائق)</label>
-        <div class="row"><input type="number" id="set-mon-cpu-pct" value="85" dir="ltr" style="width:90px">
-        <input type="number" id="set-mon-cpu-min" value="5" dir="ltr" style="width:90px"></div></div>
-      <div class="field"><label data-i18n="mon_battery">تنبيه بطارية منخفضة تحت (%)</label>
-        <input type="number" id="set-mon-batt" value="20" dir="ltr"></div>
-      <div class="field"><label data-i18n="mon_cooldown">عدم تكرار نفس التنبيه قبل (دقيقة)</label>
-        <input type="number" id="set-mon-cooldown" value="30" dir="ltr"></div>
-      <label class="toggle"><input type="checkbox" id="set-mon-in-app" checked>
-        <span data-i18n="mon_in_app">التنبيه داخل التطبيق</span></label>
-      <label class="toggle" style="margin-top:10px"><input type="checkbox" id="set-mon-toast" checked>
-        <span data-i18n="mon_toast">التنبيه كـ toast من ويندوز</span></label>
-      <div class="row" style="margin-top:20px">
-        <button class="gold-btn btn-3d" id="save-system">💾 <span data-i18n="save">حفظ</span></button>
-        <span class="save-status" id="save-status-system"></span>
-      </div>
-    </div>
-
-    <!-- IMPORTANT NOTIFICATIONS (v1.4.2) -->
-    <div id="section-notifications" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_notifications">الإشعارات المهمة</h3>
-      <div class="field"><div class="hint" id="notif-status">…</div></div>
-      <label class="toggle"><input type="checkbox" id="set-notif-enabled" checked>
-        <span data-i18n="notif_enable">التنبيه عند إشعار مهم من ويندوز</span></label>
-      <div class="row" style="margin-top:10px">
-        <button class="ghost-btn btn-3d" id="notif-access-btn">🔔 <span data-i18n="notif_access">طلب إذن الوصول للإشعارات</span></button>
-      </div>
-      <div class="field" style="margin-top:14px"><label data-i18n="notif_apps">تطبيقات مهمة (سطر لكل تطبيق)</label>
-        <textarea id="set-notif-apps" rows="4" dir="ltr"></textarea></div>
-      <div class="field"><label data-i18n="notif_keywords">كلمات مفتاحية مهمة (سطر لكل كلمة)</label>
-        <textarea id="set-notif-keywords" rows="4"></textarea></div>
-      <div class="row" style="margin-top:20px">
-        <button class="gold-btn btn-3d" id="save-notifications">💾 <span data-i18n="save">حفظ</span></button>
-        <span class="save-status" id="save-status-notifications"></span>
-      </div>
-    </div>
-
-    <!-- VOICES -->
-    <div id="section-voices" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_voice">الأصوات</h3>
-      <div class="voice-grid" id="voice-grid">
-        <button class="voice-card btn-3d" data-voice="boy_calm">
-          <div class="v-name">👦 <span data-i18n="v_boy1">ولد 1</span></div>
-          <div class="v-style" data-i18n="v_boy1_style">هادي ورزين</div>
-        </button>
-        <button class="voice-card btn-3d" data-voice="boy_fun">
-          <div class="v-name">😄 <span data-i18n="v_boy2">ولد 2</span></div>
-          <div class="v-style" data-i18n="v_boy2_style">مرح وخفيف</div>
-        </button>
-        <button class="voice-card btn-3d" data-voice="girl_warm">
-          <div class="v-name">👧 <span data-i18n="v_girl1">بنت 1</span></div>
-          <div class="v-style" data-i18n="v_girl1_style">دافية وودودة</div>
-        </button>
-        <button class="voice-card btn-3d" data-voice="girl_fast">
-          <div class="v-name">⚡ <span data-i18n="v_girl2">بنت 2</span></div>
-          <div class="v-style" data-i18n="v_girl2_style">عملية وسريعة</div>
-        </button>
-      </div>
-      <div class="field" style="margin-top:8px"><div class="hint" data-i18n="voice_hint">
-        الصوت اللي تختاره بيتحفظ على طول وبيتطبق بعد إعادة التشغيل. الأصوات الأونلاين من Gemini، ولو مفيش نت الصوت الاحتياطي Piper (صوت واحد عربي).</div></div>
-      <span class="save-status" id="save-status-voice"></span>
-    </div>
-
-    <!-- AVATAR -->
-    <div id="section-avatar" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_avatar">الأفاتار</h3>
-      <div class="avatar-pick" id="avatar-pick">
-        <button class="avatar-opt selected btn-3d" data-avatar="cat">
-          <img src="assets/avatar-cat.png" alt="Cat"><span data-i18n="av_cat">قطة</span>
-        </button>
-        <button class="avatar-opt btn-3d" data-avatar="dog">
-          <img src="assets/avatar-dog.png" alt="Dog"><span>🐶 <span data-i18n="av_dog">كلب</span></span>
-        </button>
-        <button class="avatar-opt btn-3d" data-avatar="boy">
-          <img src="assets/avatar-boy.png" alt="Boy"><span>👦 <span data-i18n="av_boy">ولد</span></span>
-        </button>
-        <button class="avatar-opt btn-3d" data-avatar="girl">
-          <img src="assets/avatar-girl.png" alt="Girl"><span>👧 <span data-i18n="av_girl">بنت</span></span>
-        </button>
-      </div>
-      <div class="field" style="margin-top:8px"><div class="hint" data-i18n="avatar_hint">
-        الشخصية اللي تختارها بتتحفظ على طول وبتتطبق بعد إعادة التشغيل.</div></div>
-      <span class="save-status" id="save-status-avatar"></span>
-    </div>
-
-    <!-- LOGS -->
-    <div id="section-logs" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_logs">سجل التشخيص</h3>
-      <div class="log-box" id="log-box">...</div>
-      <div class="row" style="margin-top:10px">
-        <button class="ghost-btn btn-3d" id="logs-refresh">↻ <span data-i18n="logs_refresh">تحديث</span></button>
-        <button class="ghost-btn btn-3d" id="logs-copy">📋 <span data-i18n="logs_copy">نسخ السجل</span></button>
-      </div>
-    </div>
-
-
-    <!-- THEMES (v1.6.0) -->
-    <div id="section-themes" class="settings-view" hidden>
-      <button class="back-btn btn-3d">→ رجوع</button>
-      <h3>الثيمات</h3>
-      <div class="theme-grid" id="theme-grid"></div>
-      <div class="field" style="margin-top:10px"><div class="hint" id="theme-status"></div></div>
-    </div>
-
-    <!-- API KEYS (v1.6.0: no bundled key — user enters their own) -->
-    <div id="section-api-keys" class="settings-view" hidden>
-      <button class="back-btn btn-3d">→ رجوع</button>
-      <h3>مفاتيح API</h3>
-      <div class="field">
-        <label>Gemini</label>
-        <div class="api-key-row"><input type="password" id="api-key-gemini" placeholder="مفتاح Gemini" dir="ltr" autocomplete="off"><button class="ghost-btn btn-3d" id="api-show-gemini" type="button">إظهار</button></div>
-        <div class="row" style="margin-top:8px"><button class="gold-btn btn-3d" id="api-save-gemini" type="button">حفظ</button><button class="ghost-btn btn-3d" id="api-test-gemini" type="button">اختبار الاتصال</button><span class="saved-badge" id="api-badge-gemini"></span><span class="save-status" id="api-status-gemini"></span></div>
-      </div>
-      <div class="field">
-        <label>Groq</label>
-        <div class="api-key-row"><input type="password" id="api-key-groq" placeholder="مفتاح Groq" dir="ltr" autocomplete="off"><button class="ghost-btn btn-3d" id="api-show-groq" type="button">إظهار</button></div>
-        <div class="row" style="margin-top:8px"><button class="gold-btn btn-3d" id="api-save-groq" type="button">حفظ</button><button class="ghost-btn btn-3d" id="api-test-groq" type="button">اختبار الاتصال</button><span class="saved-badge" id="api-badge-groq"></span><span class="save-status" id="api-status-groq"></span></div>
-      </div>
-    </div>
-
-    <!-- SELF VIEW (v1.6.0: LONA sees herself) -->
-    <div id="section-self-view" class="settings-view" hidden>
-      <button class="back-btn btn-3d">→ رجوع</button>
-      <h3>لونا شايفة نفسها</h3>
-      <div class="self-view-rows" id="self-view-rows">
-        <div class="self-view-row"><span class="k">المود الحالي</span><span class="v" id="sv-mood">—</span></div>
-        <div class="self-view-row"><span class="k">المهمة الحالية</span><span class="v" id="sv-task">—</span></div>
-        <div class="self-view-row"><span class="k">آخر إجراء</span><span class="v" id="sv-last-action">—</span></div>
-        <div class="self-view-row"><span class="k">استهلاكها هي</span><span class="v" id="sv-usage">—</span></div>
-        <div class="self-view-row"><span class="k">الحرارة</span><span class="v" id="sv-temp">—</span></div>
-        <div class="self-view-row"><span class="k">الملفات العميقة</span><span class="v" id="sv-deep">مقفولة</span></div>
-        <div class="self-view-row"><span class="k">Chrome</span><span class="v" id="sv-chrome">—</span></div>
-        <div class="self-view-row"><span class="k">الموديل</span><span class="v" id="sv-model">—</span></div>
-      </div>
-    </div>
-
-    <!-- FIRST RUN / INVITE (v1.6.0: 6 boxes, string join, leading zero kept) -->
-    <div id="section-first-run" class="settings-view" hidden>
-      <button class="back-btn btn-3d">→ رجوع</button>
-      <h3>أول تشغيل — كود الدعوة</h3>
-      <div class="invite-boxes" id="invite-boxes">
-        <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 1" dir="ltr">
-        <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 2" dir="ltr">
-        <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 3" dir="ltr">
-        <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 4" dir="ltr">
-        <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 5" dir="ltr">
-        <input class="invite-box" type="text" inputmode="numeric" maxlength="1" aria-label="خانة 6" dir="ltr">
-      </div>
-      <div class="row" style="justify-content:center"><button class="gold-btn btn-3d" id="invite-activate" type="button" disabled>تفعيل</button></div>
-      <div class="field" style="margin-top:10px;text-align:center"><span class="save-status" id="invite-status"></span></div>
-    </div>
-
-
-    <!-- BACKUP (v1.6.0: local export/import, password-protected) -->
-    <div id="section-backup" class="settings-view" hidden>
-      <button class="back-btn btn-3d">→ رجوع</button>
-      <h3>نسخة احتياطية</h3>
-      <div class="backup-box">
-        <div class="field"><label>كلمة سر النسخة (للتصدير)</label>
-          <input type="password" id="backup-export-pass" placeholder="كلمة السر" autocomplete="off" dir="ltr"></div>
-        <div class="field"><label>تأكيد كلمة السر</label>
-          <input type="password" id="backup-export-pass2" placeholder="اكتبها تاني" autocomplete="off" dir="ltr"></div>
-        <div class="row"><button class="gold-btn btn-3d" id="backup-export-btn" type="button">تصدير نسخة احتياطية</button><span class="save-status" id="backup-export-status"></span></div>
-      </div>
-      <div class="backup-box">
-        <div class="field"><label>كلمة سر النسخة (للاستيراد)</label>
-          <input type="password" id="backup-import-pass" placeholder="كلمة السر" autocomplete="off" dir="ltr"></div>
-        <div class="row"><button class="ghost-btn btn-3d" id="backup-import-btn" type="button">استيراد نسخة احتياطية</button><span class="save-status" id="backup-import-status"></span></div>
-      </div>
-    </div>
-
-    <!-- UPDATES -->
-    <div id="section-updates" class="settings-view" hidden>
-      <button class="back-btn btn-3d" data-i18n="back">→ رجوع</button>
-      <h3 data-i18n="sec_updates">التحديثات</h3>
-      <div class="field"><div class="hint" id="update-status" data-i18n="update_idle">اضغط «التحقق من التحديثات» عشان تشوف لو فيه نسخة جديدة.</div></div>
-      <div class="field"><div class="hint" id="version-line"></div></div>
-      <div class="row" style="margin-top:10px">
-        <button class="ghost-btn btn-3d" id="check-updates-btn">↻ <span data-i18n="check_updates">التحقق من التحديثات</span></button>
-        <button class="gold-btn btn-3d" id="install-downloaded-btn" class="update-install-btn" style="display:none">⬇️ <span data-i18n="install_downloaded">تثبيت التحديث المنزّل</span></button>
-      </div>
-      <!-- v1.4.3: Apple-style "What's new" slide - rendered by JS
-           (renderUpdateSlide): hero icon + big version + one card per
-           feature + Install now / Install later in the same slide.
-           No plain-text status line, no confirm() dialog. -->
-      <div class="update-slide" id="update-slide" hidden></div>
-      <div class="update-installing-label" id="update-installing-label" hidden>بيتثبّت دلوقتي…</div>
-      <div class="update-progress" id="update-progress" style="display:none">
-        <div class="update-progress-track"><div class="update-progress-fill" id="update-progress-fill"></div></div>
-        <div class="update-progress-label" id="update-progress-label"></div>
-      </div>
-    </div>
+    <div class="row" style="justify-content:center"><button class="gold-btn btn-3d" id="invite-activate" type="button" disabled>تفعيل</button></div>
+    <div class="field" style="margin-top:10px;text-align:center"><span class="save-status" id="invite-status"></span></div>
   </div>
 </div>
 

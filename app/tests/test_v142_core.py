@@ -324,7 +324,7 @@ class TestSendWhatsApp(unittest.TestCase):
                 "send_whatsapp_message", {"text": "هاي، دي رسالة تجريبية"})
         self.assertEqual(self.sent, [("201557887719",
                                       "هاي، دي رسالة تجريبية")])
-        self.assertIn("✅", out)
+        self.assertIn("بعت رسالة الواتساب", out)
 
     def test_send_to_explicit_number(self):
         with tools.trusted_caller():
@@ -343,7 +343,7 @@ class TestSendWhatsApp(unittest.TestCase):
             out = tools.execute_tool(
                 "send_whatsapp_message", {"text": "هاي"})
         self.assertIn("مقدرتش", out)
-        self.assertNotIn("✅", out)
+        self.assertFalse(out.startswith("بعت رسالة"))
 
     def test_not_linked_is_honest(self):
         self.fake.get_state.return_value = {"status": "waiting_qr"}

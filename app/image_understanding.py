@@ -39,14 +39,16 @@ def send_image_to_gemini(image_bytes: bytes, prompt: str,
     prompt = str(prompt or "").strip() or "اشرح اللي في الصورة دي بالعربي."
     try:
         import apikeys
-        key = apikeys.read_key_value("gemini")
+        # v1.6.1: vision is a Gemini 2.5 Flash LLM call, so it uses
+        # the CHAT key - never the voice key.
+        key = apikeys.read_key_value("gemini-chat")
     except Exception as exc:
         return {"ok": False, "reason": "key_unavailable",
                 "detail": f"مقدرتش أقرأ مفتاح Gemini: {exc}"}
     if not key:
         return {"ok": False, "reason": "no_key",
-                "detail": ("مفيش مفتاح Gemini — دخّله من الإعدادات ← "
-                           "مفاتيح API الأول.")}
+                "detail": ("مفيش مفتاح Gemini للمحادثة — دخّله من "
+                           "الإعدادات » مفاتيح API الأول.")}
     try:
         import requests
     except Exception:

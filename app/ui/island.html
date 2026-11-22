@@ -197,11 +197,11 @@
     <span class="robot-bubble-say" id="island-say"></span>
   </div>
   <div class="texts">
-    <div class="agent-line"><span class="green-dot"></span><span id="island-name">LONA</span><span>⌄</span></div>
+    <div class="agent-line"><span class="green-dot"></span><span id="island-name">LONA</span><span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;transform:rotate(90deg)"><use href="assets/lona-icons-sprite.svg#back"/></svg></span></div>
     <div class="listen-line"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span class="listen-text" id="listen-text">Listening...</span></div>
   </div>
-  <button class="round-btn" id="island-mic" title="تحدث">🎙️</button>
-  <button class="round-btn" id="island-settings" title="الإعدادات">⚙️</button>
+  <button class="round-btn" id="island-mic" title="تحدث"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#mic"/></svg></button>
+  <button class="round-btn" id="island-settings" title="الإعدادات"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#settings"/></svg></button>
 </div>
 
 <!-- Expanded island -->
@@ -218,15 +218,15 @@
   </div>
   <div class="exp-side">
     <div class="exp-greet">
-      <div class="avatar-dot">👤</div>
-      <div class="greet-bubble" id="exp-greet">أهلاً يا محمد! أقدر أساعدك في إيه النهاردة؟ 👋</div>
+      <div class="avatar-dot"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#avatar"/></svg></div>
+      <div class="greet-bubble" id="exp-greet">أهلاً يا محمد! أقدر أساعدك في إيه النهاردة؟</div>
     </div>
     <div class="reply-line" id="exp-reply"></div>
     <div class="exp-actions">
-      <button data-action="quick" type="button">⚡ Quick Actions</button>
-      <button data-action="tools" type="button">▦ Tools</button>
-      <button data-action="skills" type="button">🧠 Skills</button>
-      <button data-action="more" type="button">⭐ More</button>
+      <button data-action="quick" type="button">Quick Actions</button>
+      <button data-action="tools" type="button">Tools</button>
+      <button data-action="skills" type="button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#memory"/></svg> Skills</button>
+      <button data-action="more" type="button">More</button>
     </div>
     <div class="exp-panels" id="exp-panels">
       <button class="exp-arrows prev" id="panel-prev" type="button" aria-label="السابق">‹</button>
@@ -265,13 +265,13 @@
     <div class="exp-composer">
       <button class="plus-btn" id="exp-plus" type="button" title="إضافة">+</button>
       <input id="exp-input" type="text" placeholder="Type a message...">
-      <button class="send-btn" id="exp-send" type="button" title="إرسال">➤</button>
+      <button class="send-btn" id="exp-send" type="button" title="إرسال"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#send"/></svg></button>
     </div>
     <div class="exp-attach" id="exp-attach">
-      <button type="button" data-kind="صور">📷 صور</button>
-      <button type="button" data-kind="ملفات">📁 ملفات</button>
-      <button type="button" data-kind="فيديو">🎬 فيديو</button>
-      <button type="button" data-kind="مستندات">📄 مستندات</button>
+      <button type="button" data-kind="صور">صور</button>
+      <button type="button" data-kind="ملفات">ملفات</button>
+      <button type="button" data-kind="فيديو">فيديو</button>
+      <button type="button" data-kind="مستندات">مستندات</button>
     </div>
   </div>
 </div>
@@ -437,7 +437,7 @@
 
   /* Robot interaction: tapping the robot does NOT open/close the
      island — it reacts (reactJump .72s + waving arm + gold bubble
-     1.5s) and flips the mood نايم→صاحي, anything else→مبسوط وبيرقص. */
+     1.5s) and flips the mood نايم إلى صاحي, anything else إلى مبسوط وبيرقص. */
   const SAYINGS = ["أهلًا!", "أنا هنا!", "ازيك يا محمد!"];
   let sayIdx = 0, sayTimer = null;
   function robotReact(wrap, sayEl) {
@@ -482,13 +482,18 @@
     if (!api || !api.get_device_overview) return;
     try {
       const d = await api.get_device_overview();
-      if (d.ram_percent != null) { $("p-ram").textContent = d.ram_percent + "%"; $("p-ram-bar").style.width = d.ram_percent + "%"; $("p-ram2").textContent = d.ram_percent + "%"; }
-      if (d.cpu_percent != null) { $("p-cpu").textContent = d.cpu_percent + "%"; $("p-cpu2").textContent = d.cpu_percent + "%"; }
-      if (d.battery_percent != null) $("p-batt").textContent = d.battery_percent + "%";
-      if (d.temp_c != null) $("p-temp").textContent = d.temp_c + "°م";
-      if (d.disk_percent != null) { $("p-disk").textContent = d.disk_percent + "% مستخدم"; $("p-disk-bar").style.width = d.disk_percent + "%"; }
-      if (d.cache_mb != null) $("p-cache").textContent = d.cache_mb + " MB";
-      if (d.current_tab) $("p-tab").textContent = d.current_tab;
+      // v1.6.1: the API returns {ok, overview:{ram:{percent}, ...}} —
+      // the old flat reads never matched, so the panels stayed "—"
+      // forever. Read the nested shape (same fix as the main
+      // window's refreshDeviceOverview).
+      const ov = (d && d.overview) || {};
+      if (ov.ram && ov.ram.percent != null) { $("p-ram").textContent = ov.ram.percent + "%"; $("p-ram-bar").style.width = ov.ram.percent + "%"; $("p-ram2").textContent = ov.ram.percent + "%"; }
+      if (ov.cpu && ov.cpu.percent != null) { $("p-cpu").textContent = ov.cpu.percent + "%"; $("p-cpu2").textContent = ov.cpu.percent + "%"; }
+      if (ov.battery && ov.battery.percent != null) $("p-batt").textContent = ov.battery.percent + "%";
+      if (ov.temp_c != null) $("p-temp").textContent = ov.temp_c + "°م";
+      if (ov.disk && ov.disk.percent_free != null) { const used = Math.round((100 - ov.disk.percent_free) * 10) / 10; $("p-disk").textContent = used + "% مستخدم"; $("p-disk-bar").style.width = used + "%"; }
+      // p-cache / p-tab have no source in get_device_overview — left as
+      // "—" (pre-existing placeholders, never invented).
     } catch (e) { /* panels keep their placeholders */ }
   }
 
@@ -519,7 +524,7 @@
     const api = getApi(); const st = $("clean-status");
     if (api && api.request_clean_cache) {
       st.textContent = "بنضّف...";
-      try { const r = await api.request_clean_cache(); st.textContent = (r && r.ok) ? "اتنضّف ✓" : "محتاج إذنك الأول"; if (r && r.ok) refreshDevicePanels(); }
+      try { const r = await api.request_clean_cache(); st.textContent = (r && r.ok) ? "اتنضّف" : "محتاج إذنك الأول"; if (r && r.ok) refreshDevicePanels(); }
       catch (e) { st.textContent = "محتاج إذنك الأول"; }
     } else st.textContent = "التنظيف من النافذة الرئيسية";
   });

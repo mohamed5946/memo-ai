@@ -1127,7 +1127,7 @@ class WhatsAppService:
         owner = self.owner_number()
         lang = "ar" if _is_arabic(text) else \
             self.settings.get("language", "ar")
-        ai_name = self.settings.get("ai_name", "Memo")
+        ai_name = self.settings.get("ai_name", "LONA")
         user_name = self.settings.get("user_name", "Mohamed")
 
         if ident["is_owner"]:
@@ -1185,9 +1185,9 @@ class WhatsAppService:
         elif not reply:
             # The reply was only an image marker: WhatsApp gets text
             # only, so say where the picture is.
-            reply = ("ولّدت الصورة ✅ — هتلاقيها في شات التطبيق على اللابتوب."
+            reply = ("ولّدت الصورة — هتلاقيها في شات التطبيق على اللابتوب."
                      if lang == "ar" else
-                     "Image generated ✅ — you'll find it in the desktop app chat.")
+                     "Image generated — you'll find it in the desktop app chat.")
         reply = reply[:MAX_REPLY_CHARS]
         info("whatsapp", f"Message from {mode} sender {mask_number(sender)}, "
                          f"{len(text)} chars -> reply {len(reply)} chars "

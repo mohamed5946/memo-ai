@@ -410,16 +410,16 @@ class TestInstallerRegistration:
         assert "native-host.json" in iss
         assert "WriteNativeHostManifest" in iss
         assert "RegDeleteKeyIncludingSubkeys" in iss
-        # AppName / install dir untouched by this workstream.
+        # v1.6.1 rename: AppName / install dir are now LONA.
         assert 'AppName={#AppName}' in iss
-        assert 'DefaultDirName={localappdata}\\Programs\\Memo AI' in iss
+        assert 'DefaultDirName={localappdata}\\Programs\\LONA' in iss
 
     def test_native_host_manifest_template(self):
         manifest = json.loads(
             (ROOT / "installer" / "native-host.json").read_text())
         assert manifest["name"] == "com.memoai.host"
         assert manifest["type"] == "stdio"
-        assert manifest["path"].endswith("Memo AI.exe")
+        assert manifest["path"].endswith("LONA.exe")
 
     def test_main_hook_documented(self):
         hook = _read("extension/NATIVE_HOST_MAIN_HOOK.txt")

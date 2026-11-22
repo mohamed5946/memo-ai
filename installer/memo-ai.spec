@@ -1,10 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Memo AI — PyInstaller spec (one-folder, windowed).
+# LONA — PyInstaller spec (one-folder, windowed).
 # Build (from the repo root, on Windows):
 #   pip install -r app/requirements.txt
 #   pip install pyinstaller pyinstaller-hooks-contrib
 #   pyinstaller installer/memo-ai.spec
-# Output: dist\Memo AI\Memo AI.exe  (with app\ + keys\ next to it)
+# Output: dist\LONA\LONA.exe  (with app\ + keys\ next to it)
 #
 # The frozen layout mirrors the zip layout, with one PyInstaller 6 quirk:
 # the bootloader puts ALL collected files under _internal/ next to the exe,
@@ -146,7 +146,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Memo AI",
+    name="LONA",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -169,5 +169,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="Memo AI",
+    name="LONA",
 )

@@ -1,9 +1,20 @@
-# LONA v1.6.0 - API keys entered manually in Settings (NO bundled key).
+# LONA v1.6.1 - API keys entered manually in Settings (NO bundled key).
 #
 # STORAGE (v1.6.0, scope item 2): keys live in the WINDOWS CREDENTIAL
 # MANAGER (DPAPI) via advapi32 CredWrite/CredRead through ctypes
-# (stdlib only, no new dependency); target names "LONA:groq" and
-# "LONA:gemini". Plaintext key files are gone from the design.
+# (stdlib only, no new dependency); target names "LONA:groq",
+# "LONA:gemini-voice" and "LONA:gemini-chat". Plaintext key files are
+# gone from the design.
+#
+# TWO GEMINI KEYS (v1.6.1, item 23): the single "gemini" key is split
+# in two - "gemini-voice" (Gemini TTS, online voice only) and
+# "gemini-chat" (Gemini 2.5 Flash, chat-brain fallback + vision).
+# Each is its own DPAPI entry / txt file, by name - never shared.
+# MIGRATION: on first key read, a stored single "gemini" key is copied
+# into BOTH new providers (it served voice AND vision, so both keep
+# working) as two independent values, and the old entry is deleted
+# only after both copies verify. A user can then rotate either key
+# alone. See migrate_gemini_split().
 #
 # MIGRATION: on first key read, if keys/*.txt files exist (e.g. the
 # installer migrated them from an old zip install into keys/), they are
@@ -24,13 +35,22 @@ from logger import error, info, warn
 
 PROVIDER_FILES = {
     "groq": "groq-key.txt",
-    "gemini": "gemini-key.txt",
+    # v1.6.1: two separate Gemini keys - voice (TTS) and chat (LLM).
+    "gemini-voice": "gemini-voice-key.txt",
+    "gemini-chat": "gemini-chat-key.txt",
 }
 
 CRED_TARGETS = {
     "groq": "LONA:groq",
-    "gemini": "LONA:gemini",
+    "gemini-voice": "LONA:gemini-voice",
+    "gemini-chat": "LONA:gemini-chat",
 }
+
+# The pre-v1.6.1 single Gemini key (migration source only - never a
+# provider anymore). Its value is copied into BOTH new providers
+# because it served voice AND vision; see migrate_gemini_split().
+_LEGACY_GEMINI_FILE = "gemini-key.txt"
+_LEGACY_GEMINI_TARGET = "LONA:gemini"
 
 GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -59,9 +79,11 @@ def _cred_available() -> bool:
     return sys.platform == "win32"
 
 
-def _cred_write(provider: str, value: str) -> bool:
+def _cred_write(provider: str, value: str, target: str | None = None) -> bool:
     """Write one key to Credential Manager. Returns True on success.
-    Never logs the value. Windows only - False elsewhere."""
+    Never logs the value. Windows only - False elsewhere. `target`
+    overrides the provider's vault name (used by the legacy Gemini
+    split migration, which writes the OLD target only to delete it)."""
     if not _cred_available():
         return False
     try:
@@ -94,7 +116,7 @@ def _cred_write(provider: str, value: str) -> bool:
         cred = _CREDENTIALW()
         cred.Flags = 0
         cred.Type = 1  # CRED_TYPE_GENERIC
-        cred.TargetName = CRED_TARGETS[provider]
+        cred.TargetName = target or CRED_TARGETS[provider]
         cred.Comment = None
         cred.CredentialBlobSize = len(blob)
         cred.CredentialBlob = ctypes.cast(buf, ctypes.POINTER(ctypes.c_ubyte))
@@ -114,9 +136,10 @@ def _cred_write(provider: str, value: str) -> bool:
         return False
 
 
-def _cred_read(provider: str) -> str:
+def _cred_read(provider: str, target: str | None = None) -> str:
     """Read one key from Credential Manager, or "" when absent/failed.
-    Never logs the value. Windows only - "" elsewhere."""
+    Never logs the value. Windows only - "" elsewhere. `target`
+    overrides the vault name (legacy Gemini split migration)."""
     if not _cred_available():
         return ""
     try:
@@ -145,7 +168,7 @@ def _cred_read(provider: str) -> str:
 
         advapi32 = ctypes.windll.advapi32
         out = ctypes.POINTER(_CREDENTIALW)()
-        ok = advapi32.CredReadW(CRED_TARGETS[provider], 1, 0,
+        ok = advapi32.CredReadW(target or CRED_TARGETS[provider], 1, 0,
                                 ctypes.byref(out))
         if not ok:
             return ""  # absent (or unreadable) - presence check only
@@ -164,14 +187,15 @@ def _cred_read(provider: str) -> str:
         return ""
 
 
-def _cred_delete(provider: str) -> bool:
+def _cred_delete(provider: str, target: str | None = None) -> bool:
     """Delete one Credential Manager entry (best effort)."""
     if not _cred_available():
         return False
     try:
         import ctypes
         advapi32 = ctypes.windll.advapi32
-        return bool(advapi32.CredDeleteW(CRED_TARGETS[provider], 1, 0))
+        return bool(advapi32.CredDeleteW(target or CRED_TARGETS[provider],
+                                         1, 0))
     except Exception:
         return False
 
@@ -253,17 +277,105 @@ def migrate_txt_keys() -> dict:
     return results
 
 
+def _current_value(provider: str) -> str:
+    """Read a provider's current value WITHOUT triggering migration
+    (used inside the split migration itself - read_key_value would
+    re-enter _maybe_migrate and run the split twice)."""
+    if _cred_available():
+        return _cred_read(provider) or _txt_read(provider)
+    return _txt_read(provider)
+
+
+def _legacy_gemini_value() -> str:
+    """Read the pre-v1.6.1 single Gemini key (vault on Windows, txt
+    file elsewhere). "" when absent. Migration source only."""
+    if _cred_available():
+        value = _cred_read("gemini", target=_LEGACY_GEMINI_TARGET)
+        if value:
+            return value
+    try:
+        path = _keys_dir() / _LEGACY_GEMINI_FILE
+        if path.exists():
+            return (path.read_text(encoding="utf-8").strip()
+                    .splitlines()[0].strip())
+    except Exception:
+        pass
+    return ""
+
+
+def _delete_legacy_gemini() -> None:
+    """Remove the old single Gemini key from both stores (best
+    effort). Called only after both new providers hold the value."""
+    _cred_delete("gemini", target=_LEGACY_GEMINI_TARGET)
+    try:
+        (_keys_dir() / _LEGACY_GEMINI_FILE).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def migrate_gemini_split() -> dict:
+    """v1.6.1: split the old single Gemini key into the two new
+    providers. RULE: the old key served voice (TTS) AND vision
+    (Gemini 2.5 Flash), so it is copied to BOTH new fields as two
+    independent values - both keep working exactly as before, and
+    the user can then rotate either one alone. A new provider that
+    already has its own key is never overwritten. The old entry is
+    deleted only when BOTH new providers hold the value (verified
+    by read-back); a failed copy keeps the old key and logs a
+    warning. Returns {provider: "copied" | "already_set" | "absent" |
+    "failed", "legacy": "removed" | "kept" | "absent"}."""
+    results = {"gemini-voice": "absent", "gemini-chat": "absent",
+               "legacy": "absent"}
+    old = _legacy_gemini_value()
+    if not old:
+        return results
+    results["legacy"] = "kept"
+    for provider in ("gemini-voice", "gemini-chat"):
+        # Direct read (no _maybe_migrate re-entry - see _current_value).
+        if _current_value(provider):
+            results[provider] = "already_set"
+            continue
+        if _cred_available():
+            ok = _cred_write(provider, old)
+            verified = ok and _cred_read(provider) == old
+        else:
+            ok = _txt_write(provider, old)
+            verified = ok and _txt_read(provider) == old
+        if verified:
+            results[provider] = "copied"
+        else:
+            warn("keys", f"Gemini split migration failed for "
+                         f"{provider} - keeping the old single key")
+            results[provider] = "failed"
+    if all(results[p] in ("copied", "already_set")
+           for p in ("gemini-voice", "gemini-chat")):
+        _delete_legacy_gemini()
+        results["legacy"] = "removed"
+        info("keys", "Split the old single Gemini key into the "
+                     "voice + chat keys (two independent entries) "
+                     "and removed the old entry")
+    return results
+
+
 def _maybe_migrate() -> None:
     global _migration_done
     if _migration_done:
         return
     _migration_done = True
     if not _cred_available():
+        try:
+            migrate_gemini_split()
+        except Exception as exc:
+            warn("keys", f"Gemini split migration failed: {exc}")
         return
     try:
         migrate_txt_keys()
     except Exception as exc:
         warn("keys", f"Key migration failed: {exc}")
+    try:
+        migrate_gemini_split()
+    except Exception as exc:
+        warn("keys", f"Gemini split migration failed: {exc}")
 
 
 def reset_migration_flag() -> None:

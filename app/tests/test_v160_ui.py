@@ -35,7 +35,7 @@ def test_four_themes_incl_old():
         assert theme in CSS or theme in JS, "theme missing: " + theme
     assert "زجاج الليل" in JS
     assert "القديم" in JS  # old v1.5.0 theme stays selectable
-    assert "#0A0E14" in CSS and "#F4F6F3" in CSS and "#101014" in CSS
+    assert "#0A1A2C" in CSS and "#F4F6F3" in CSS and "#22222C" in CSS
 
 
 def test_theme_morph_transition():
@@ -99,12 +99,12 @@ def test_main_window_shell():
     assert "window-bar" in HTML and "win-dot red" in HTML
     assert "sidebar" in HTML and "side-nav" in HTML
     for item in ("المحادثة", "حالة الجهاز", "الإعدادات", "مفاتيح API",
-                 "لونا الآن", "أول تشغيل", "سجل التشخيص"):
+                 "لونا الآن", "سجل التشخيص"):
         assert item in HTML, "sidebar item missing: " + item
     assert "stat-card" in HTML and "count-up" in HTML
     assert "proc-list" in HTML and "replay-stagger" in HTML
     assert "quick-scan" in HTML
-    assert "pill-nav" in HTML  # floating glass pill nav
+    assert "pill-nav" not in HTML  # v1.6.1 (item 6): floating pill nav removed
     assert "robot-stage" in HTML
 
 
@@ -141,7 +141,11 @@ def test_invite_screen_string_join():
 
 def test_api_keys_page():
     assert "section-api-keys" in HTML
-    assert "api-key-gemini" in HTML and "api-key-groq" in HTML
+    # v1.6.1: two separate Gemini fields (voice + chat), no single one.
+    assert "api-key-gemini-voice" in HTML
+    assert "api-key-gemini-chat" in HTML
+    assert 'id="api-key-gemini"' not in HTML
+    assert "api-key-groq" in HTML
     assert "محفوظ على الجهاز" in HTML or "محفوظ على الجهاز" in JS
     assert "save_api_key" in JS and "test_api_key" in JS
     assert "إظهار" in HTML
@@ -161,7 +165,7 @@ def test_updater_installing_state():
     assert "setInstallingUI" in JS
     assert "installing" in JS  # the new progress state is handled
     assert "disabled" in JS  # button locked while installing
-    assert "مثبّت ✓" in JS
+    assert "مثبّت" in JS
 
 
 def test_bidirectional_stagger():

@@ -179,7 +179,7 @@ class TestGenerateImageTool(unittest.TestCase):
         self.assertEqual(tools._parse_image_size(""), (1024, 1024))
 
     def test_marker_helpers(self):
-        text = "ولّدت الصورة ✅\n[[IMAGE:img-1.jpg]]\nخلصت\n[[IMAGE:img-2.jpg]]"
+        text = "ولّدت الصورة\n[[IMAGE:img-1.jpg]]\nخلصت\n[[IMAGE:img-2.jpg]]"
         clean, names = tools.extract_image_markers(text)
         self.assertEqual(names, ["img-1.jpg", "img-2.jpg"])
         self.assertNotIn("[[IMAGE:", clean)

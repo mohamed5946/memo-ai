@@ -10,7 +10,8 @@
 # Implementation: pystray (pure Python, Win32 backend via ctypes - no
 # pywin32 needed). The icon runs its own message loop in a daemon
 # thread, so it never blocks the pywebview GUI thread. The icon image
-# is the bundled cat avatar (Pillow is already a dependency).
+# is the bundled gold robot logo (app/ui/assets/avatar-robot.png -
+# Pillow is already a dependency).
 #
 # Headless safety: the pystray import is guarded - on a machine without
 # a tray backend (Linux without X, or a broken install) the module

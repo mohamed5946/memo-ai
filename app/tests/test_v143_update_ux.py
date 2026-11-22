@@ -105,9 +105,9 @@ class _UpdaterCase(unittest.TestCase):
             "setup_url": "https://example.invalid/MemoAI-Setup-1.4.3.exe",
             "setup_sha256": self.exe_sha,
             "features": [
-                {"icon": "💬", "title": "إصلاح الرد على الواتساب",
+                {"icon": "chat", "title": "إصلاح الرد على الواتساب",
                  "desc": "تعريف المرسل LID"},
-                {"icon": "🧠", "title": "ذاكرة طويلة",
+                {"icon": "memory", "title": "ذاكرة طويلة",
                  "desc": "البرنامج بيفتكر اللي اتفقتوا عليه"},
             ],
         }
@@ -156,24 +156,38 @@ class TestParseFeatures(_UpdaterCase):
     def test_structured_features_win(self):
         feats = updater.parse_features(self.manifest)
         self.assertEqual(len(feats), 2)
-        self.assertEqual(feats[0]["icon"], "💬")
+        self.assertEqual(feats[0]["icon"], "chat")
         self.assertEqual(feats[0]["title"], "إصلاح الرد على الواتساب")
         self.assertEqual(feats[0]["desc"], "تعريف المرسل LID")
         self.assertEqual(feats[1]["title"], "ذاكرة طويلة")
+        self.assertEqual(feats[1]["icon"], "memory")
 
     def test_string_items_and_missing_icon_get_defaults(self):
         feats = updater.parse_features(
             {"features": ["إصلاح سريع", {"title": "بلا أيقونة"}]})
         self.assertEqual(feats[0]["title"], "إصلاح سريع")
-        self.assertTrue(feats[0]["icon"])
-        self.assertTrue(feats[1]["icon"])
+        self.assertEqual(feats[1]["title"], "بلا أيقونة")
+        # v1.6.1: icons are LONA sprite ids (or "" = no icon on the card).
+        for f in feats:
+            self.assertIn(f["icon"], updater._SPRITE_ICONS | {""})
+
+    def test_emoji_icon_from_manifest_is_dropped(self):
+        # An old emoji icon is not a sprite id: dropped, cycle default applies.
+        # ("\U0001F4AC" is the old chat emoji, written as an escape so this
+        # file itself stays emoji-free.)
+        feats = updater.parse_features({"features": [
+            {"icon": "chat", "title": "صح"},
+            {"icon": "\U0001F4AC", "title": "قديم"},
+        ]})
+        self.assertEqual(feats[0]["icon"], "chat")
+        self.assertEqual(feats[1]["icon"], "settings")
 
     def test_fallback_splits_plain_notes(self):
         feats = updater.parse_features({"notes": V142_NOTES})
         self.assertGreaterEqual(len(feats), 5)
         for f in feats:
             self.assertTrue(f["title"])
-            self.assertTrue(f["icon"])
+            self.assertIn(f["icon"], updater._SPRITE_ICONS | {""})
         self.assertNotIn("v1.4.2", feats[0]["title"])
 
     def test_empty_manifest_gives_empty_list(self):

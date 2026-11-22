@@ -61,6 +61,18 @@ DEFAULT_MONITOR_SETTINGS = {
 # a subprocess spawn; there is no point doing it every 60 s).
 _TEMP_PROBE_INTERVAL_SEC = 600
 
+# Background sampler cadence (v1.6.1 item 21): fast psutil fields refresh
+# this often (the UI polls every 5 s); slow fields (the GPU PowerShell
+# probe, all-drive storage) refresh much less often -- spawning
+# powershell.exe every 5 s for numbers that barely move is pure waste.
+_SAMPLE_FAST_SEC = 5
+_SAMPLE_SLOW_SEC = 60
+# A cached reading older than this is re-seeded synchronously with fast
+# fields only (psutil, never a subprocess) -- so a dead sampler thread
+# can never leave the UI showing stale numbers, and the UI thread never
+# waits on a subprocess spawn.
+_STATUS_MAX_AGE_SEC = 10
+
 # A temperature reading outside this range is sensor garbage, not a
 # real temperature - it is discarded, never reported.
 _TEMP_PLAUSIBLE_C = (0.0, 125.0)
@@ -82,10 +94,36 @@ def _system_drive() -> str:
 # CPU temperature (Windows only, best effort, NEVER guessed)
 # ---------------------------------------------------------------------------
 
+def _probe_value_to_celsius(raw) -> float | None:
+    """One raw CurrentReading from a WMI temperature-probe class
+    (Win32_TemperatureProbe / DCIM_ThermalSensor / CIM_TemperatureSensor)
+    -> Celsius, or None when it cannot be read honestly.
+
+    Vendors disagree: most report tenths of Kelvin (~2730-3100 for a
+    live machine), some report Celsius directly. Tenths-Kelvin values
+    are always >200, real Celsius is always <=125, so the two ranges
+    never overlap; anything in between (126-200) is discarded rather
+    than guessed. The plausibility filter in read_cpu_temp() still
+    applies on top."""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value > 200:
+        return value / 10.0 - 273.15
+    if _TEMP_PLAUSIBLE_C[0] <= value <= _TEMP_PLAUSIBLE_C[1]:
+        return value
+    return None
+
+
 def _wmi_temps() -> list:
     """Temperatures via the `wmi` package, if it happens to be installed.
     Tries MSAcpi_ThermalZoneTemperature (root\\wmi) and the
-    LibreHardwareMonitor / OpenHardwareMonitor Sensor classes."""
+    LibreHardwareMonitor / OpenHardwareMonitor Sensor classes, plus
+    (v1.6.1) Win32_TemperatureProbe (root\\cimv2) and the Dell DCIM
+    thermal sensors (root\\dcim\\sysman, present when Dell Command
+    Monitor is installed). Every namespace is best-effort: a missing
+    namespace or class is skipped silently, never raised."""
     temps = []
     try:
         import wmi as _wmi
@@ -110,12 +148,41 @@ def _wmi_temps() -> list:
                         temps.append(float(value))
         except Exception:
             pass
+    # v1.6.1: generic temperature probes + Dell DCIM sensors.
+    try:
+        c = _wmi.WMI(namespace=r"root\cimv2")
+        for probe in c.Win32_TemperatureProbe():
+            celsius = _probe_value_to_celsius(
+                getattr(probe, "CurrentReading", None))
+            if celsius is not None:
+                temps.append(celsius)
+    except Exception:
+        pass
+    try:
+        c = _wmi.WMI(namespace=r"root\dcim\sysman")
+        for cls in ("DCIM_ThermalSensor", "CIM_TemperatureSensor"):
+            try:
+                for sensor in getattr(c, cls)():
+                    celsius = _probe_value_to_celsius(
+                        getattr(sensor, "CurrentReading", None))
+                    if celsius is not None:
+                        temps.append(celsius)
+            except Exception:
+                pass
+    except Exception:
+        pass
     return temps
 
 
 def _powershell_temps() -> list:
     """Temperatures via PowerShell Get-CimInstance (no extra packages).
-    Same three sources as _wmi_temps, in the same order."""
+    Same three sources as _wmi_temps, in the same order, plus (v1.6.1)
+    three more built-in Windows paths that need no install, driver or
+    admin: Thermal Zone perf counters (Get-Counter, Kelvin -> Celsius),
+    Win32_TemperatureProbe (root\\cimv2), and the Dell DCIM thermal
+    sensors (root\\dcim\\sysman, when Dell Command Monitor is present).
+    Each stage is a cheap no-op when its source does not exist; the
+    first stage that yields a value wins."""
     import subprocess
 
     temps = []
@@ -155,6 +222,47 @@ def _powershell_temps() -> list:
                 pass
         if temps:
             return temps
+    # v1.6.1 (1): Thermal Zone perf counters. CookedValue is Kelvin.
+    out = _run("Get-Counter "
+               "'\\Thermal Zone Information(*)\\Temperature' "
+               "-ErrorAction SilentlyContinue "
+               "| Select-Object -ExpandProperty CounterSamples "
+               "| Select-Object -ExpandProperty CookedValue")
+    for line in out.splitlines():
+        try:
+            temps.append(float(line.strip()) - 273.15)
+        except (TypeError, ValueError):
+            pass
+    if temps:
+        return temps
+    # v1.6.1 (2): Win32_TemperatureProbe - CurrentReading is usually
+    # tenths of Kelvin, sometimes Celsius; the shared helper decides.
+    out = _run("Get-CimInstance -Namespace root/cimv2 "
+               "-ClassName Win32_TemperatureProbe "
+               "| Select-Object -ExpandProperty CurrentReading")
+    for line in out.splitlines():
+        try:
+            celsius = _probe_value_to_celsius(float(line.strip()))
+        except (TypeError, ValueError):
+            celsius = None
+        if celsius is not None:
+            temps.append(celsius)
+    if temps:
+        return temps
+    # v1.6.1 (3): Dell DCIM thermal sensors (Dell Command Monitor).
+    for cls in ("DCIM_ThermalSensor", "CIM_TemperatureSensor"):
+        out = _run(f"Get-CimInstance -Namespace root/dcim/sysman "
+                   f"-ClassName {cls} "
+                   "| Select-Object -ExpandProperty CurrentReading")
+        for line in out.splitlines():
+            try:
+                celsius = _probe_value_to_celsius(float(line.strip()))
+            except (TypeError, ValueError):
+                celsius = None
+            if celsius is not None:
+                temps.append(celsius)
+        if temps:
+            return temps
     return temps
 
 
@@ -162,8 +270,11 @@ def read_cpu_temp() -> tuple:
     """Best-effort CPU temperature.
 
     Returns (temp_c or None, available bool). On non-Windows, or when no
-    WMI source answers, this is (None, False) - the caller MUST report
-    that honestly and never substitute a number."""
+    WMI / perf-counter source answers, this is (None, False) - the
+    caller MUST report that honestly and never substitute a number.
+    Sources, in order: MSAcpi thermal zones, Libre/OpenHardwareMonitor
+    sensors, Thermal Zone perf counters, Win32_TemperatureProbe, Dell
+    DCIM thermal sensors (v1.6.1 added the last three)."""
     if sys.platform != "win32":
         return None, False
     candidates = _wmi_temps() or _powershell_temps()
@@ -173,6 +284,18 @@ def read_cpu_temp() -> tuple:
         return None, False
     # Several zones / sensors: the hottest one is the one that matters.
     return max(plausible), True
+
+
+# v1.6.1: when no temperature source answers, the device panel shows
+# this hint (agreed contract with the UI workstream - exact shape).
+# The temperature is never invented; the hint points at the one
+# install that publishes it (LibreHardwareMonitor, kept running).
+_TEMP_HINT = {
+    "text": "الحرارة مش متاحة على الجهاز ده — ثبّت "
+            "LibreHardwareMonitor وخليه شغال في الخلفية عشان تظهر",
+    "url": "https://github.com/LibreHardwareMonitor/"
+           "LibreHardwareMonitor/releases",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +502,157 @@ def device_state_to_mood(status: dict, focus_mode: bool = False,
 
 
 # ---------------------------------------------------------------------------
+# v1.6.1: message tone -> mood + mood stabilization.
+#
+# The robot's mood used to flip on every 5s poll whenever the device
+# numbers flickered. Two fixes, both in the monitor (the single place
+# get_mood() reads from, so the main window AND the island agree):
+#   (a) MoodStabilizer: a mood holds for >= _MOOD_HOLD_SEC and a new
+#       mood must be confirmed on _MOOD_CONFIRM_POLLS consecutive polls
+#       before it takes over. Only a critical temperature (>=90C)
+#       switches immediately.
+#   (b) analyze_message_tone(): simple Arabic/Egyptian heuristics on
+#       what Mohamed says - praise/thanks/laughter -> happy, frustration
+#       / anger / urgency -> worried (sympathetic), greeting -> cheerful,
+#       sad talk -> worried (comforting). Within the healthy range the
+#       tone drives the mood; a real device problem (worried / tired /
+#       dizzy) always wins over the tone.
+# ---------------------------------------------------------------------------
+
+_MOOD_HOLD_SEC = 150.0        # 2.5 min minimum hold (spec: 2-3 min)
+_MOOD_CONFIRM_POLLS = 2       # new mood confirmed on 2 polls (spec: 2-3)
+_MOOD_TONE_TTL_SEC = 600.0    # a message's tone steers the mood for 10 min
+_MOOD_PROBLEM = ("قلقان", "تعبان", "دايخ")  # real device problems
+
+_TONE_DISTRESS_WORDS = (
+    # frustration / anger / urgency / sadness (Egyptian Arabic)
+    "زهقت", "زهقان", "قرف", "زفت", "باظ", "مش شغال", "مش راضي",
+    "خربان", "تعبت", "مش قادر", "مخنوق", "مضايق", "متضايق",
+    "عصبي", "غضبان", "زعلان", "حزين", "مكتئب", "وحش", "فاشل",
+    "بسرعة", "ضروري", "الحقني", "ساعدني", "ليه كده", "مش عارف",
+    "تعبان", "موجوع", "قلقان", "خايف",
+)
+_TONE_HAPPY_WORDS = (
+    # praise / thanks / jokes / laughter
+    "شكرا", "تسلم", "برافو", "جميل", "حلو", "رائع", "ممتاز",
+    "عظيم", "ههه", "هاهاها", "ضحك", "نكتة", "مبسوط", "فرحان",
+    "بحبك", "احبك", "عجبني", "تمام اوي", "الله عليك",
+)
+_TONE_GREETING_WORDS = (
+    "صباح الخير", "مساء الخير", "سلام", "اهلا", "ازيك",
+    "عامل ايه", "هاي", "هلا", "صباح النور", "مساء النور",
+)
+
+# Arabic normalization for tone matching: alef forms, teh marbuta,
+# alef maksura, diacritics and tatweel all collapse so "شكراً" and
+# "شكرا" match the same way.
+_AR_NORM = str.maketrans({
+    "أ": "ا", "إ": "ا", "آ": "ا", "ة": "ه", "ى": "ي",
+    "ـ": "", "ً": "", "ٌ": "", "ٍ": "", "َ": "", "ُ": "",
+    "ِ": "", "ّ": "", "ْ": "",
+})
+
+
+def _normalize_ar(text: str) -> str:
+    return (text or "").translate(_AR_NORM).lower()
+
+
+def analyze_message_tone(text: str):
+    """Heuristic tone of one user message -> (mood, reason) or (None, "").
+
+    Distress first (frustration/anger/urgency/sadness all read as a
+    sympathetic worried mood), then praise/thanks/laughter (happy),
+    then greeting (cheerful). Neutral text returns (None, "") - it
+    never forces a mood. Never raises; never logs the message text."""
+    try:
+        norm = _normalize_ar(text)
+        if not norm.strip():
+            return (None, "")
+        for word in _TONE_DISTRESS_WORDS:
+            if _normalize_ar(word) in norm:
+                return ("قلقان", "كلامك باين عليه الزعل أو الاستعجال")
+        for word in _TONE_HAPPY_WORDS:
+            if _normalize_ar(word) in norm:
+                return ("مبسوط وبيرقص", "كلامك باين عليه الفرحة أو الشكر")
+        for word in _TONE_GREETING_WORDS:
+            if _normalize_ar(word) in norm:
+                return ("سعيد بيك", "سلّمت عليّا — مبسوط بيك")
+        return (None, "")
+    except Exception:
+        return (None, "")
+
+
+class MoodStabilizer:
+    """Hold + confirm gate for the companion mood.
+
+    A mood holds at least `hold_seconds` and a different candidate must
+    appear on `confirm_polls` consecutive stabilize() calls before it
+    takes over, so one flickering poll never flips the robot. A critical
+    temperature (>=90C, read from the status dict) bypasses both rules
+    immediately. The candidate is chosen as: real device problem mood
+    (worried/tired/dizzy) first, then the user's tone mood (only within
+    the healthy range), then the raw device mood."""
+
+    def __init__(self, hold_seconds: float = _MOOD_HOLD_SEC,
+                 confirm_polls: int = _MOOD_CONFIRM_POLLS,
+                 clock=None):
+        self._hold = float(hold_seconds)
+        self._confirm = max(1, int(confirm_polls))
+        self._clock = clock or time.time
+        self._current = None
+        self._current_reason = ""
+        self._current_since = 0.0
+        self._pending = None
+        self._pending_count = 0
+
+    def _is_critical(self, status) -> bool:
+        try:
+            temp_c = (status or {}).get("temp_c")
+            return temp_c is not None and float(temp_c) >= _MOOD_TEMP_WORRIED_C
+        except Exception:
+            return False
+
+    def stabilize(self, raw_mood: str, raw_reason: str = "",
+                  status: dict | None = None, tone_mood=None,
+                  tone_reason: str = "") -> tuple:
+        """Return the (mood, reason) to display for this poll."""
+        now = self._clock()
+        if raw_mood in _MOOD_PROBLEM:
+            candidate, cand_reason = raw_mood, raw_reason
+        elif tone_mood:
+            candidate, cand_reason = tone_mood, tone_reason
+        else:
+            candidate, cand_reason = raw_mood, raw_reason
+        if self._current is None:
+            self._adopt(candidate, cand_reason, now)
+            return (self._current, self._current_reason)
+        if self._is_critical(status):
+            if candidate != self._current or self._current != "قلقان":
+                self._adopt("قلقان", cand_reason or raw_reason, now)
+            return (self._current, self._current_reason)
+        if candidate == self._current:
+            self._pending = None
+            self._pending_count = 0
+            return (self._current, self._current_reason)
+        if self._pending != candidate:
+            self._pending = candidate
+            self._pending_count = 1
+        else:
+            self._pending_count += 1
+        if (self._pending_count >= self._confirm
+                and now - self._current_since >= self._hold):
+            self._adopt(candidate, cand_reason, now)
+        return (self._current, self._current_reason)
+
+    def _adopt(self, mood: str, reason: str, now: float) -> None:
+        self._current = mood
+        self._current_reason = reason
+        self._current_since = now
+        self._pending = None
+        self._pending_count = 0
+
+
+# ---------------------------------------------------------------------------
 # Monitor
 # ---------------------------------------------------------------------------
 
@@ -409,7 +683,22 @@ class SystemMonitor:
         self._active = set()        # alert kinds whose condition is true
         self._last_fired = {}       # kind -> timestamp of last firing
         self._temp_cache = {"at": 0.0, "temp_c": None, "available": False}
+        self._uses_injected_sampler = sample_fn is not None
+        # v1.6.1 item 21: background sample cache. The UI thread (pywebview
+        # bridge) never waits on a subprocess or a full process scan: it
+        # reads this cache, refreshed by a daemon sampler thread. Slow
+        # fields (GPU/temp/storage) only ever come from that thread.
+        self._cached_reading = None
+        self._cached_at = 0.0
+        self._cache_lock = threading.Lock()
+        self._sampler_thread = None
+        self._sampler_stop = threading.Event()
         self._focus_mode = False  # v1.6.0: companion focus mode -> mood مركّز
+        # v1.6.1: mood stability (hold + confirm) + tone blending.
+        self._mood_stabilizer = MoodStabilizer(clock=self._clock)
+        self._tone_mood = None
+        self._tone_reason = ""
+        self._tone_at = 0.0
         self._stop_event = threading.Event()
         self._thread = None
         self.running = False
@@ -436,16 +725,12 @@ class SystemMonitor:
                  "(no WMI thermal source answered)")
         return temp_c, available
 
-    def _sample_real(self) -> dict:
-        """One real reading from this machine. Shape (the contract
-        sample_fn must honour):
-
-            {"ram": {"total_mb", "used_mb", "free_mb", "percent"},
-             "disk": {"free_gb", "total_gb", "percent_free"},
-             "cpu_percent": float,
-             "battery": {"percent", "charging"} | None,
-             "temp_c": float | None, "temp_available": bool}
-        """
+    def _sample_fast(self) -> dict:
+        """psutil-only reading (RAM/disk/CPU/battery/top processes).
+        Never spawns a subprocess, so it is safe on any thread --
+        including a one-off seed on the first get_status() call. The
+        slow fields (temp/GPU/storage) are NOT in here; they arrive
+        from the background sampler via _sample_slow()."""
         # v1.4.3: each source is read on its own - one failing source
         # must NEVER kill the whole sample (v1.4.2 field report: the
         # brain said it "couldn't fetch" RAM too, because a single
@@ -453,8 +738,8 @@ class SystemMonitor:
         # source is None (never a fake 0), and the reason is logged.
         if psutil is None:
             return {"ram": None, "disk": None, "cpu_percent": None,
-                    "battery": None,
-                    "temp_c": None, "temp_available": False}
+                    "battery": None, "top_processes": [],
+                    "battery_drain": {}}
         ram = None
         try:
             vm = psutil.virtual_memory()
@@ -486,15 +771,27 @@ class SystemMonitor:
         if raw is not None:
             battery = {"percent": int(raw.percent),
                        "charging": bool(raw.power_plugged)}
-        temp_c, temp_available = self._read_temp_cached()
-        # v1.6.0: per-process + GPU + storage are best-effort additions -
-        # each one failing leaves the core reading intact (same rule as
-        # the v1.4.3 partial-data fix: never a crash, never fake zeros).
         top_processes = []
         try:
             top_processes = _read_top_processes()
         except Exception as exc:
             warn("monitor", f"Top-processes reading failed: {exc}")
+        return {
+            "ram": ram,
+            "disk": disk,
+            "cpu_percent": cpu_pct,
+            "battery": battery,
+            "top_processes": top_processes,
+            "battery_drain": battery_drain_estimate(battery, top_processes),
+        }
+
+    def _sample_slow(self) -> dict:
+        """Slow fields only: temperature (already 10-min cached),
+        GPU (a PowerShell subprocess, up to 10 s) and all-drive
+        storage. Runs ONLY on the background sampler thread -- never
+        on the UI thread, so a slow PowerShell start can never freeze
+        the window."""
+        temp_c, temp_available = self._read_temp_cached()
         gpu = {"available": False, "percent": None, "detail": ""}
         try:
             gpu = read_gpu_usage()
@@ -506,17 +803,108 @@ class SystemMonitor:
         except Exception as exc:
             warn("monitor", f"Storage reading failed: {exc}")
         return {
-            "ram": ram,
-            "disk": disk,
-            "cpu_percent": cpu_pct,
-            "battery": battery,
             "temp_c": temp_c,
             "temp_available": temp_available,
-            "top_processes": top_processes,
             "gpu": gpu,
             "storage": storage,
-            "battery_drain": battery_drain_estimate(battery, top_processes),
         }
+
+    def _sample_real(self) -> dict:
+        """One full real reading from this machine. Shape (the contract
+        sample_fn must honour):
+
+            {"ram": {"total_mb", "used_mb", "free_mb", "percent"},
+             "disk": {"free_gb", "total_gb", "percent_free"},
+             "cpu_percent": float,
+             "battery": {"percent", "charging"} | None,
+             "temp_c": float | None, "temp_available": bool}
+        """
+        fast = self._sample_fast()
+        slow = self._sample_slow()
+        fast.update(slow)
+        return fast
+
+    # -- background sample cache (v1.6.1 item 21) ---------------------------
+
+    def _merge_into_cache(self, partial: dict) -> None:
+        """Merge a partial (fast or slow) reading into the cached one."""
+        with self._cache_lock:
+            merged = dict(self._cached_reading or {})
+            merged.update(partial)
+            self._cached_reading = merged
+            self._cached_at = self._clock()
+
+    def _read_for_status(self) -> dict:
+        """Reading for get_status()/check_once(). Injected samplers
+        (tests) sample fresh every time, exactly as before. The real
+        sampler serves the background cache: the UI thread never waits
+        on a subprocess spawn or a full process scan. With no fresh
+        sample yet, fast fields are seeded synchronously (psutil only,
+        never a subprocess) so the first paint has real numbers; slow
+        fields stay absent (honest None) until the sampler lands."""
+        if self._uses_injected_sampler:
+            return self.sample_fn()
+        with self._cache_lock:
+            cached = self._cached_reading
+            age = self._clock() - self._cached_at
+        if cached is not None and age < _STATUS_MAX_AGE_SEC:
+            return dict(cached)
+        seed = self._sample_fast()
+        self._merge_into_cache(seed)
+        with self._cache_lock:
+            return dict(self._cached_reading or seed)
+
+    def start_sampler(self) -> bool:
+        """Start the background sampler thread (daemon). Safe to call
+        twice. Returns False when psutil is missing (nothing to sample
+        with). Unlike start(), this does not check the monitor_enabled
+        flag: sampling for display is not alerting."""
+        if self._sampler_thread is not None \
+                and self._sampler_thread.is_alive():
+            return True
+        if psutil is None:
+            return False
+        self._sampler_stop.clear()
+        self._sampler_thread = threading.Thread(
+            target=self._sample_loop, daemon=True, name="memo-sampler")
+        self._sampler_thread.start()
+        return True
+
+    def stop_sampler(self) -> None:
+        """Stop the background sampler thread (called from stop())."""
+        self._sampler_stop.set()
+        if self._sampler_thread is not None:
+            self._sampler_thread.join(timeout=2)
+            self._sampler_thread = None
+
+    def _sample_loop(self):
+        # Seed immediately with one full sample so the slow fields exist
+        # early, then fast every 5 s, slow every 60 s. A slow sample
+        # only delays the next one -- it never blocks the UI thread.
+        try:
+            self._merge_into_cache(self._sample_real())
+        except Exception as exc:
+            warn("monitor", f"Sampler seed failed: {exc}")
+        slow_at = self._clock()
+        while not self._sampler_stop.is_set():
+            t0 = self._clock()
+            try:
+                self._merge_into_cache(self._sample_fast())
+            except Exception as exc:
+                warn("monitor", f"Fast sample failed: {exc}")
+            if self._clock() - slow_at >= _SAMPLE_SLOW_SEC:
+                slow_at = self._clock()
+                try:
+                    self._merge_into_cache(self._sample_slow())
+                except Exception as exc:
+                    warn("monitor", f"Slow sample failed: {exc}")
+            dt = self._clock() - t0
+            if dt > 1.0:
+                # Evidence for the next freeze report: a slow background
+                # sample is logged, and the UI was never blocked by it.
+                warn("monitor", f"Background sample took {dt:.1f}s "
+                     "(UI unaffected)")
+            self._sampler_stop.wait(max(_SAMPLE_FAST_SEC - dt, 0.5))
 
     # -- status ---------------------------------------------------------------
 
@@ -535,9 +923,11 @@ class SystemMonitor:
         """
         # v1.4.3: a failing sample_fn must not raise out of get_status -
         # the caller gets a degraded (all-None) reading instead, and
-        # reports it honestly.
+        # reports it honestly. v1.6.1 item 21: _read_for_status serves
+        # the background cache for the real sampler, so this never waits
+        # on a subprocess spawn.
         try:
-            reading = self.sample_fn()
+            reading = self._read_for_status()
         except Exception as exc:
             warn("monitor", f"Sampling failed: {exc}")
             reading = {"ram": None, "disk": None, "cpu_percent": None,
@@ -589,6 +979,23 @@ class SystemMonitor:
         mood, mood_reason = device_state_to_mood(
             status, focus_mode=bool(self._focus_mode),
             idle_seconds=_idle_seconds())
+        # v1.6.1: stabilize + tone-blend. The raw device mood flickers;
+        # the displayed mood holds (2.5 min) and needs 2 confirming
+        # polls, and within the healthy range the user's tone steers it.
+        # The stabilizer owns the hold/confirm state, so a thinking
+        # override elsewhere never resets it.
+        try:
+            now = self._clock()
+            tone_mood = tone_reason = None
+            if (self._tone_mood is not None
+                    and now - self._tone_at <= _MOOD_TONE_TTL_SEC):
+                tone_mood, tone_reason = self._tone_mood, self._tone_reason
+            mood, mood_reason = self._mood_stabilizer.stabilize(
+                mood, mood_reason, status=status,
+                tone_mood=tone_mood, tone_reason=tone_reason or "")
+        except Exception as exc:
+            warn("monitor", f"Mood stabilization failed ({exc}) - "
+                            "showing the raw device mood")
         status["mood"] = mood
         status["mood_reason"] = mood_reason
         return status
@@ -600,12 +1007,16 @@ class SystemMonitor:
         "disk" is the system-drive summary (back-compat key); "storage"
         is the per-drive list. Nothing here is ever a guessed number."""
         status = self.get_status()
+        temp_available = bool(status.get("temp_available"))
         return {
             "ram": status.get("ram"),
             "cpu": status.get("cpu"),
             "battery": status.get("battery"),
             "temp_c": status.get("temp_c"),
-            "temp_available": status.get("temp_available"),
+            "temp_available": temp_available,
+            # v1.6.1: present only while the temperature is unavailable;
+            # None once a real reading exists.
+            "temp_hint": None if temp_available else dict(_TEMP_HINT),
             "disk": status.get("disk"),
             "storage": status.get("storage") or [],
             "top_processes": status.get("top_processes") or [],
@@ -615,6 +1026,22 @@ class SystemMonitor:
             "mood": status.get("mood", "صاحي"),
             "mood_reason": status.get("mood_reason", ""),
         }
+
+    def note_user_message(self, text: str) -> None:
+        """v1.6.1: remember the tone of the user's latest message so the
+        mood can react to HIM, not just the hardware. The tone steers
+        the mood for _MOOD_TONE_TTL_SEC (10 min), only within the
+        healthy range - a real device problem still wins. Never raises;
+        the message text is never logged."""
+        try:
+            tone, reason = analyze_message_tone(text)
+            if tone:
+                self._tone_mood = tone
+                self._tone_reason = reason
+                self._tone_at = self._clock()
+                info("monitor", f"Message tone noted: mood -> {tone}")
+        except Exception as exc:
+            warn("monitor", f"Tone note failed ({exc})")
 
     def set_focus_mode(self, on: bool) -> None:
         """v1.6.0: the companion's focus mode feeds the mood mapping
@@ -785,7 +1212,10 @@ class SystemMonitor:
         now = self._clock() if now is None else now
         if reading is None:
             try:
-                reading = self.sample_fn()
+                # v1.6.1 item 21: the real sampler serves the background
+                # cache here too; injected samplers (tests) still sample
+                # fresh, exactly as before.
+                reading = self._read_for_status()
             except Exception as exc:
                 warn("monitor", f"Sampling failed: {exc}")
                 return []
@@ -805,6 +1235,9 @@ class SystemMonitor:
         if psutil is None:
             warn("monitor", "psutil is missing - monitor cannot start")
             return False
+        # v1.6.1 item 21: the alert loop reads the same background
+        # cache the live cards use -- one sampler, no duplicate polls.
+        self.start_sampler()
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True,
                                         name="memo-monitor")
@@ -826,6 +1259,7 @@ class SystemMonitor:
     def stop(self):
         """Stop the polling thread (called from MemoApp.quit)."""
         self._stop_event.set()
+        self.stop_sampler()
         if self._thread is not None:
             self._thread.join(timeout=2)
             self._thread = None

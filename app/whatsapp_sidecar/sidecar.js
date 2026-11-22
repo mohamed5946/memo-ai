@@ -223,7 +223,7 @@ class Sidecar {
       version,
       auth: state,
       // The name the user sees in WhatsApp > Linked devices.
-      browser: ["Memo AI", "Chrome", "1.0.0"],
+      browser: ["LONA", "Chrome", "1.0.0"],
       printQRInTerminal: false,
       logger: pino({ level: "silent" }),
       // Don't fetch full history on connect: Memo only answers live mail.

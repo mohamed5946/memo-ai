@@ -1,11 +1,11 @@
 # UTF-8
 #
-# VSVersionInfo — shown in the exe's Properties → Details tab.
+# VSVersionInfo — shown in the exe's Properties, Details tab.
 # Keep FileVersion/ProductVersion in sync with app/main.py VERSION.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 4, 2, 0),
-    prodvers=(1, 4, 2, 0),
+    filevers=(1, 6, 1, 0),
+    prodvers=(1, 6, 1, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -20,13 +20,13 @@ VSVersionInfo(
           '040904b0',
           [
             StringStruct('CompanyName', 'Mohamed El Sayed'),
-            StringStruct('FileDescription', 'Memo AI — personal AI assistant for your laptop'),
-            StringStruct('FileVersion', '1.4.2.0'),
-            StringStruct('InternalName', 'Memo AI'),
+            StringStruct('FileDescription', 'LONA — personal AI assistant for your laptop'),
+            StringStruct('FileVersion', '1.6.1.0'),
+            StringStruct('InternalName', 'LONA'),
             StringStruct('LegalCopyright', 'Mohamed El Sayed'),
-            StringStruct('OriginalFilename', 'Memo AI.exe'),
-            StringStruct('ProductName', 'Memo AI'),
-            StringStruct('ProductVersion', '1.4.2'),
+            StringStruct('OriginalFilename', 'LONA.exe'),
+            StringStruct('ProductName', 'LONA'),
+            StringStruct('ProductVersion', '1.6.1'),
           ]
         ),
       ]

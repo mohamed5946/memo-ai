@@ -442,9 +442,9 @@ class MemoryStore:
         # branch (the old pattern had (كل)? optional and wiped everything).
         if re.search(r"(امسح|امسحي)\s+كل\s+ذاكرتك|ذاكرتك كلها|انسي\s+كل\s+حاجه|انسى\s+كل\s+حاجه|forget everything|clear (your|all) memory|wipe (your )?memory", low):
             self.clear_all()
-            return ("تمام، مسحت كل ذاكرتي عنك ✅ — هبدأ من الصفر."
+            return ("تمام، مسحت كل ذاكرتي عنك — هبدأ من الصفر."
                     if language == "ar" else
-                    "Done, I wiped all my memories about you ✅ — starting fresh.")
+                    "Done, I wiped all my memories about you — starting fresh.")
 
         # "امسح ذاكرتك عن X" / "انسى X" — matched on the RAW text so the
         # target keeps its original spelling in the reply; search itself
@@ -455,9 +455,9 @@ class MemoryStore:
             target = m.group(3).strip()
             removed = self.delete_facts_matching(target)
             if removed:
-                return (f"تمام، مسحت {removed} من ذاكرتي عن «{target}» ✅."
+                return (f"تمام، مسحت {removed} من ذاكرتي عن «{target}»."
                         if language == "ar" else
-                        f"Done, I deleted {removed} memor{'y' if removed == 1 else 'ies'} about «{target}» ✅.")
+                        f"Done, I deleted {removed} memor{'y' if removed == 1 else 'ies'} about «{target}».")
             return ("ملقيتش حاجة في ذاكرتي عن «{}» عشان أمسحها."
                     .format(target) if language == "ar" else
                     f"I couldn't find anything in my memory about «{target}» to delete.")
@@ -494,9 +494,9 @@ class MemoryStore:
             fact = m.group(4).strip()
             if len(fact) >= 3:
                 self.add_fact(fact, source="explicit")
-                return ("تمام، حفظتها ✅ — هفضل فاكرها."
+                return ("تمام، حفظتها — هفضل فاكرها."
                         if language == "ar" else
-                        "Got it, saved ✅ — I'll remember that.")
+                        "Got it, saved — I'll remember that.")
         return None
 
     # -- learning from a turn -------------------------------------------------

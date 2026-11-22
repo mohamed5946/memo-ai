@@ -1,7 +1,9 @@
 # Memo AI - Voice output: Gemini TTS -> Azure Speech -> Piper
 # Chain order (voice is a setting, never auto-switches by itself - but the
 # *fallback* chain runs when the chosen engine is unavailable):
-#   1. Gemini TTS (online, key in keys/gemini-key.txt, ~15 req/day free)
+#   1. Gemini TTS (online, VOICE key - keys/gemini-voice-key.txt,
+#      ~15 req/day free; v1.6.1: the voice key is never used for chat
+#      and the chat key is never used for voice)
 #   2. Azure Speech F0 (online, optional, keys/azure-key.txt:
 #      line 1 = key, line 2 = region; Egyptian voices Salma / Shakir)
 #   3. Piper offline (binary `piper` on PATH + model ar_JO-kareem-medium)
@@ -76,7 +78,8 @@ def stop() -> None:
 
 
 def _gemini_tts(text: str, voice_key: str) -> Path:
-    api_key = read_key("gemini-key.txt")
+    # v1.6.1: online voice uses the VOICE key only - never the chat key.
+    api_key = read_key("gemini-voice-key.txt")
     if not api_key:
         raise RuntimeError("no-gemini-key")
     voice = GEMINI_VOICES.get(voice_key, "Kore")
@@ -181,7 +184,7 @@ def speak(text: str, voice_key: str = "girl_warm", online: bool = True) -> dict:
             return {"engine": "gemini", "duration": duration}
         except RuntimeError as exc:
             if str(exc) == "no-gemini-key":
-                warn("speak", "No Gemini key in keys/gemini-key.txt - trying Azure")
+                warn("speak", "No Gemini voice key - trying Azure")
             else:
                 warn("speak", f"Gemini TTS failed ({exc}) - trying Azure")
         except Exception as exc:

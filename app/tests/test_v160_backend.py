@@ -409,7 +409,7 @@ class TestDeepThinkPayload(unittest.TestCase):
         def fake(messages, use_tools=False, timeout=60, deep_think=False,
                  privacy_mode=None):
             seen["deep_think"] = deep_think
-            return {"content": "تمام يا محمد ✅", "tool_calls": []}
+            return {"content": "تمام يا محمد", "tool_calls": []}
 
         with mock.patch.object(brain_mod, "is_online",
                                return_value=True), \
@@ -460,15 +460,22 @@ class TestRenameAndCustomName(unittest.TestCase):
     def test_no_user_visible_memo_ai_in_backend_literals(self):
         # Every user-visible "Memo AI" literal in the backend modules
         # must be gone (window titles, toasts, logs, prompts). History
-        # comments and docstrings are excluded; the frozen exe filename
-        # "Memo AI.exe" is an internal identifier and is allowlisted.
+        # comments and docstrings are excluded. The v1.6.1 rename
+        # removed the last one (the frozen exe name, now "LONA.exe"),
+        # so there is no allowlist left at all: any "Memo AI" in a
+        # string literal fails.
+        # NOTE: migrate.py is deliberately NOT in this list - it must
+        # name the old "Memo AI" install folder to migrate it, and
+        # that literal is an internal path identifier, never shown to
+        # the user (its own tests cover it). autostart.py is likewise
+        # excluded: it holds the stale "Memo AI" Run value name only
+        # to delete it.
         modules = ["main.py", "brain.py", "tools.py", "monitor.py",
                    "settings_store.py", "updater.py", "capabilities.py",
                    "invite.py", "apikeys.py", "browser_control.py",
                    "fixer.py", "tempwatch.py", "selfview.py",
                    "companion.py", "image_understanding.py", "backup.py",
                    "wakeword.py", "tray.py", "rules.py"]
-        allowlisted = {"Memo AI.exe"}
         for name in modules:
             path = APP_DIR / name
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -490,8 +497,7 @@ class TestRenameAndCustomName(unittest.TestCase):
                     if id(node) in docstrings:
                         continue
                     for bad in ("Memo AI",):
-                        if bad in node.value and \
-                                node.value.strip() not in allowlisted:
+                        if bad in node.value:
                             self.fail(f"{name}: user-visible {bad!r} in "
                                       f"literal: {node.value[:80]!r}")
 
@@ -537,7 +543,11 @@ class TestApiKeysCredentialStore(unittest.TestCase):
             self.assertEqual(apikeys_mod.read_key_value("groq"),
                              "gsk_testkey123")
             self.assertTrue(apikeys_mod.get_api_keys_status()["groq"])
-            self.assertFalse(apikeys_mod.get_api_keys_status()["gemini"])
+            # v1.6.1: two separate Gemini keys (voice + chat).
+            self.assertFalse(
+                apikeys_mod.get_api_keys_status()["gemini-voice"])
+            self.assertFalse(
+                apikeys_mod.get_api_keys_status()["gemini-chat"])
             mode = (keys_dir / "groq-key.txt").stat().st_mode & 0o777
             self.assertEqual(mode, 0o600)
             # settings_store.read_key delegates to the same store.
@@ -574,7 +584,8 @@ class TestApiKeysCredentialStore(unittest.TestCase):
                 result = apikeys_mod.test_key("groq")
             self.assertFalse(result.get("valid"))
         # No key saved at all -> not valid.
-        self.assertFalse(apikeys_mod.test_key("gemini")["valid"])
+        self.assertFalse(apikeys_mod.test_key("gemini-chat")["valid"])
+        self.assertFalse(apikeys_mod.test_key("gemini-voice")["valid"])
 
 
 class TestPrivacyRedaction(unittest.TestCase):
@@ -663,7 +674,7 @@ class TestImageUnderstanding(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         with mock.patch.object(settings_mod, "KEYS_DIR", tmp / "keys"):
             apikeys_mod.reset_migration_flag()
-            apikeys_mod.save_key("gemini", "AIzaTestKey1234567890abcdef")
+            apikeys_mod.save_key("gemini-chat", "AIzaTestKey1234567890abcdef")  # v1.6.1: vision uses the CHAT key
 
             class _Resp:
                 status_code = 200
@@ -842,7 +853,7 @@ class TestCompanion(unittest.TestCase):
         state = comp.get_focus_state()
         self.assertFalse(state["active"])
         texts = " ".join(i["text"] for i in comp.get_feed())
-        self.assertIn("🎉", texts)
+        self.assertIn("خلصت جلسة الشغل", texts)
         comp.focus_stop()
 
     def test_idle_checkin(self):

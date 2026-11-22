@@ -5,12 +5,16 @@
 # per-user install: no file to litter the Startup folder, no shortcut
 # to go stale after an uninstall, and one value to add/remove.
 #   Key:   HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
-#   Value: "Memo AI" = "<exe path>" (frozen install) or
+#   Value: "LONA" = "<exe path>" (frozen install) or
 #          "<python>" "<main.py>" (source/zip run).
 # The app always starts as the island only (see main.py), so autostart
 # never pops the big window at boot. The setting (default ON) is the
 # source of truth: on every startup the registry is brought in line
 # with it, and the Settings toggle applies immediately.
+#
+# v1.6.1 rename: the value used to be "Memo AI". Enabling autostart
+# now also removes that stale value (the old exe is gone, so the old
+# entry would point at nothing). Disabling removes both.
 #
 # All registry access is guarded: on non-Windows (or any failure) the
 # functions return False and log, never raise.
@@ -20,7 +24,8 @@ import sys
 from logger import error, info
 
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-_VALUE_NAME = "Memo AI"
+_VALUE_NAME = "LONA"
+_OLD_VALUE_NAME = "Memo AI"
 
 
 def _exe_command() -> str:
@@ -60,12 +65,22 @@ def set_enabled(on: bool) -> bool:
                                 winreg.KEY_SET_VALUE) as key:
                 winreg.SetValueEx(key, _VALUE_NAME, 0, winreg.REG_SZ,
                                   _exe_command())
+                # v1.6.1 rename: drop the stale "Memo AI" value left by
+                # the old install (its exe no longer exists).
+                try:
+                    winreg.DeleteValue(key, _OLD_VALUE_NAME)
+                except FileNotFoundError:
+                    pass
             info("app", "Autostart ON (HKCU Run value set)")
         else:
             try:
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0,
                                     winreg.KEY_SET_VALUE) as key:
                     winreg.DeleteValue(key, _VALUE_NAME)
+                    try:
+                        winreg.DeleteValue(key, _OLD_VALUE_NAME)
+                    except FileNotFoundError:
+                        pass
             except FileNotFoundError:
                 pass  # already gone - that is the requested state
             info("app", "Autostart OFF (HKCU Run value removed)")

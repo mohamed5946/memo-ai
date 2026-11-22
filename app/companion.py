@@ -238,7 +238,7 @@ class Companion:
             battery = status.get("battery")
             if battery:
                 parts.append(f"البطارية {battery.get('percent')}%"
-                             + (" (بتشحن 🔌)" if battery.get("charging")
+                             + (" (بتشحن)" if battery.get("charging")
                                 else ""))
             ram = status.get("ram") or {}
             if ram.get("free_mb") is not None:
@@ -253,7 +253,7 @@ class Companion:
         if exam.get("set") and exam.get("days_left", 99) <= 14:
             parts.append(f"امتحان {exam['subject']} بعد "
                          f"{exam['days_left']} يوم")
-        text = ("صباح الخير 🌅 " + (" — ".join(parts) if parts
+        text = ("صباح الخير " + (" — ".join(parts) if parts
                                      else "كل حاجة تمام، يومك حلو إن شاء الله"))
         self._briefed = True
         item = self._push("morning_brief", text)
@@ -272,7 +272,7 @@ class Companion:
                     appts.append(f"امتحان {item.get('subject', '')} بكرة")
         except Exception:
             pass
-        text = "يومك خلص 🌙 "
+        text = "يومك خلص "
         text += (f"اللي اتعمل النهاردة: {done_today}. "
                  if done_today else "النهاردة عدى على خير. ")
         text += ("مواعيد بكرة: " + "، ".join(appts) if appts
@@ -421,7 +421,7 @@ class Companion:
                             "ends_at": time.time() + int(work_min) * 60})
         self._focus_stop.clear()
         self._push("focus_start",
-                   "وضع التركيز شغال 🎯 — هكتم أي حاجة مش مهمة، "
+                   "وضع التركيز شغال — هكتم أي حاجة مش مهمة، "
                    f"ونشتغل {int(work_min)} دقيقة وبعدها بريك.")
         self._focus_thread = threading.Thread(
             target=self._pomodoro_loop, daemon=True, name="lona-focus")
@@ -439,7 +439,7 @@ class Companion:
         self._focus["phase"] = "break"
         self._focus["ends_at"] = time.time() + break_sec
         self._push("focus_break",
-                   "خلصت جلسة الشغل 🎉 خد بريك "
+                   "خلصت جلسة الشغل خد بريك "
                    f"{self._focus['break_min']} دقايق — تستاهلها!")
         if self._focus_stop.wait(timeout=break_sec):
             return
@@ -447,7 +447,7 @@ class Companion:
             return
         self._focus["phase"] = "done"
         self._push("focus_done",
-                   "خلص البريك كمان 🎉 — جاهز لجولة تانية؟ قولي "
+                   "خلص البريك كمان — جاهز لجولة تانية؟ قولي "
                    "«ابدأ تركيز» وأنا معاك.")
         self._focus["active"] = False
 

@@ -22,23 +22,24 @@ const I18N = {
     language: "لغة الواجهة",
     greeting_toggle: "التحية الصباحية عند التشغيل (مع الطقس)",
     autostart_toggle: "تشغيل LONA تلقائياً مع بدء ويندوز (يفتح النافذة الرئيسية)",
+    island_toggle: "الجزيرة الديناميكية (تظهر عند التشغيل — التغيير يسري بعد إعادة التشغيل)",
     wakeword_toggle: "الاستماع الدايم — نادي «يا لونا» بصوتك فيرد عليك من غير ما تدوس المايك",
     wakeword_status_loading: "الاستماع الدايم: بيجهّز…",
-    wakeword_status_listening: "الاستماع الدايم شغال ✅ — نادي «يا لونا»",
+    wakeword_status_listening: "الاستماع الدايم شغال — نادي «يا لونا»",
     wakeword_status_paused: "الاستماع الدايم واقف مؤقتاً",
     wakeword_status_off: "الاستماع الدايم مقفول — المايك مقفول تماماً.",
     wakeword_status_loading_model: "الاستماع الدايم: بينزّل موديل السمع (مرة واحدة، ~500MB)…",
     wakeword_status_error: "الاستماع الدايم مش شغال: ",
     wakeword_status_unavailable: "الاستماع الدايم مش متاح في النسخة دي.",
-    wakeword_heard: "👂 سمعتك — اتكلم",
+    wakeword_heard: "سمعتك — اتكلم",
     wakeword_no_command: "ماسمعتش حاجة — نادي «يا لونا» تاني",
     menu_general: "عام", menu_whatsapp: "WhatsApp", menu_voices: "الأصوات",
     menu_avatar: "الأفاتار", menu_logs: "سجل التشخيص", menu_updates: "التحديثات",
-    back: "→ رجوع",
+    back: "رجوع",
     speaker: "صوت المساعد",
     owner_code: "كود المالك", owner_code_ph: "اكتب الكود السري",
     owner_unlock: "تفعيل وضع المالك",
-    owner_unlocked: "وضع المالك اتفتح ✅", owner_wrong: "الكود غلط",
+    owner_unlocked: "وضع المالك اتفتح", owner_wrong: "الكود غلط",
     wa_status_off_enabled: "الواتساب مفعّل بس الخدمة مش شغالة — جرّب تقفل الإعدادات وتفتحها تاني أو أعد تشغيل البرنامج.",
     wa_save_error: "مقدرتش أحفظ إعدادات الواتساب: ",
     sec_whatsapp: "واتساب — ربط كجهاز مرتبط",
@@ -49,19 +50,19 @@ const I18N = {
     wa_status_unavailable: "الواتساب مش متاح في النسخة دي.",
     wa_status_connecting: "بيتصل بواتساب...",
     wa_status_waiting: "امسح الـ QR من واتساب على الرقم التالت.",
-    wa_status_linked: "مربوط ✅ — الرقم: ",
+    wa_status_linked: "مربوط — الرقم: ",
     wa_status_disconnected: "اتقطع الاتصال — بيحاول يرجع لوحده...",
     // v1.4.3: linked but incoming messages do NOT decrypt (Bad MAC) —
     // never shown as green "linked"; the re-link button appears below.
-    wa_status_decrypt: "مربوط ⚠️ بس رسايل الواتساب مش بتتفك (مشكلة تشفير) — الرسايل اللي بتوصل مش بتتقرأ ومش بتوصل للمخ. دوس إعادة الربط تحت وهيطلع QR جديد.",
+    wa_status_decrypt: "مربوط بس رسايل الواتساب مش بتتفك (مشكلة تشفير) — الرسايل اللي بتوصل مش بتتقرأ ومش بتوصل للمخ. دوس إعادة الربط تحت وهيطلع QR جديد.",
     wa_relink: "إعادة الربط (QR جديد)",
     wa_status_error: "فيه مشكلة في الواتساب — شوف السجل.",
-    wa_scan_hint: "افتح واتساب على الرقم التالت ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز، وامسح الكود ده.",
+    wa_scan_hint: "افتح واتساب على الرقم التالت » الإعدادات » الأجهزة المرتبطة » ربط جهاز، وامسح الكود ده.",
     wa_disconnect: "فصل وإلغاء الربط",
-    wa_owner_missing: "⚠️ اكتب رقمك الأساسي فوق عشان أوامر الواتساب تشتغل — من غيره كل الرسايل هتاخد ردود شات بس.",
+    wa_owner_missing: "اكتب رقمك الأساسي فوق عشان أوامر الواتساب تشتغل — من غيره كل الرسايل هتاخد ردود شات بس.",
     sec_voice: "الأصوات",
-    voice_output_on: "صوت المساعد شغال 🔊",
-    voice_output_off: "صوت المساعد مقفول 🔇",
+    voice_output_on: "صوت المساعد شغال ",
+    voice_output_off: "صوت المساعد مقفول ",
     v_boy1: "ولد 1", v_boy1_style: "هادي ورزين",
     v_boy2: "ولد 2", v_boy2_style: "مرح وخفيف",
     v_girl1: "بنت 1", v_girl1_style: "دافية وودودة",
@@ -71,14 +72,15 @@ const I18N = {
     av_cat: "قطة", av_dog: "كلب", av_boy: "ولد", av_girl: "بنت",
     avatar_hint: "الشخصية اللي تختارها بتتحفظ على طول وبتتطبق بعد إعادة التشغيل.",
     sec_logs: "سجل التشخيص",
-    perm_title: "طلب تنفيذ إجراء ⚠️",
+    perm_title: "طلب تنفيذ إجراء ",
     perm_allow: "سماح",
     perm_deny: "رفض",
-    perm_allowed: "تم السماح ✅",
-    perm_denied: "تم الرفض ❌",
-    perm_timeout: "انتهت المهلة — تم الرفض ⏱️",
-    perm_more: "عرض المزيد ▾",
-    perm_less: "عرض أقل ▴",
+    perm_allowed: "تم السماح",
+    perm_denied: "تم الرفض ",
+    perm_timeout: "انتهت المهلة — تم الرفض ",
+    perm_cancelled: "اتلغى — سؤال جديد بدأ",
+    perm_more: "عرض المزيد",
+    perm_less: "عرض أقل",
     menu_memory: "الذاكرة",
     sec_memory: "الذاكرة الطويلة",
     mem_hint: "دي الحاجات اللي LONA فاكرها عنك من المحادثات — محفوظة على جهازك بس، ومبتترفعش لأي مكان. تقدر تمسح أي حاجة منها، أو تمسح الكل.",
@@ -90,7 +92,7 @@ const I18N = {
     mem_empty: "لسه مفيش حاجة محفوظة — قولي «افتكر إن...» في الشات.",
     mem_clear: "مسح كل الذاكرة",
     mem_clear_confirm: "متأكد إنك عايز تمسح كل ذاكرة LONA عنك؟",
-    mem_deleted: "اتمسحت ✅",
+    mem_deleted: "اتمسحت",
     menu_system: "صحة الجهاز",
     menu_notifications: "الإشعارات",
     sec_system: "صحة الجهاز",
@@ -106,14 +108,14 @@ const I18N = {
     mon_cooldown: "عدم تكرار نفس التنبيه قبل (دقيقة)",
     mon_in_app: "التنبيه داخل التطبيق",
     mon_toast: "التنبيه كـ toast من ويندوز",
-    sys_temp_unavailable: "⚠️ حرارة المعالج مش متاحة على الجهاز ده (مفيش حساس مقروء) — المراقبة شغالة من غيرها، ومفيش رقم حرارة متخمن.",
+    sys_temp_unavailable: "حرارة المعالج مش متاحة على الجهاز ده (مفيش حساس مقروء) — المراقبة شغالة من غيرها، ومفيش رقم حرارة متخمن.",
     notif_enable: "التنبيه عند إشعار مهم من ويندوز",
     notif_access: "طلب إذن الوصول للإشعارات",
     notif_apps: "تطبيقات مهمة (سطر لكل تطبيق)",
     notif_keywords: "كلمات مفتاحية مهمة (سطر لكل كلمة)",
     notif_unavailable: "الاستماع لإشعارات ويندوز مش متاح على الجهاز ده.",
     notif_denied: "إذن الوصول للإشعارات مرفوض — فعّله من إعدادات ويندوز (الإشعارات) أو دوس «طلب إذن الوصول» تاني.",
-    notif_granted: "الاستماع للإشعارات شغال ✅",
+    notif_granted: "الاستماع للإشعارات شغال",
     notif_not_requested: "لسه مطلبتش إذن الوصول للإشعارات — دوس «طلب إذن الوصول للإشعارات».",
     logs_refresh: "تحديث", logs_copy: "نسخ السجل",
     sec_updates: "التحديثات",
@@ -121,7 +123,7 @@ const I18N = {
     check_updates: "التحقق من التحديثات", install_update: "تثبيت التحديث",
     update_checking: "بشوف لو فيه تحديث...",
     update_not_configured: "التحديثات مش مفعّلة لسه — مفيش رابط تحديثات متظبط.",
-    update_up_to_date: "إنت على أحدث نسخة ✅",
+    update_up_to_date: "إنت على أحدث نسخة",
     update_available: "فيه تحديث جديد!",
     update_installing: "بيثبّت التحديث وبيعاد التشغيل...",
     update_installing_now: "بيتثبّت دلوقتي…",
@@ -133,10 +135,10 @@ const I18N = {
     update_failed: "التحديث فشل — شوف السجل",
     update_error: "مقدرتش أتحقق من التحديثات — شوف السجل",
     update_whats_new: "إيه الجديد في",
-    update_download: "⬇️ تنزيل التحديث",
+    update_download: "تنزيل التحديث",
     update_install_now: "تثبيت الآن",
     update_install_later: "تثبيت لاحقاً",
-    update_ready: "التحديث نزل وجاهز ✅",
+    update_ready: "التحديث نزل وجاهز",
     update_ready_hint: "اختار وقت ما تحب — التثبيت هيعيد تشغيل البرنامج.",
     update_saved_later: "تمام — التحديث محفوظ، تقدر تثبّته من هنا وقت ما تحب.",
     update_install_downloaded: "تثبيت التحديث المنزّل",
@@ -151,7 +153,7 @@ const I18N = {
     todo_note: "قيد التطوير (v2): ترجمة الشاشة، المجلس متعدد النماذج، تنبيهات الجيميل والتقويم في التحية الصباحية، أصوات XTTS، وموديل 7B.",
     quit: "إغلاق البرنامج", save: "حفظ",
     online: "Online", offline: "Offline",
-    listening: "🎙️ بسمعك... اتكلم دلوقتي",
+    listening: "بسمعك... اتكلم دلوقتي",
     thinking: "بيفكر...",
     speaking: "بيتكلم...",
     hello: "أهلاً يا محمد! أنا LONA — اكتب أو اضغط المايك وتكلم.",
@@ -160,8 +162,8 @@ const I18N = {
     bridge_not_ready: "البرنامج لسه بيجهز — استنى ثانية ودوس تاني",
     bridge_files_missing: "ملفات محرك البرنامج ناقصة — حدّث البرنامج أو أعد تثبيته",
     log_unavailable: "السجل مش متاح دلوقتي",
-    copied: "اتنسخ السجل ✅",
-    saved: "اتحفظت الإعدادات ✅",
+    copied: "اتنسخ السجل",
+    saved: "اتحفظت الإعدادات",
     confirm_quit: "متأكد إنك عايز تقفل LONA خالص؟",
   },
   en: {
@@ -175,23 +177,24 @@ const I18N = {
     language: "Interface language",
     greeting_toggle: "Morning greeting on startup (with weather)",
     autostart_toggle: "Start LONA automatically with Windows (opens the main window)",
+    island_toggle: "Dynamic Island (shows at startup — change applies after restart)",
     wakeword_toggle: "Always listening — call “Ya LONA” out loud and it answers, no mic tap needed",
     wakeword_status_loading: "Always listening: starting…",
-    wakeword_status_listening: "Always listening is on ✅ — call “Ya LONA”",
+    wakeword_status_listening: "Always listening is on — call “Ya LONA”",
     wakeword_status_paused: "Always listening paused for now",
     wakeword_status_off: "Always listening is off — the mic is fully closed.",
     wakeword_status_loading_model: "Always listening: downloading the hearing model (one-time, ~500MB)…",
     wakeword_status_error: "Always listening isn't working: ",
     wakeword_status_unavailable: "Always listening is not available in this build.",
-    wakeword_heard: "👂 Heard you — go ahead",
+    wakeword_heard: "Heard you — go ahead",
     wakeword_no_command: "Didn't catch anything — call “Ya LONA” again",
     menu_general: "General", menu_whatsapp: "WhatsApp", menu_voices: "Voices",
     menu_avatar: "Avatar", menu_logs: "Diagnostics log", menu_updates: "Updates",
-    back: "→ Back",
+    back: "Back",
     speaker: "Assistant voice",
     owner_code: "Owner code", owner_code_ph: "Type the secret code",
     owner_unlock: "Unlock owner mode",
-    owner_unlocked: "Owner mode unlocked ✅", owner_wrong: "Wrong code",
+    owner_unlocked: "Owner mode unlocked", owner_wrong: "Wrong code",
     wa_status_off_enabled: "WhatsApp is enabled but the service isn't running — reopen Settings or restart the app.",
     wa_save_error: "Couldn't save WhatsApp settings: ",
     sec_whatsapp: "WhatsApp — link as a device",
@@ -202,19 +205,19 @@ const I18N = {
     wa_status_unavailable: "WhatsApp is not available in this build.",
     wa_status_connecting: "Connecting to WhatsApp...",
     wa_status_waiting: "Scan the QR from WhatsApp on the third number.",
-    wa_status_linked: "Linked ✅ — Number: ",
+    wa_status_linked: "Linked — Number: ",
     wa_status_disconnected: "Connection lost — reconnecting on its own...",
     // v1.4.3: linked but incoming messages do NOT decrypt (Bad MAC) —
     // never shown as green "linked"; the re-link button appears below.
-    wa_status_decrypt: "Linked ⚠️ but WhatsApp messages won't decrypt (encryption problem) — incoming messages can't be read and never reach the brain. Tap Re-link below for a fresh QR.",
+    wa_status_decrypt: "Linked but WhatsApp messages won't decrypt (encryption problem) — incoming messages can't be read and never reach the brain. Tap Re-link below for a fresh QR.",
     wa_relink: "Re-link (new QR)",
     wa_status_error: "WhatsApp has a problem — see the log.",
-    wa_scan_hint: "Open WhatsApp on the THIRD number → Settings → Linked devices → Link a device, and scan this code.",
+    wa_scan_hint: "Open WhatsApp on the THIRD number > Settings > Linked devices > Link a device, and scan this code.",
     wa_disconnect: "Disconnect and unlink",
-    wa_owner_missing: "⚠️ Type your main number above so WhatsApp commands work — without it every message only gets chat replies.",
+    wa_owner_missing: "Type your main number above so WhatsApp commands work — without it every message only gets chat replies.",
     sec_voice: "Voices",
-    voice_output_on: "Assistant voice on 🔊",
-    voice_output_off: "Assistant voice off 🔇",
+    voice_output_on: "Assistant voice on ",
+    voice_output_off: "Assistant voice off ",
     v_boy1: "Boy 1", v_boy1_style: "Calm and steady",
     v_boy2: "Boy 2", v_boy2_style: "Playful and light",
     v_girl1: "Girl 1", v_girl1_style: "Warm and friendly",
@@ -224,14 +227,15 @@ const I18N = {
     av_cat: "Cat", av_dog: "Dog", av_boy: "Boy", av_girl: "Girl",
     avatar_hint: "The avatar you pick is saved right away and applies after restart.",
     sec_logs: "Diagnostics log",
-    perm_title: "Action request ⚠️",
+    perm_title: "Action request ",
     perm_allow: "Allow",
     perm_deny: "Deny",
-    perm_allowed: "Allowed ✅",
-    perm_denied: "Denied ❌",
-    perm_timeout: "Timed out — denied ⏱️",
-    perm_more: "Show more ▾",
-    perm_less: "Show less ▴",
+    perm_allowed: "Allowed",
+    perm_denied: "Denied ",
+    perm_timeout: "Timed out — denied ",
+    perm_cancelled: "Cancelled — a new question started",
+    perm_more: "Show more",
+    perm_less: "Show less",
     menu_memory: "Memory",
     sec_memory: "Long-term memory",
     mem_hint: "Things LONA remembers about you from conversations — stored on your laptop only, never uploaded. You can delete any of them, or wipe everything.",
@@ -243,7 +247,7 @@ const I18N = {
     mem_empty: "Nothing saved yet — tell me “remember that...” in the chat.",
     mem_clear: "Wipe all memory",
     mem_clear_confirm: "Are you sure you want to wipe all of LONA's memories about you?",
-    mem_deleted: "Deleted ✅",
+    mem_deleted: "Deleted",
     menu_system: "System health",
     menu_notifications: "Notifications",
     sec_system: "System health",
@@ -259,14 +263,14 @@ const I18N = {
     mon_cooldown: "Don't repeat the same alert within (minutes)",
     mon_in_app: "Alert inside the app",
     mon_toast: "Alert as a Windows toast",
-    sys_temp_unavailable: "⚠️ CPU temperature is not available on this machine (no readable sensor) — monitoring runs without it, and no temperature is guessed.",
+    sys_temp_unavailable: "CPU temperature is not available on this machine (no readable sensor) — monitoring runs without it, and no temperature is guessed.",
     notif_enable: "Alert on important Windows notifications",
     notif_access: "Request notification access",
     notif_apps: "Important apps (one per line)",
     notif_keywords: "Important keywords (one per line)",
     notif_unavailable: "Listening to Windows notifications is not available on this machine.",
     notif_denied: "Notification access is denied — enable it in Windows Settings (Notifications) or tap “Request notification access” again.",
-    notif_granted: "Notification listening is on ✅",
+    notif_granted: "Notification listening is on",
     notif_not_requested: "Notification access hasn't been requested yet — tap “Request notification access”.",
     logs_refresh: "Refresh", logs_copy: "Copy log",
     sec_updates: "Updates",
@@ -274,7 +278,7 @@ const I18N = {
     check_updates: "Check for updates", install_update: "Install update",
     update_checking: "Checking for updates...",
     update_not_configured: "Updates aren't enabled yet — no update URL is configured.",
-    update_up_to_date: "You're on the latest version ✅",
+    update_up_to_date: "You're on the latest version",
     update_available: "A new update is available!",
     update_installing: "Installing the update and restarting...",
     update_installing_now: "Installing now…",
@@ -286,10 +290,10 @@ const I18N = {
     update_failed: "Update failed — see the log",
     update_error: "Couldn't check for updates — see the log",
     update_whats_new: "What's new in",
-    update_download: "⬇️ Download update",
+    update_download: "Download update",
     update_install_now: "Install now",
     update_install_later: "Install later",
-    update_ready: "Update downloaded and ready ✅",
+    update_ready: "Update downloaded and ready",
     update_ready_hint: "Install whenever you like — installing restarts the app.",
     update_saved_later: "Saved — you can install it from here whenever you like.",
     update_install_downloaded: "Install the downloaded update",
@@ -304,7 +308,7 @@ const I18N = {
     todo_note: "In development (v2): screen translation, multi-model council, Gmail/calendar in the morning briefing, XTTS voices, and the 7B model.",
     quit: "Quit the app", save: "Save",
     online: "Online", offline: "Offline",
-    listening: "🎙️ Listening... speak now",
+    listening: "Listening... speak now",
     thinking: "Thinking...",
     speaking: "Speaking...",
     hello: "Hi Mohamed! I'm LONA — type or tap the mic and talk.",
@@ -313,8 +317,8 @@ const I18N = {
     bridge_not_ready: "The app is still starting — wait a second and tap again",
     bridge_files_missing: "App engine files are missing — update or reinstall the app",
     log_unavailable: "Log isn't available right now",
-    copied: "Log copied ✅",
-    saved: "Settings saved ✅",
+    copied: "Log copied",
+    saved: "Settings saved",
     confirm_quit: "Are you sure you want to quit LONA completely?",
   }
 };
@@ -322,7 +326,7 @@ const I18N = {
 let LANG = "ar";
 let busy = false;
 let selectedVoice = "girl_warm";
-let selectedAvatar = "cat";  // v1.4.1: the avatar pick is real state now
+let selectedAvatar = "robot";  // v1.4.1: the avatar pick is real state now
 let voiceOutput = true;      // v1.3.0 speaker toggle (OUTPUT only - mic is separate)
 // v1.4.2: in-chat permission cards (req id -> card element). Cards stay
 // in the chat history after they resolve (final state, buttons dead).
@@ -331,23 +335,34 @@ let permPollTimer = null;    // polls for Allow/Deny requests while a tool chat 
 
 // v1.4.1: avatar images (all 4 are real now - dog/boy/girl shipped in
 // ui/assets) + the emoji shown next to the name.
+// v1.6.1: the program identity is the gold robot (not one of the 4
+// picker options - the picker keeps cat/dog/boy/girl only). "robot"
+// is the default avatar and the migration target for the old default
+// identity (see settings_store identity_migrated_v161).
+// v1.6.1: LONA icon set — inline <svg> referencing the bundled sprite
+// (app/ui/assets/lona-icons-sprite.svg, 31 symbols, 20px default).
+// Colour comes from currentColor, so the icon follows the theme.
+function iconSvg(id, size) {
+  const s = size || 20;
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#' + id + '"/></svg>';
+}
+
 const AVATAR_IMAGES = {
   cat: "assets/avatar-cat.png", dog: "assets/avatar-dog.png",
   boy: "assets/avatar-boy.png", girl: "assets/avatar-girl.png",
+  robot: "assets/avatar-robot.png",
 };
-const AVATAR_EMOJI = { cat: "🐱", dog: "🐶", boy: "👦", girl: "👧" };
 
 // v1.4.1: apply the picked avatar everywhere (header logo + hero +
 // name line). Called on load (restore) and on every pick.
 function applyAvatar() {
-  const img = AVATAR_IMAGES[selectedAvatar] || AVATAR_IMAGES.cat;
+  const img = AVATAR_IMAGES[selectedAvatar] || AVATAR_IMAGES.robot;
   const logoImg = document.querySelector("header .logo img");
   if (logoImg) logoImg.src = img;
   const heroImg = document.querySelector("#avatar-frame img");
   if (heroImg) heroImg.src = img;
   const nameEl = $("avatar-name");
-  if (nameEl) nameEl.textContent = ($("set-ai-name").value || "LONA") + " " +
-    (AVATAR_EMOJI[selectedAvatar] || "🐱");
+  if (nameEl) nameEl.textContent = $("set-ai-name").value || "LONA";
 }
 
 // v1.4.1: save a settings payload RIGHT AWAY (voice/avatar picks,
@@ -532,6 +547,8 @@ async function addGeneratedImages(filenames) {
 }
 
 function showTyping() {
+  // v1.6.1: idempotent - one bubble only, even if called twice.
+  if ($("typing-indicator")) return;
   const chat = $("chat");
   const div = document.createElement("div");
   div.className = "msg ai typing";
@@ -546,24 +563,49 @@ function hideTyping() {
   if (el) el.remove();
 }
 
-async function sendText(text) {
+let _sendQueue = [];
+async function sendText(text, _bubbleShown) {
   text = (text || "").trim();
-  if (!text || busy) return;
+  if (!text) return;
+  if (busy) {
+    // v1.6.1 (item 21a/21c): a message sent while a turn runs is
+    // QUEUED, never silently dropped - the old code returned here, so
+    // the user's message vanished with no feedback while the previous
+    // turn waited on a permission (up to 120s) - exactly the field
+    // freeze: he typed "ازاي", nothing happened, no dots. The bubble
+    // shows at once; the send runs when the current turn finishes.
+    // The old turn's pending permission is stale the moment the user
+    // starts a new question, so it is cancelled here too - the old
+    // turn then finishes fast and the queue drains.
+    if (!_bubbleShown) addMsg(text, "user");
+    flyHeroToHeader();
+    $("text-input").value = "";
+    _sendQueue.push(text);
+    try { const b = getApi(); if (b && b.cancel_pending_permissions) b.cancel_pending_permissions(); } catch (e) {}
+    return;
+  }
   busy = true;
-  addMsg(text, "user");
+  if (!_bubbleShown) addMsg(text, "user");
   flyHeroToHeader();   // v1.3.2: first message -> the hero cat flies to the header, chat grows
   $("text-input").value = "";
   const bridge = getApi();
   if (!bridge) {
     addMsg(t("no_bridge"), "ai", "LONA");
     busy = false;
+    if (_sendQueue.length) { const next = _sendQueue.shift(); sendText(next, true); }
     return;
   }
+  // v1.6.1 (item 8): the 3-dot bubble stays up for the WHOLE thinking
+  // duration - the pending poll / Deep Think reasoning included - and
+  // disappears only when the final reply arrives (finally below).
+  // It used to be hidden as soon as bridge.chat() returned pending,
+  // so the user waited with no dots visible. beginThinking() also
+  // flips the robot to the "بيفكر" mood for the same duration.
   showTyping();
+  beginThinking();
   $("status").textContent = t("thinking");
   try {
     const res = await bridge.chat(text);
-    hideTyping();
     if (res && res.pending) {
       // v1.3.2: tool chat runs in a background thread (the bridge must
       // never block on a permission). Poll for the result; any
@@ -577,11 +619,16 @@ async function sendText(text) {
       addMsg(safeReply(res.reply), "ai", "LONA" + metaEngine(res.engine));
     }
   } catch (e) {
-    hideTyping();
     addMsg("حصلت مشكلة، جرّب تاني.", "ai", "LONA");
+  } finally {
+    hideTyping();
+    endThinking();
   }
   $("status").textContent = "";
   busy = false;
+  // v1.6.1 (item 21a): drain one queued message (its bubble is
+  // already shown, so it re-enters with _bubbleShown=true).
+  if (_sendQueue.length) { const next = _sendQueue.shift(); sendText(next, true); }
 }
 
 // v1.3.2: poll chat_result() until the background tool chat finishes.
@@ -590,10 +637,20 @@ function waitForChatResult(chatId) {
     const timer = setInterval(async () => {
       try {
         const res = await getApi().chat_result(chatId);
-        if (res && res.done) { clearInterval(timer); resolve(res); }
+        if (res && res.done) {
+          clearInterval(timer);
+          clearTimeout(capTimer); // v1.6.1: no dangling 150s timer
+          resolve(res);
+        }
       } catch (e) { /* keep polling */ }
     }, 1200);
-    setTimeout(() => { clearInterval(timer); resolve({ reply: "…", engine: "" }); }, 150000); // 2.5 min cap
+    // v1.6.1 (item 21b): the 2.5 min cap NEVER returns "…" as a message -
+    // that looked like a reply and hid the failure. On cap, resolve
+    // with a clear failure state instead. Test hook
+    // window.__chatResultCapMs overrides the cap (default 150000).
+    const capMs = (typeof window !== "undefined" &&
+                   window.__chatResultCapMs) || 150000;
+    const capTimer = setTimeout(() => { clearInterval(timer); resolve({ reply: "الرد اتأخر أوي — المخ مش بيرد دلوقتي، جرّب تاني.", engine: "", timed_out: true }); }, capMs);
   });
 }
 
@@ -604,6 +661,36 @@ function waitForChatResult(chatId) {
 // its final state ("تم السماح" / "تم الرفض" / "انتهت المهلة") with
 // dead buttons. If the user sends another message while one is
 // pending, the card simply stays visible in the history.
+// ---------- PERMISSION CARDS (v1.6.1 items 12+18): choice-card shape ----------
+// Allow/Deny are dashed .choice-card rectangles -- the same style as the
+// option cards: the picked one goes solid, the other dims. The severity
+// dot (item 18) sits inside the card next to the buttons, coloured by
+// the tier the backend attached (fixer registry; unknown -> red). The
+// result updates LIVE on this same card (finalizePermCard) -- never a
+// separate result message. The old collapsible detail is gone: the
+// summary carries the request.
+const SEVERITY = {
+  green: { color: "#3ECF8E", title: "آمن" },
+  yellow: { color: "#F2B544", title: "محتاج إذن" },
+  red: { color: "#EF6461", title: "خطير — إذن صريح" },
+};
+function severityDot(tier) {
+  const lv = SEVERITY[tier] ? tier : "red";
+  const dot = document.createElement("span");
+  dot.className = "status-dot " + lv;
+  // NOTE: the .status-dot colours in styles.css are scoped to
+  // .action-msg only, so the dot also carries its colour inline to
+  // render inside a permission card.
+  dot.style.width = "11px";
+  dot.style.height = "11px";
+  dot.style.borderRadius = "50%";
+  dot.style.flexShrink = "0";
+  dot.style.alignSelf = "center";
+  dot.style.background = SEVERITY[lv].color;
+  dot.style.boxShadow = "0 0 8px " + SEVERITY[lv].color;
+  dot.title = SEVERITY[lv].title;
+  return dot;
+}
 function addPermCard(p) {
   const chat = $("chat");
   const div = document.createElement("div");
@@ -617,34 +704,23 @@ function addPermCard(p) {
   summary.textContent = p.summary || "";
   div.appendChild(title);
   div.appendChild(summary);
-  if (p.detail) {
-    const detail = document.createElement("pre");
-    detail.className = "perm-detail";
-    detail.textContent = p.detail;
-    // v1.4.3: detail is clamped to 2 lines by CSS; tap it (or the
-    // toggle below) to expand to the full scrollable block.
-    const more = document.createElement("button");
-    more.className = "perm-more";
-    more.type = "button";
-    more.textContent = t("perm_more");
-    const toggleDetail = () => {
-      const open = detail.classList.toggle("expanded");
-      more.textContent = open ? t("perm_less") : t("perm_more");
-    };
-    more.addEventListener("click", toggleDetail);
-    detail.addEventListener("click", toggleDetail);
-    div.appendChild(detail);
-    div.appendChild(more);
-  }
   const btns = document.createElement("div");
   btns.className = "perm-btns";
   const allowBtn = document.createElement("button");
-  allowBtn.className = "gold-btn btn-3d";
-  allowBtn.textContent = "✓ " + t("perm_allow");
+  allowBtn.className = "choice-card btn-3d";
+  allowBtn.type = "button";
+  allowBtn.innerHTML = iconSvg("check") + " " + t("perm_allow");
   const denyBtn = document.createElement("button");
-  denyBtn.className = "danger-btn btn-3d";
-  denyBtn.textContent = "✕ " + t("perm_deny");
+  denyBtn.className = "choice-card btn-3d";
+  denyBtn.type = "button";
+  denyBtn.innerHTML = iconSvg("x") + " " + t("perm_deny");
   const answer = async (allowed) => {
+    // Instant feedback, exactly like the choice cards: the picked one
+    // goes solid, the other dims, both die.
+    allowBtn.classList.toggle("picked", allowed);
+    allowBtn.classList.toggle("dimmed", !allowed);
+    denyBtn.classList.toggle("picked", !allowed);
+    denyBtn.classList.toggle("dimmed", allowed);
     allowBtn.disabled = true;
     denyBtn.disabled = true;
     const b = getApi();
@@ -657,6 +733,7 @@ function addPermCard(p) {
   denyBtn.addEventListener("click", () => answer(false));
   btns.appendChild(denyBtn);
   btns.appendChild(allowBtn);
+  btns.appendChild(severityDot(p.tier));
   div.appendChild(btns);
   const meta = document.createElement("span");
   meta.className = "meta";
@@ -674,11 +751,24 @@ function finalizePermCard(id, status) {
   card.done = true;
   card.allowBtn.disabled = true;
   card.denyBtn.disabled = true;
+  // A card that resolved without a tap here (timeout, cancelled, or
+  // resolved from another channel) dims both -- nothing was picked.
+  if (status === "timeout" || status === "cancelled") {
+    card.allowBtn.classList.add("dimmed");
+    card.denyBtn.classList.add("dimmed");
+  } else if (status === "allowed") {
+    card.allowBtn.classList.add("picked");
+    card.denyBtn.classList.add("dimmed");
+  } else {
+    card.denyBtn.classList.add("picked");
+    card.allowBtn.classList.add("dimmed");
+  }
   card.el.classList.add("resolved-" + status);
   const state = document.createElement("div");
   state.className = "perm-state";
   state.textContent = status === "allowed" ? t("perm_allowed")
-    : status === "timeout" ? t("perm_timeout") : t("perm_denied");
+    : status === "timeout" ? t("perm_timeout")
+    : status === "cancelled" ? t("perm_cancelled") : t("perm_denied");
   card.el.appendChild(state);
 }
 
@@ -719,12 +809,21 @@ async function voiceChat() {
     const res = await bridge.voice_chat();
     if (res.heard) { addMsg(res.heard, "user", t("heard_prefix").trim()); flyHeroToHeader(); }
     if (res && res.pending) {
-      // v1.3.2: tool chat - poll for the reply.
-      startPermPolling();
-      const done = await waitForChatResult(res.chat_id);
-      stopPermPolling();
-      addMsg(safeReply(done.reply), "ai", "LONA" + metaEngine(done.engine));
-      await addGeneratedImages(done.images);
+      // v1.3.2: tool chat - poll for the reply. v1.6.1: same as
+      // sendText - the 3-dot bubble + "بيفكر" mood stay up for the
+      // whole background wait, not just until the pending reply.
+      showTyping();
+      beginThinking();
+      try {
+        startPermPolling();
+        const done = await waitForChatResult(res.chat_id);
+        stopPermPolling();
+        addMsg(safeReply(done.reply), "ai", "LONA" + metaEngine(done.engine));
+        await addGeneratedImages(done.images);
+      } finally {
+        hideTyping();
+        endThinking();
+      }
     } else {
       addMsg(safeReply(res.reply), "ai", "LONA" + metaEngine(res.engine));
     }
@@ -798,11 +897,11 @@ async function refreshWakewordStatus() {
 }
 
 // v1.3.0 voice-output toggle (OUTPUT only - the mic button is separate).
-// Icon + style show the state: 🔊 normal when ON, 🔇 dimmed amber when OFF.
+// Icon + style show the state: sounds icon normal when ON, mute icon dimmed amber when OFF.
 function updateVoiceBtn() {
   const btn = $("voice-btn");
   if (!btn) return;
-  btn.textContent = voiceOutput ? "🔊" : "🔇";
+  btn.innerHTML = iconSvg(voiceOutput ? "sounds" : "mute");
   btn.classList.toggle("muted", !voiceOutput);
   btn.title = voiceOutput ? t("voice_output_on") : t("voice_output_off");
 }
@@ -843,8 +942,10 @@ async function refreshStatus() {
       setVal("set-user-name", st.settings.user_name || "Mohamed");
       setVal("set-language", st.settings.language || "ar");
       setVal("set-greeting", !!st.settings.greeting_enabled);
-      // v1.4.1: autostart toggle (default ON). No pet/island controls.
+      // v1.4.1: autostart toggle (default ON).
       setVal("set-autostart", st.settings.autostart !== false);
+      // v1.6.1: island toggle (default ON).
+      setVal("set-island", st.settings.island_enabled !== false);
       // v1.5: wake-word toggle (default ON) + its status line.
       setVal("set-wakeword", st.settings.wakeword_enabled !== false);
       refreshWakewordStatus();
@@ -861,7 +962,7 @@ async function refreshStatus() {
         c.classList.toggle("selected", c.dataset.voice === selectedVoice));
       // v1.4.1: avatar (was NEVER restored before - the load path
       // hardcoded cat). Restore + apply before the UI paints.
-      selectedAvatar = st.settings.avatar || "cat";
+      selectedAvatar = st.settings.avatar || "robot";
       document.querySelectorAll(".avatar-opt").forEach(o =>
         o.classList.toggle("selected", o.dataset.avatar === selectedAvatar));
       applyAvatar();
@@ -896,7 +997,7 @@ async function refreshMemory() {
         span.textContent = item.text || "";
         const del = document.createElement("button");
         del.className = "mem-del btn-3d";
-        del.textContent = "✕";
+        del.innerHTML = iconSvg("x");
         del.title = t("mem_deleted");
         del.addEventListener("click", async () => {
           const b = getApi();
@@ -948,9 +1049,9 @@ async function refreshMonitor() {
     const lines = [];
     if (ram.total_mb) lines.push(`الرام: ${ram.used_mb}MB / ${ram.total_mb}MB (${ram.percent}% — فاضي ${ram.free_mb}MB)`);
     if (disk.total_gb) lines.push(`القرص: فاضي ${disk.free_gb}GB من ${disk.total_gb}GB (${disk.percent_free}% فاضي)`);
-    if (cpu.percent != null) lines.push(`المعالج: ${cpu.percent}%` + (cpu.sustained_high ? " (حمل مرتفع مستمر ⚠️)" : ""));
+    if (cpu.percent != null) lines.push(`المعالج: ${cpu.percent}%` + (cpu.sustained_high ? " (حمل مرتفع مستمر)" : ""));
     if (st.temp_c != null) lines.push(`حرارة المعالج: ${st.temp_c}°م`);
-    if (st.battery) lines.push(`البطارية: ${st.battery.percent}%` + (st.battery.charging ? " (بتشحن 🔌)" : ""));
+    if (st.battery) lines.push(`البطارية: ${st.battery.percent}%` + (st.battery.charging ? " (بتشحن)" : ""));
     const el = $("sys-status");
     if (el) el.textContent = lines.join("\n") || "…";
     const note = $("sys-temp-note");
@@ -1017,7 +1118,7 @@ function pollAlerts() {
       msg.textContent = (a.notification_title ? a.notification_title + " — " : "") + (a.message || "");
       const x = document.createElement("button");
       x.className = "alert-x btn-3d";
-      x.textContent = "✕";
+      x.innerHTML = iconSvg("x");
       x.addEventListener("click", () => div.remove());
       div.appendChild(title);
       div.appendChild(msg);
@@ -1101,7 +1202,7 @@ let updateSlideData = null; // {version, features} of the open slide
 
 function parseFeaturesFromNotes(notes) {
   const chunks = String(notes || "").split(/[\n•—]+/);
-  const icons = ["✨", "🛠️", "🧠", "💬", "🔍", "⚡", "🎨", "🔒"];
+  const icons = ["", "settings", "memory", "chat", "globe", "", "themes", ""];
   const out = [];
   chunks.forEach((raw, i) => {
     let text = raw.trim().replace(/^-+\s*/, "").trim();
@@ -1150,7 +1251,7 @@ function renderUpdateSlide(data, phase) {
   hero.className = "update-slide-hero";
   const icon = document.createElement("div");
   icon.className = "update-slide-icon";
-  icon.textContent = "✨";
+  icon.innerHTML = iconSvg("updates", 32);
   const title = document.createElement("div");
   title.className = "update-slide-title";
   title.textContent = t("update_whats_new") + " v" + data.version;
@@ -1168,7 +1269,7 @@ function renderUpdateSlide(data, phase) {
     card.style.animationDelay = (i * 60) + "ms";
     const ic = document.createElement("div");
     ic.className = "update-feature-icon";
-    ic.textContent = f.icon || "✨";
+    if (f.icon) ic.innerHTML = iconSvg(f.icon); else ic.style.display = "none";
     const body = document.createElement("div");
     body.className = "update-feature-body";
     const tt = document.createElement("div");
@@ -1341,7 +1442,20 @@ async function refreshDownloadedState() {
 
 // v1.4.1: Settings menu (DeliveryFlow-style) - one section at a time,
 // with a back button to the menu. The menu itself is a .settings-view.
+// v1.6.1 (item 20): the menu and every section are FULL views in the main
+// area (class "main-view"), not a modal: showing one hides the chat /
+// device views and the composer, exactly like showView does.
+function _hideChatDeviceAndComposer() {
+  const chatView = $("view-chat"), deviceView = $("view-device");
+  if (chatView) chatView.hidden = true;
+  if (deviceView) deviceView.hidden = true;
+  const composer = document.querySelector(".composer");
+  if (composer) composer.style.display = "none";
+  const quickScan = $("quick-scan");
+  if (quickScan) quickScan.style.display = "none";
+}
 function showSettingsSection(name) {
+  _hideChatDeviceAndComposer();
   $("settings-menu").hidden = true;
   document.querySelectorAll(".settings-view").forEach(v => {
     if (v.id !== "settings-menu") v.hidden = (v.id !== "section-" + name);
@@ -1355,10 +1469,10 @@ function showSettingsSection(name) {
   if (name === "themes" && typeof renderThemeGrid === "function") renderThemeGrid();
   if (name === "api-keys" && typeof refreshApiKeysStatus === "function") refreshApiKeysStatus();
   if (name === "self-view" && typeof refreshSelfView === "function") refreshSelfView();
-  if (name === "first-run" && typeof refreshActivationState === "function") refreshActivationState();
   if (name === "backup" && typeof refreshPrivacyMode === "function") refreshPrivacyMode();
 }
 function showSettingsMenu() {
+  _hideChatDeviceAndComposer();
   document.querySelectorAll(".settings-view").forEach(v => {
     v.hidden = (v.id !== "settings-menu");
   });
@@ -1375,7 +1489,7 @@ function init() {
   if (wrap) wrap.classList.add("flown");
   // The bridge may arrive late (MSHTML injects it after DOMContentLoaded):
   // re-probe then, and populate the UI as soon as it is available.
-  window.addEventListener("pywebviewready", () => { logEngine(); logReady(); refreshStatus(); });
+  window.addEventListener("pywebviewready", () => { logEngine(); logReady(); refreshStatus(); checkInviteGate(); });
   // If the bridge still hasn't arrived a few seconds in, say so visibly
   // in the status line instead of leaving dead buttons with no explanation.
   setTimeout(() => { if (!getApi()) $("status").textContent = t("no_bridge"); }, 3000);
@@ -1393,20 +1507,16 @@ function init() {
   });
   $("mic-btn").addEventListener("click", voiceChat);
   $("voice-btn").addEventListener("click", toggleVoiceOutput);
+  // v1.6.1 (item 20): the header gear opens the settings as a full view,
+  // not a modal. While the WhatsApp section is open, poll its status
+  // (QR refreshes) -- guarded on the section being visible.
   $("settings-btn").addEventListener("click", () => {
-    $("settings-modal").classList.add("open");
-    showSettingsMenu();
-    // While the WhatsApp section is open, poll its status (QR refreshes).
+    showView("settings");
     if (!window._waTimer) {
       window._waTimer = setInterval(() => {
-        if ($("settings-modal").classList.contains("open") &&
-            !$("section-whatsapp").hidden) refreshWhatsApp();
+        if (!$("section-whatsapp").hidden) refreshWhatsApp();
       }, 3000);
     }
-  });
-  $("settings-close").addEventListener("click", () => $("settings-modal").classList.remove("open"));
-  $("settings-modal").addEventListener("click", e => {
-    if (e.target === $("settings-modal")) $("settings-modal").classList.remove("open");
   });
 
   // v1.4.1: menu navigation (DeliveryFlow-style).
@@ -1453,6 +1563,7 @@ function init() {
       voice_output: $("set-voice-output").checked,
       greeting_enabled: $("set-greeting").checked,
       autostart: $("set-autostart").checked,
+      island_enabled: $("set-island").checked,
       wakeword_enabled: $("set-wakeword").checked,
     };
     await b.save_settings(JSON.stringify(payload));
@@ -1471,7 +1582,7 @@ function init() {
   // any bridge call: the old handler saved general settings first,
   // whose re-render wiped these fields back to their old values, and
   // it then read the wiped values and saved THOSE (empty number,
-  // disabled) while saying "saved ✅" - the v1.4.0 owner-number /
+  // disabled) while saying "saved" - the v1.4.0 owner-number /
   // missing-QR bug.
   $("save-whatsapp").addEventListener("click", async () => {
     const b = getApi();
@@ -1704,9 +1815,9 @@ document.addEventListener("DOMContentLoaded", init);
 
 // ---------- THEMES (4 incl. the old v1.5.0 theme, never deleted) ----------
 const THEMES = [
-  { id: "night-glass", name: "زجاج الليل", desc: "داكن فاخر", swatches: ["#0A0E14", "#121A26", "#E8C97A", "#67E8F9", "#EDF2F7"] },
+  { id: "night-glass", name: "زجاج الليل", desc: "داكن فاخر", swatches: ["#0A1A2C", "#14273D", "#F0C75E", "#8FF4FF", "#EFF4FA"] },
   { id: "calm-space", name: "المساحة الهادية", desc: "فاتح هادي", swatches: ["#F4F6F3", "#FFFFFF", "#2E7D57", "#D99A3D", "#1E2B23"] },
-  { id: "dashboard", name: "لوحة القيادة", desc: "جرافيت داكن", swatches: ["#101014", "#1A1A21", "#FFB066", "#8FD0C5", "#F2F0EB"] },
+  { id: "dashboard", name: "لوحة القيادة", desc: "جرافيت داكن", swatches: ["#22222C", "#2C2C38", "#FF9A3D", "#8FD0C5", "#F5F2EA"] },
   { id: "old", name: "القديم", desc: "ثيم v1.5.0 الأصلي", swatches: ["#0a0e14", "#121826", "#e8c97a", "#67e8f9", "#f2f4f8"] },
 ];
 let currentTheme = "night-glass";
@@ -1803,11 +1914,37 @@ function setMood(name) {
   const sv = $("sv-mood"); if (sv) sv.textContent = name;
 }
 window.setMood = setMood;
+// v1.6.1 (item 10) THINKING MOOD - temporary display override only:
+// while the AI is thinking/writing a reply (typing bubble visible -
+// pending poll + Deep Think steps included) the robot shows "بيفكر"
+// with its tilt animation, in the main window here AND in the island
+// (the island gets it from the backend get_mood() override + the
+// immediate evaluate_js push in Api.chat). When the reply arrives,
+// the robot returns to the mood it had before thinking. This never
+// touches the backend stabilizer, so the hold/confirm counters keep
+// running untouched underneath.
+let thinkingActive = false, thinkingPrevMood = null;
+function beginThinking() {
+  if (thinkingActive) return;
+  thinkingActive = true;
+  thinkingPrevMood = currentMood;
+  setMood("بيفكر");
+}
+function endThinking() {
+  if (!thinkingActive) return;
+  thinkingActive = false;
+  const prev = thinkingPrevMood;
+  thinkingPrevMood = null;
+  if (prev && MOODS[prev]) setMood(prev);
+}
 let moodFallbackTimer = null;
 function startMoodPolling() {
   const api = getApi();
   if (api && api.get_mood) {
     setInterval(async () => {
+      // v1.6.1: while thinking, the local "بيفكر" override owns the
+      // robot - a poll result must not clobber it mid-reply.
+      if (thinkingActive) return;
       try { const r = await api.get_mood(); if (r && r.mood) setMood(r.mood); } catch (e) {}
     }, 5000);
   } else {
@@ -1819,7 +1956,7 @@ function startMoodPolling() {
 }
 
 // Robot interaction: tap reacts (reactJump .72s + gold bubble 1.5s),
-// never opens/closes anything; mood flips نايم→صاحي, else→مبسوط وبيرقص.
+// never opens/closes anything; mood flips نايم إلى صاحي, else إلى مبسوط وبيرقص.
 const ROBOT_SAYINGS = ["أهلًا!", "أنا هنا!", "ازيك يا محمد!"];
 let robotSayIdx = 0, robotSayTimer = null;
 function robotReact() {
@@ -1833,33 +1970,38 @@ function robotReact() {
     clearTimeout(robotSayTimer);
     robotSayTimer = setTimeout(() => say.classList.remove("show"), 1500);
   }
-  setMood(currentMood === "نايم" ? "صاحي" : "مبسوط وبيرقص");
+  // v1.6.1: a tap while thinking keeps the "بيفكر" override - the
+  // robot still jumps + answers, it just doesn't flip its mood.
+  if (!thinkingActive) setMood(currentMood === "نايم" ? "صاحي" : "مبسوط وبيرقص");
   wrap.classList.add("wake"); setTimeout(() => wrap.classList.remove("wake"), 450);
 }
 
-// ---------- VIEWS (sidebar / pill nav) ----------
+// ---------- VIEWS (sidebar) ----------
+// v1.6.1 (item 20): EVERY sidebar destination is a full view in the main
+// area, like view-chat / view-device. No modal is used for sidebar
+// navigation at all: chat and device are .main-view divs, and every other
+// destination is a .settings-view that is also a .main-view. The composer
+// and quick-scan bar show only for chat/device, like before.
 function showView(name) {
-  const modal = $("settings-modal");
   const chatView = $("view-chat"), deviceView = $("view-device");
   const composer = document.querySelector(".composer");
   const quickScan = $("quick-scan");
-  document.querySelectorAll(".side-nav, #pill-nav button").forEach(b =>
+  document.querySelectorAll(".side-nav").forEach(b =>
     b.classList.toggle("active", b.dataset.view === name));
   if (name === "chat") {
-    if (modal) modal.classList.remove("open");
+    document.querySelectorAll(".settings-view").forEach(v => { v.hidden = true; });
     if (chatView) chatView.hidden = false;
     if (deviceView) deviceView.hidden = true;
     if (composer) composer.style.display = "";
     if (quickScan) quickScan.style.display = "";
   } else if (name === "device") {
-    if (modal) modal.classList.remove("open");
+    document.querySelectorAll(".settings-view").forEach(v => { v.hidden = true; });
     if (chatView) chatView.hidden = true;
     if (deviceView) { deviceView.hidden = false; }
     if (composer) composer.style.display = "";
     if (quickScan) quickScan.style.display = "";
     refreshDeviceOverview(); refreshExamCountdown(); renderProcList([]);
   } else {
-    if (modal) modal.classList.add("open");
     if (name === "settings") showSettingsMenu();
     else showSettingsSection(name);
   }
@@ -1868,6 +2010,10 @@ function showView(name) {
 // ---------- STATS: count-up 850ms cubic ease-out + bars grow on entry ----------
 function animateCountUps() {
   document.querySelectorAll(".count-up").forEach(el => {
+    // v1.6.1: never animate a card with no real sample yet — it keeps
+    // showing "—" instead of counting up to a fake 0%. setStat() marks
+    // data-sampled="true" the moment a real psutil value arrives.
+    if (el.dataset.sampled !== "true") return;
     const target = parseFloat(el.dataset.target || "0");
     const suffix = el.dataset.suffix || "";
     const t0 = performance.now();
@@ -1912,7 +2058,9 @@ function renderProcList(rows) {
     const row = document.createElement("div");
     row.className = "proc-row";
     row.style.setProperty("--stagger-i", i);
-    const pct = Math.max(0, Math.min(100, r.percent || 0));
+    // v1.6.1: monitor rows carry cpu_percent (not percent) — use the
+    // real CPU share for the bar, falling back to percent if present.
+    const pct = Math.max(0, Math.min(100, (r.cpu_percent != null ? r.cpu_percent : r.percent) || 0));
     row.innerHTML = '<span class="proc-name"></span><span class="proc-bar"><i style="width:' + pct + '%"></i></span><span class="proc-val">' + pct + '%</span>';
     row.querySelector(".proc-name").textContent = r.name || ("عملية " + (i + 1));
     list.appendChild(row);
@@ -1931,27 +2079,58 @@ function initProcScroll() {
     });
   });
 }
+// v1.6.1 (11b): temperature hint — shown at most ONCE per session.
+// The API sends ov.temp_hint {text, url} only while the temperature
+// is unavailable, and nothing at all when it is available.
+let tempHintDismissed = false;
 async function refreshDeviceOverview() {
   const b = getApi();
   if (!b || !b.get_device_overview) return;
   try {
     const d = await b.get_device_overview();
+    // v1.6.1: Api.get_device_overview() returns {ok, overview: {ram:
+    // {percent}, cpu: {percent}, battery: {percent}, top_processes,
+    // mood_reason, ...}} — read the NESTED overview shape. The old
+    // code read flat keys off the reply (ram/cpu/battery percent,
+    // top processes, health note), none of which the API ever
+    // returned, so every check failed and the cards kept their fake
+    // hardcoded placeholders (RAM 62%, CPU 18%, battery 87%).
+    const ov = (d && d.overview) || {};
     const setStat = (key, val, barPct) => {
       const card = document.querySelector('.stat-card[data-stat="' + key + '"]');
       if (!card) return;
       const num = card.querySelector(".count-up");
-      if (num && val != null) { num.dataset.target = val; }
+      if (num && val != null) { num.dataset.target = val; num.dataset.sampled = "true"; }
       const bar = card.querySelector(".stat-bar i");
       if (bar && barPct != null) bar.style.setProperty("--bar-w", barPct + "%");
     };
-    if (d.ram_percent != null) setStat("ram", d.ram_percent, d.ram_percent);
-    if (d.cpu_percent != null) setStat("cpu", d.cpu_percent, d.cpu_percent);
-    if (d.battery_percent != null) setStat("battery", d.battery_percent, d.battery_percent);
+    const ramPct = ov.ram ? ov.ram.percent : null;
+    const cpuPct = ov.cpu ? ov.cpu.percent : null;
+    const battPct = ov.battery ? ov.battery.percent : null;
+    if (ramPct != null) setStat("ram", ramPct, ramPct);
+    if (cpuPct != null) setStat("cpu", cpuPct, cpuPct);
+    if (battPct != null) setStat("battery", battPct, battPct);
     animateCountUps();
-    if (d.top_processes) renderProcList(d.top_processes);
+    if (ov.top_processes) renderProcList(ov.top_processes);
     const qs = $("quick-scan-text");
-    if (qs && d.health_note) qs.textContent = d.health_note;
-  } catch (e) { /* stats keep their placeholders */ }
+    if (qs && ov.mood_reason) qs.textContent = ov.mood_reason;
+    // Temperature hint (11b): the text + link come from the API
+    // (ov.temp_hint) — never a made-up number, never hardcoded here.
+    // Shown once per session while the temperature is unavailable,
+    // and never at all once it becomes available.
+    const hint = $("temp-hint");
+    if (hint) {
+      if (ov.temp_available) {
+        hint.hidden = true;
+      } else if (ov.temp_hint && ov.temp_hint.text && !tempHintDismissed) {
+        const ht = $("temp-hint-text");
+        if (ht) ht.textContent = ov.temp_hint.text;
+        const hl = $("temp-hint-link");
+        if (hl && ov.temp_hint.url) hl.href = ov.temp_hint.url;
+        hint.hidden = false;
+      }
+    }
+  } catch (e) { /* stats keep "—" until a real sample arrives */ }
 }
 
 // ---------- CHOICE CARDS (dashed rectangles; picked solid, others dim) ----------
@@ -1973,7 +2152,7 @@ function renderChoiceCard(options, onPick) {
       btn.disabled = false;
       const st = document.createElement("div");
       st.className = "choice-status";
-      st.textContent = "اخترت: " + opt + " ✓";
+      st.textContent = "اخترت: " + opt;
       wrap.appendChild(st);
       if (onPick) onPick(opt);
     });
@@ -2015,7 +2194,7 @@ function renderActionMessage(suggestion, level, runFn) {
     state.textContent = "شغالة...";
     const done = async () => {
       dot.classList.remove("running");
-      state.textContent = "اتعملت ✓";
+      state.textContent = "اتعملت";
       renderUndoAffordance(div);
       refreshLiveCards(); // live card: re-read the real current value now
     };
@@ -2038,7 +2217,7 @@ async function renderUndoAffordance(parentEl) {
     btn.textContent = "تراجع: " + label;
     btn.addEventListener("click", async () => {
       btn.disabled = true;
-      try { await fn(); btn.textContent = "اترجعت ✓"; }
+      try { await fn(); btn.textContent = "اترجعت"; }
       catch (e) { btn.textContent = "التراجع مكملش — شوف السجل"; }
     });
     row.appendChild(btn);
@@ -2199,10 +2378,10 @@ function initDeepThink() {
 }
 // Deep Think "بيفكّر..." state while a reply is pending.
 const _origSendText = sendText;
-sendText = async function (text) {
+sendText = async function (text, _bubbleShown) {
   const st = $("deepthink-state");
   if (deepThinkOn && st) st.textContent = "بيفكّر...";
-  try { await _origSendText(text); }
+  try { await _origSendText(text, _bubbleShown); }
   finally { if (st) st.textContent = ""; }
 };
 
@@ -2211,22 +2390,22 @@ function apiKeyBadge(provider) {
   const input = $("api-key-" + provider);
   const badge = $("api-badge-" + provider);
   if (!input || !badge) return;
-  badge.textContent = (input.value && input.value.length > 3) ? "محفوظ على الجهاز ✓" : "";
+  badge.textContent = (input.value && input.value.length > 3) ? "محفوظ على الجهاز" : "";
 }
 async function refreshApiKeysStatus() {
   const b = getApi();
-  if (!b || !b.get_api_keys_status) { apiKeyBadge("gemini"); apiKeyBadge("groq"); return; }
+  if (!b || !b.get_api_keys_status) { apiKeyBadge("gemini-voice"); apiKeyBadge("gemini-chat"); apiKeyBadge("groq"); return; }
   try {
     const st = await b.get_api_keys_status();
-    ["gemini", "groq"].forEach(p => {
+    ["gemini-voice", "gemini-chat", "groq"].forEach(p => {
       const badge = $("api-badge-" + p);
-      if (badge && st && st[p]) badge.textContent = "محفوظ على الجهاز ✓";
+      if (badge && st && st[p]) badge.textContent = "محفوظ على الجهاز";
       else apiKeyBadge(p);
     });
-  } catch (e) { apiKeyBadge("gemini"); apiKeyBadge("groq"); }
+  } catch (e) { apiKeyBadge("gemini-voice"); apiKeyBadge("gemini-chat"); apiKeyBadge("groq"); }
 }
 function wireApiKeys() {
-  ["gemini", "groq"].forEach(p => {
+  ["gemini-voice", "gemini-chat", "groq"].forEach(p => {
     const input = $("api-key-" + p);
     if (input) input.addEventListener("input", () => apiKeyBadge(p));
     const showBtn = $("api-show-" + p);
@@ -2247,7 +2426,7 @@ function wireApiKeys() {
       } else if (b) {
         try { const r = await b.save_settings(JSON.stringify({ ["api_key_" + p]: value })); ok = !!(r && r.ok); } catch (e) { ok = false; }
       }
-      if (statusEl) statusEl.textContent = ok ? "اتحفظ ✓" : (b ? "مقدرتش أحفظ — جرّب تاني" : "المحرك مش متوصل — المفتاح متسجّلش");
+      if (statusEl) statusEl.textContent = ok ? "اتحفظ" : (b ? "مقدرتش أحفظ — جرّب تاني" : "المحرك مش متوصل — المفتاح متسجّلش");
       apiKeyBadge(p);
       setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 2500);
     });
@@ -2259,11 +2438,11 @@ function wireApiKeys() {
       if (b && b.test_api_key) {
         try {
           const r = await b.test_api_key(p);
-          if (statusEl) statusEl.textContent = (r && r.ok) ? "الاتصال تمام ✓" : "الاتصال فشل — اتأكد من المفتاح";
+          if (statusEl) statusEl.textContent = (r && r.ok) ? "الاتصال تمام" : "الاتصال فشل — اتأكد من المفتاح";
         } catch (e) { if (statusEl) statusEl.textContent = "الاتصال فشل — شوف السجل"; }
       } else {
         // 1.1s simulated success when the bridge has no test method yet.
-        setTimeout(() => { if (statusEl) statusEl.textContent = "الاتصال تمام ✓ (محاكاة — البرنامج مش متوصل بالمحرك)"; }, 1100);
+        setTimeout(() => { if (statusEl) statusEl.textContent = "الاتصال تمام (محاكاة — البرنامج مش متوصل بالمحرك)"; }, 1100);
       }
       setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 4000);
     });
@@ -2288,21 +2467,33 @@ async function refreshSelfView() {
   } catch (e) { /* rows keep their placeholders */ }
 }
 
-// ---------- FIRST RUN / INVITE (6 boxes, STRING join, leading zero kept) ----------
+// ---------- INVITE GATE (v1.6.1): first launch only, before the main window ----------
+// The 6 boxes join into a STRING (a leading zero must not be lost).
 function inviteCodeString() {
   const boxes = document.querySelectorAll("#invite-boxes .invite-box");
   let code = "";
   boxes.forEach(b => { code += b.value || ""; });
   return code; // STRING on purpose — a leading zero must not be lost
 }
-async function refreshActivationState() {
+// The gate is NOT a view: it is a full-screen overlay (#invite-gate) shown
+// at startup when the install is not activated yet. A correct code hides
+// it forever; a wrong code stays on the gate with a message and a retry.
+// The 6 boxes + hash check + activation save are unchanged (wireInvite
+// below); this only decides whether the gate shows. Without a bridge yet
+// (Linux preview, or the bridge arriving late) the gate stays hidden so
+// the UI is never blocked - the check runs again on pywebviewready.
+async function checkInviteGate() {
+  const gate = $("invite-gate");
+  if (!gate) return;
   const b = getApi();
-  if (!b || !b.get_activation_state) return;
+  if (!b || !b.get_activation_state) { gate.hidden = true; return; }
   try {
     const st = await b.get_activation_state();
-    const el = $("invite-status");
-    if (el && st && st.activated) el.textContent = "مفعّل ✓";
-  } catch (e) {}
+    if (st && st.activated) { gate.hidden = true; return; }
+    gate.hidden = false;
+    const first = document.querySelector("#invite-boxes .invite-box");
+    if (first) first.focus();
+  } catch (e) { gate.hidden = true; }
 }
 function wireInvite() {
   const boxes = Array.from(document.querySelectorAll("#invite-boxes .invite-box"));
@@ -2311,14 +2502,31 @@ function wireInvite() {
   const updateBtn = () => {
     activateBtn.disabled = !boxes.every(b => /^\d$/.test(b.value));
   };
+  // v1.6.1 item 21: Backspace moves focus BEFORE the browser runs its
+  // default action -- without preventDefault() the default deletion
+  // lands on the newly focused box, and in WebView2/MSHTML the focus
+  // can end up in a broken state where the boxes stop accepting input
+  // and the screen looks frozen. Prevent it: the handler owns the
+  // deletion entirely. The guard drops re-entrant input events (some
+  // engines re-fire input when .value is assigned inside a handler).
+  let inviteHandling = false;
   boxes.forEach((box, i) => {
     box.addEventListener("input", () => {
-      box.value = box.value.replace(/\D/g, "").slice(0, 1);
-      if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
-      updateBtn();
+      if (inviteHandling) return;
+      inviteHandling = true;
+      try {
+        box.value = box.value.replace(/\D/g, "").slice(0, 1);
+        if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+        updateBtn();
+      } finally {
+        inviteHandling = false;
+      }
     });
     box.addEventListener("keydown", e => {
-      if (e.key === "Backspace" && !box.value && i > 0) { boxes[i - 1].focus(); boxes[i - 1].value = ""; updateBtn(); }
+      if (e.key === "Backspace" && !box.value && i > 0) {
+        e.preventDefault();
+        boxes[i - 1].focus(); boxes[i - 1].value = ""; updateBtn();
+      }
     });
     box.addEventListener("paste", e => {
       e.preventDefault();
@@ -2336,11 +2544,44 @@ function wireInvite() {
       if (statusEl) statusEl.textContent = "مش قادر أتحقق من الكود دلوقتي — افتح البرنامج على ويندوز";
       return;
     }
+    // v1.6.1 item 21: the check must never leave the gate stuck -- the
+    // button locks while checking, and a timeout turns a hung bridge
+    // into a retryable message instead of a frozen screen.
+    // window.__inviteCheckTimeoutMs is a test hook (default 10 s).
+    const timeoutMs = (typeof window !== "undefined" &&
+      window.__inviteCheckTimeoutMs) || 10000;
+    activateBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "بيتحقق…";
+    let timer = null;
     try {
-      const r = await b.check_invite(code);
-      if (statusEl) statusEl.textContent = (r && r.ok) ? "اتفعّل ✓" : "الكود غلط — جرّب تاني";
+      const r = await Promise.race([
+        b.check_invite(code),
+        new Promise(resolve => { timer = setTimeout(
+          () => resolve({ok: false, timeout: true}), timeoutMs); }),
+      ]);
+      if (r && r.timeout) {
+        if (statusEl) statusEl.textContent = "التحقق اتأخر — جرّب تاني";
+        return;
+      }
+      if (r && r.ok) {
+        if (statusEl) statusEl.textContent = "اتفعّل";
+        // Gate lifts forever: hide it and land on the chat view.
+        const gate = $("invite-gate");
+        if (gate) gate.hidden = true;
+        showView("chat");
+      } else {
+        if (statusEl) statusEl.textContent = "الكود غلط — جرّب تاني";
+        // Retry right away: clear the boxes and focus the first one.
+        boxes.forEach(bx => { bx.value = ""; });
+        if (boxes[0]) boxes[0].focus();
+        updateBtn();
+      }
     } catch (e) {
       if (statusEl) statusEl.textContent = "مقدرتش أتحقق — جرّب تاني";
+    } finally {
+      if (timer) clearTimeout(timer);
+      activateBtn.disabled = false;
+      updateBtn();
     }
   });
 }
@@ -2354,7 +2595,7 @@ function setInstallingUI(installing, done) {
     btn.disabled = installingNow;
   });
   if (label) {
-    if (done) { label.hidden = false; label.textContent = "مثبّت ✓"; }
+    if (done) { label.hidden = false; label.textContent = "مثبّت"; }
     else if (installingNow) { label.hidden = false; label.textContent = "بيتثبّت دلوقتي…"; }
     else label.hidden = true;
   }
@@ -2375,7 +2616,7 @@ function wireBackup() {
     if (!b || !b.export_backup) { if (st) st.textContent = "التصدير مش متاح في النسخة دي"; return; }
     try {
       const r = await b.export_backup(p1);
-      if (st) st.textContent = (r && r.ok) ? "اتصدّرت ✓" : "التصدير فشل — شوف السجل";
+      if (st) st.textContent = (r && r.ok) ? "اتصدّرت" : "التصدير فشل — شوف السجل";
     } catch (e) { if (st) st.textContent = "التصدير فشل — شوف السجل"; }
   });
   const impBtn = $("backup-import-btn");
@@ -2387,7 +2628,7 @@ function wireBackup() {
     if (!b || !b.import_backup) { if (st) st.textContent = "الاستيراد مش متاح في النسخة دي"; return; }
     try {
       const r = await b.import_backup(pw);
-      if (st) st.textContent = (r && r.ok) ? "اتستوردت ✓ — أعد تشغيل البرنامج" : "الاستيراد فشل — كلمة السر غلط أو الملف مش سليم";
+      if (st) st.textContent = (r && r.ok) ? "اتستوردت — أعد تشغيل البرنامج" : "الاستيراد فشل — كلمة السر غلط أو الملف مش سليم";
       if (r && r.ok) refreshStatus();
     } catch (e) { if (st) st.textContent = "الاستيراد فشل — شوف السجل"; }
   });
@@ -2424,7 +2665,7 @@ function pomodoroFinish() {
   pomodoroLeft = 25 * 60; pomodoroRender();
   setMood("بيحتفل");
   const st = $("pomodoro-status");
-  if (st) st.textContent = "خلصت جلسة التركيز ✓";
+  if (st) st.textContent = "خلصت جلسة التركيز";
 }
 function wirePomodoro() {
   const startBtn = $("pomodoro-start"), pauseBtn = $("pomodoro-pause"), resetBtn = $("pomodoro-reset");
@@ -2481,10 +2722,28 @@ async function pollProactiveFeed() {
   const b = getApi();
   if (!b || !b.get_proactive_feed) return;
   try {
-    const feed = await b.get_proactive_feed();
-    (feed || []).forEach(item => {
+    const res = await b.get_proactive_feed();
+    // v1.6.1 item 18: the bridge returns {feed, exam}, not an array --
+    // iterating the object threw on every poll, so the feed never
+    // showed anything. Feed items carry {id, kind, text, level}.
+    const items = (res && res.feed) || [];
+    items.forEach(item => {
       if (!item || !item.id || seenAlerts[item.id]) return;
       seenAlerts[item.id] = true;
+      // Routine suggestions are ACTION messages (item 18): the dot
+      // shows the level and "اعملها انت" sends the routine to the
+      // chat, so LONA starts it for real -- never a fake completion.
+      // If a chat is already running, the run throws instead of
+      // pretending it worked.
+      if (item.kind === "routine_suggestion") {
+        const level = item.level === "warn" ? "yellow"
+          : item.level === "critical" ? "red" : "green";
+        renderActionMessage(item.text || "", level, () => {
+          if (busy) throw new Error("busy");
+          return sendText("ابدأ: " + (item.text || ""));
+        });
+        return;
+      }
       const box = $("alerts");
       if (!box) return;
       const div = document.createElement("div");
@@ -2492,10 +2751,10 @@ async function pollProactiveFeed() {
       const title = document.createElement("b");
       title.textContent = item.title || "تنبيه";
       const msg = document.createElement("span");
-      msg.textContent = item.message || "";
+      msg.textContent = item.text || item.message || "";
       const x = document.createElement("button");
       x.className = "alert-x btn-3d";
-      x.textContent = "✕";
+      x.innerHTML = iconSvg("x");
       x.addEventListener("click", () => div.remove());
       div.appendChild(title); div.appendChild(msg); div.appendChild(x);
       box.appendChild(div);
@@ -2515,10 +2774,16 @@ document.addEventListener("DOMContentLoaded", () => {
   renderThemeGrid();
   setMood("صاحي");
   startMoodPolling();
-  document.querySelectorAll(".side-nav, #pill-nav button").forEach(b =>
+  document.querySelectorAll(".side-nav").forEach(b =>
     b.addEventListener("click", () => showView(b.dataset.view)));
   const replayBtn = $("replay-stagger");
   if (replayBtn) replayBtn.addEventListener("click", () => { renderProcList([]); refreshDeviceOverview(); });
+  const thd = $("temp-hint-dismiss");
+  if (thd) thd.addEventListener("click", () => {
+    tempHintDismissed = true; // once per session — later polls stay silent
+    const hint = $("temp-hint");
+    if (hint) hint.hidden = true;
+  });
   const qsBtn = $("quick-scan-btn");
   if (qsBtn) qsBtn.addEventListener("click", () => {
     const el = $("quick-scan-text");
@@ -2533,6 +2798,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadDeepThink();
   wireApiKeys();
   wireInvite();
+  checkInviteGate(); // first launch only: shows the invite gate when not activated
   wireBackup();
   wirePomodoro();
   wirePrivacyMode();

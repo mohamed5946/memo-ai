@@ -8,9 +8,9 @@
 #   2. The manifest is a small JSON file hosted somewhere stable:
 #        {"version": "1.3.0", "url": "https://.../memo-ai-v1.3.zip",
 #         "sha256": "<hex>", "notes": "short changelog in Arabic",
-#         "setup_url": "https://.../MemoAI-Setup-1.3.0.exe",   (optional)
+#         "setup_url": "https://.../LONA-Setup-1.3.0.exe",   (optional)
 #         "setup_sha256": "<hex>",                            (optional)
-#         "features": [{"icon": "💬", "title": "...",          (optional)
+#         "features": [{"icon": "chat", "title": "...",        (optional)
 #                       "desc": "..."}, ...]}  (see parse_features)
 #   3. download_update() fetches the manifest, downloads the zip/setup
 #      into the PERSISTENT folder app/data/updates/ (never a temp dir
@@ -133,15 +133,16 @@ def load_config() -> dict:
 # MANIFEST FORMAT (for the release integrator - add this to version.json
 # when publishing a release; every field is optional except "title"):
 #   "features": [
-#     {"icon": "💬", "title": "إصلاح الرد على الواتساب",
+#     {"icon": "chat", "title": "إصلاح الرد على الواتساب",
 #      "desc": "تعريف المرسل LID + قارئ stdout بـ UTF-8 ميموتش"},
-#     {"icon": "🧠", "title": "ذاكرة طويلة",
+#     {"icon": "memory", "title": "ذاكرة طويلة",
 #      "desc": "البرنامج بيفتكر اللي اتفقتوا عليه"},
-#     {"icon": "🔍", "title": "بحث ويب مجاني", "desc": "إجابات بأحدث المعلومات"}
+#     {"icon": "globe", "title": "بحث ويب مجاني", "desc": "إجابات بأحدث المعلومات"}
 #   ]
 # Notes on the format:
-#   * "icon" - any single emoji / glyph; omitted -> a default from the
-#     cycle below (✨ 🛠️ 🧠 💬 🔍 ...). "title" - short, one line.
+#   * "icon" - a LONA sprite id (see app/ui/assets/lona-icons-sprite.svg);
+#     anything else is dropped. Omitted -> a default from the cycle below.
+#     "title" - short, one line.
 #     "desc" - one line of description (may be empty).
 #   * A plain string instead of an object is also accepted and becomes
 #     the card title ("features": ["إصلاح الرد على الواتساب", ...]).
@@ -149,7 +150,16 @@ def load_config() -> dict:
 #     the plain "notes" text (see _features_from_notes): each chunk
 #     separated by a newline, "•" or "—" becomes one card.
 # ---------------------------------------------------------------------------
-_FEATURE_ICONS = ["✨", "🛠️", "🧠", "💬", "🔍", "⚡", "🎨", "🔒"]
+# v1.6.1: feature icons are LONA sprite ids; the UI renders them with
+# <use href="assets/lona-icons-sprite.svg#id"/> ("" = no icon on the card).
+_FEATURE_ICONS = ["", "settings", "memory", "chat", "globe", "", "themes", ""]
+_SPRITE_ICONS = frozenset({
+    "chat", "device", "themes", "api-key", "lona-now", "logs", "settings",
+    "general", "whatsapp", "memory", "device-health", "notifications",
+    "sounds", "avatar", "updates", "backup", "mic", "send", "deep-think",
+    "add", "save", "refresh", "delete", "power", "github", "globe",
+    "back", "check", "x", "warning", "mute",
+})
 
 
 def _features_from_notes(notes: str) -> list:
@@ -209,6 +219,8 @@ def parse_features(manifest: dict) -> list:
             icon = ""
             if isinstance(item, dict):
                 icon = str(item.get("icon") or "").strip()
+                if icon not in _SPRITE_ICONS:
+                    icon = ""
             out.append({"icon": icon or _FEATURE_ICONS[i % len(_FEATURE_ICONS)],
                         "title": title, "desc": desc})
         if out:
@@ -478,7 +490,7 @@ def _pick_download(manifest: dict) -> dict | None:
 def _download_filename(kind: str, version: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(version))
     if kind == "setup":
-        return f"MemoAI-Setup-v{safe}.exe"
+        return f"LONA-Setup-v{safe}.exe"
     return f"memo-ai-v{safe}.zip"
 
 
@@ -593,20 +605,45 @@ def _launch_setup(setup_path: Path) -> bool:
     """Run a downloaded setup.exe silently and relaunch the app.
 
     A small .bat waits 3 seconds (app exit), runs the setup silently,
-    then relaunches the app. Returns True when launched. NOTE: the
-    .bat + setup live in the persistent updates folder (NOT a temp
-    dir), because "Install later" means the file must still be there
-    when the user finally taps "Install now"."""
-    app_exe = BASE_DIR / "Memo AI.exe"
+    relaunches the app ONLY when the installer succeeded (exit code
+    0), then deletes the setup.exe and itself. Returns True when
+    launched.
+
+    v1.6.1 - two field bugs fixed here (reported after 2 failed
+    attempts; the download itself worked):
+      * The setup file is NO LONGER deleted by apply_downloaded()
+        right after this spawns the bat - the bat waits 3s and the
+        file was already gone, so the installer never ran. The file
+        now stays on disk until the bat deletes it AFTER the
+        installer finishes.
+      * The old bat relaunched the app unconditionally, even when
+        the setup failed. The installer's [Run] section has
+        skipifsilent, so silent installs rely on this bat for the
+        relaunch - it now runs only on exit code 0.
+    On a failed install the setup.exe is deliberately KEPT on disk
+    (in app/data/updates/) so the user can run it by hand or retry;
+    the bat itself is still deleted (apply_downloaded() writes a
+    fresh one on the next attempt).
+    NOTE: the .bat + setup live in the persistent updates folder
+    (NOT a temp dir), because "Install later" means the file must
+    still be there when the user finally taps "Install now"."""
+    app_exe = BASE_DIR / "LONA.exe"
     bat = setup_path.parent / "run-setup.bat"
     bat.write_text(
         "@echo off\r\n"
         "timeout /t 3 /nobreak >nul\r\n"
         f'"{setup_path}" /VERYSILENT /NORESTART\r\n'
-        f'start "" "{app_exe}"\r\n',
+        "if errorlevel 1 goto :failed\r\n"
+        f'start "" "{app_exe}"\r\n'
+        f'del /f /q "{setup_path}"\r\n'
+        'del /f /q "%~f0"\r\n'
+        "exit /b 0\r\n"
+        ":failed\r\n"
+        'del /f /q "%~f0"\r\n',
         encoding="utf-8",
     )
-    info("update", f"Launching silent setup ({setup_path}) - app will quit now")
+    info("update", f"Launching silent setup ({setup_path}) - app will quit now; "
+                   "the setup file stays on disk until the installer finishes")
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = 0x00000008 | 0x08000000  # DETACHED + NO_WINDOW
@@ -623,9 +660,12 @@ def apply_downloaded() -> dict:
     {"ok": False, "error": "missing"|"corrupt", "redownload": True}
     so the UI re-downloads instead of installing a broken file.
     A stale record (version <= current) is cleared the same way.
-    On success the record + file are consumed (deleted) and
-    {"ok": True, "status": "installed", "version", "kind"} is
-    returned; the caller then restarts the app (see Api.install_update).
+    On success the record is cleared and (zip only) the downloaded
+    file is deleted; a setup file is LEFT on disk for run-setup.bat
+    to delete after the installer finishes (v1.6.1 - deleting it
+    here, right after spawning the bat, meant the file was gone
+    before the bat's 3s wait ended and the installer never ran).
+    The caller then restarts the app (see Api.install_update).
     """
     from main import VERSION
     state = load_downloaded()
@@ -664,12 +704,24 @@ def apply_downloaded() -> dict:
         if not ok:
             _set_progress(state="error")
             return {"ok": False, "error": "apply_failed", "redownload": False}
-        # Installed: the downloaded file is consumed (the new version
-        # brings its own files; a setup leaves nothing to keep).
-        try:
-            path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        # Installed: the downloaded file is consumed - EXCEPT a setup.
+        # v1.6.1: the old code deleted the setup.exe HERE, immediately
+        # after _launch_setup() spawned run-setup.bat, but the bat
+        # waits 3s before running the setup - so the file was already
+        # gone when the installer should run and nothing happened
+        # (field bug, 2 attempts). The setup file now stays on disk
+        # and run-setup.bat deletes it (and itself) AFTER the
+        # installer finishes. Only the state record is cleared here,
+        # so the UI stops offering this version.
+        if kind != "setup":
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        else:
+            info("update", f"Setup launched for v{remote} - the setup file "
+                           "stays on disk until run-setup.bat deletes it "
+                           "after the installer finishes")
         try:
             _state_path().unlink(missing_ok=True)
         except Exception:

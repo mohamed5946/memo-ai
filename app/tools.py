@@ -101,6 +101,16 @@ def _log_request(req: dict, decision: str) -> None:
     info("tools", f"Permission {decision}: {req['kind']} - {req['summary']}")
 
 
+def _tier_for_kind(kind: str) -> str:
+    """Severity tier for a permission kind, from the fixer registry
+    (the single source of truth). Unknown kinds fail closed to RED."""
+    try:
+        import fixer as fixer_mod
+        return fixer_mod.tier_for(kind)
+    except Exception:
+        return "red"
+
+
 def request_permission(kind: str, summary: str, detail: str = "") -> bool:
     """Ask the user (Allow/Deny). Blocks the calling (brain) thread until
     the UI resolves it or the timeout hits. Returns True only on Allow.
@@ -117,6 +127,11 @@ def request_permission(kind: str, summary: str, detail: str = "") -> bool:
         "kind": kind,
         "summary": summary,
         "detail": detail,
+        # v1.6.1 item 18: severity tier from the fixer registry, so the
+        # in-chat card can show the green/yellow/red dot next to the
+        # buttons. Travels with the request to the UI (get_pending
+        # strips only the threading.Event).
+        "tier": _tier_for_kind(kind),
         "status": "pending",
         "created": time.strftime("%H:%M:%S"),
         "event": threading.Event(),
@@ -140,6 +155,14 @@ def request_permission(kind: str, summary: str, detail: str = "") -> bool:
         _note_resolved(req, "timeout")
         warn("tools", f"Permission TIMEOUT (120s, denied): {kind} - {summary}")
         return False
+    if req.get("cancelled"):
+        # v1.6.1 (item 21c): a new user message cancelled this request
+        # while the brain thread was blocked on it - the card flips to
+        # "cancelled", never to a tap the user did not make.
+        req["status"] = "cancelled"
+        _note_resolved(req, "cancelled")
+        _log_request(req, "cancelled")
+        return False
     allowed = req.get("allowed", False)
     req["status"] = "allowed" if allowed else "denied"
     _note_resolved(req, req["status"])
@@ -161,6 +184,7 @@ def _note_resolved(req: dict, status: str) -> None:
         _resolved[req["id"]] = {
             "id": req["id"], "kind": req["kind"],
             "summary": req["summary"], "status": status,
+            "tier": req.get("tier", "red"),
             "decided_at": time.time(),
         }
         if len(_resolved) > 10:
@@ -202,6 +226,29 @@ def resolve_permission(req_id: str, allowed: bool) -> bool:
                 req["event"].set()
                 return True
     return False
+
+
+def cancel_pending() -> int:
+    """Cancel every still-pending permission (v1.6.1, item 21c): a new
+    user message means the old turn's question is stale, so its card
+    must never surface in the new turn's context. Each cancelled
+    request wakes its blocked brain thread with denied (the old turn
+    finishes fast instead of hanging to the 120s timeout) and is
+    recorded as "cancelled" so the in-chat card flips to its final
+    state. Returns the number cancelled. Safe to call when nothing
+    is pending (returns 0)."""
+    with _pending_lock:
+        reqs = [r for r in _pending if r.get("status") == "pending"]
+        for req in reqs:
+            req["cancelled"] = True
+            req["allowed"] = False
+            req["event"].set()
+            _pending.remove(req)
+    for req in reqs:
+        _note_resolved(req, "cancelled")
+        info("tools", f"Permission CANCELLED (new message started): "
+                      f"{req['kind']} - {req['summary']}")
+    return len(reqs)
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +430,7 @@ def _tool_open_app(args: dict) -> str:
         error("tools", f"open_app failed ({label}): {exc}")
         return f"مقدرتش أفتح {label} — حصل خطأ: {exc}"
     info("tools", f"open_app OK: {label} ({target})")
-    return f"فتحت {label} ✅"
+    return f"فتحت {label}"
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +463,7 @@ def _tool_create_file(args: dict, overwrite: bool) -> str:
         error("tools", f"write_file failed ({path}): {exc}")
         return f"مقدرتش أكتب الملف — حصل خطأ: {exc}"
     info("tools", f"write_file OK: {path} ({len(content)} chars)")
-    return f"تم {action.lower()} {path.name} ✅\nالمسار: {path}"
+    return f"تم {action.lower()} {path.name}\nالمسار: {path}"
 
 
 def _tool_edit_file(args: dict) -> str:
@@ -453,7 +500,7 @@ def _tool_edit_file(args: dict) -> str:
         error("tools", f"edit_file failed ({path}): {exc}")
         return f"مقدرتش أعدّل الملف — حصل خطأ: {exc}"
     info("tools", f"edit_file OK: {path}")
-    return f"تم تعديل {path.name} ✅"
+    return f"تم تعديل {path.name}"
 
 
 def _tool_read_file(args: dict) -> str:
@@ -493,7 +540,7 @@ def _tool_list_dir(args: dict) -> str:
     except Exception as exc:
         return f"مقدرتش أفتح المجلد: {exc}"
     info("tools", f"list_dir: {path} (read-only)")
-    lines = [f"📁 {path}"]
+    lines = [f"{path}"]
     for entry in entries[:100]:
         try:
             if entry.is_dir():
@@ -686,7 +733,7 @@ def _tool_send_whatsapp(args: dict) -> str:
         return f"مقدرتش أبعت رسالة الواتساب — حصل خطأ: {exc}"
     if isinstance(result, dict) and result.get("ok"):
         info("tools", f"send_whatsapp OK to {masked}")
-        return f"بعت رسالة الواتساب إلى {masked} ✅"
+        return f"بعت رسالة الواتساب إلى {masked}"
     detail_err = ""
     if isinstance(result, dict):
         detail_err = str(result.get("detail", "") or "")
@@ -809,7 +856,7 @@ def _tool_system_status(args: dict) -> str:
     cpu_pct = cpu.get("percent")
     if cpu_pct is not None:
         lines.append(f"• المعالج: {cpu_pct}% دلوقتي"
-                     + (" (حمل مرتفع مستمر ⚠️)" if cpu.get("sustained_high") else ""))
+                     + (" (حمل مرتفع مستمر)" if cpu.get("sustained_high") else ""))
     else:
         lines.append("• المعالج: مش متاح دلوقتي (تعذر قراءته).")
     if temp is not None:
@@ -819,7 +866,7 @@ def _tool_system_status(args: dict) -> str:
                      "(مفيش حساس مقروء) — متخمنش رقم.")
     if battery:
         lines.append(f"• البطارية: {battery.get('percent', '?')}%"
-                     + (" (بتشحن 🔌)" if battery.get("charging")
+                     + (" (بتشحن)" if battery.get("charging")
                         else " (مش بتشحن)"))
     return "\n".join(lines)
 
@@ -995,7 +1042,7 @@ def _tool_generate_image(args: dict) -> str:
         _generated_images.append(filename)
     info("tools", f"generate_image OK: '{prompt[:80]}' -> {filename} "
                   f"({len(data)} bytes in, {path.stat().st_size} bytes saved)")
-    return (f"ولّدت الصورة ✅\n[[IMAGE:{filename}]]\n"
+    return (f"ولّدت الصورة\n[[IMAGE:{filename}]]\n"
             f"الوصف: {prompt[:200]}\nمحفوظة في: {path}")
 
 
@@ -1035,7 +1082,7 @@ def _tool_clean_cache(args: dict) -> str:
         return "أداة الإصلاح مش متاحة في النسخة دي."
     result = fixer_mod.clear_temp_files(dry_run=dry_run)
     freed_mb = result.get("bytes_freed_mb", 0)
-    text = (f"نضّفت الكاش ✅ — {result.get('files_removed', 0)} ملف، "
+    text = (f"نضّفت الكاش — {result.get('files_removed', 0)} ملف، "
             f"وفّرت {freed_mb} ميجا"
             + (" (تجربة بس - مفيش حاجة اتمسحت فعلاً)"
                if dry_run else ""))
@@ -1120,7 +1167,7 @@ def _tool_browser_open(args: dict) -> str:
     except Exception:
         return "التحكم في المتصفح مش متاح في النسخة دي."
     ok = browser_mod.open_default_browser(url)
-    return f"فتحت {url} في المتصفح ✅" if ok else \
+    return f"فتحت {url} في المتصفح" if ok else \
         "مقدرتش أفتح المتصفح — شوف السجل للسبب."
 
 
@@ -1141,7 +1188,7 @@ def _tool_browser_play_youtube(args: dict) -> str:
         return "التحكم في المتصفح مش متاح في النسخة دي."
     result = browser_mod.play_youtube_first(query)
     if result.get("ok"):
-        return f"بشغّل «{query}» من يوتيوب ✅"
+        return f"بشغّل «{query}» من يوتيوب"
     return (f"فتحت صفحة البحث عن «{query}» على يوتيوب — دوس على أول "
             "فيديو عشان يشتغل (إضافة المتصفح مش متصلة دلوقتي).")
 
@@ -1172,7 +1219,7 @@ def _tool_fix_hung_process(args: dict) -> str:
                                         evidence=evidence)
     if result.get("ok"):
         return (f"قفلت «{result.get('process', name or pid)}» اللي كان "
-                "معلّق ✅ (متسجل في قايمة التراجع — تقدر ترجّعه).")
+                "معلّق (متسجل في قايمة التراجع — تقدر ترجّعه).")
     reason = result.get("reason") or ("", "")
     if result.get("tier") == "yellow":
         # Ask once (permission card); on Allow, retry with the grant.
@@ -1187,7 +1234,7 @@ def _tool_fix_hung_process(args: dict) -> str:
                                              granted=True)
         if result2.get("ok"):
             return (f"قفلت «{result2.get('process', name or pid)}» "
-                    "بإذنك ✅.")
+                    "بإذنك.")
         reason2 = result2.get("reason") or ("", "")
         return f"مقدرتش أقفل البرنامج: {reason2[1] if len(reason2) > 1 else reason2}."
     return f"مقدرتش أقفل البرنامج: {reason[1] if len(reason) > 1 else reason}."
@@ -1218,7 +1265,7 @@ def _tool_fix_ram_hog(args: dict) -> str:
     result = fixer_mod.fix_ram_hog(pid=pid, name=name, evidence=evidence)
     if result.get("ok"):
         return (f"قفلت «{result.get('process', name or pid)}» اللي كان "
-                "بياكل الرام ✅ (متسجل في قايمة التراجع).")
+                "بياكل الرام (متسجل في قايمة التراجع).")
     reason = result.get("reason") or ("", "")
     return f"مقدرتش أقفل البرنامج: {reason[1] if len(reason) > 1 else reason}."
 

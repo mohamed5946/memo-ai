@@ -361,7 +361,7 @@ def lerp_rect(a, b, t: float):
 # running") and the user thought the app would not open at all. Now the
 # second instance signals the running one through a named auto-reset
 # event, and the running instance brings its main window forward.
-_SHOW_MAIN_EVENT = "Local\\MemoAI-ShowMain"
+_SHOW_MAIN_EVENT = "Local\\LONA-ShowMain"
 
 
 def create_show_main_event():
