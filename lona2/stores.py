@@ -60,6 +60,11 @@ DEFAULT_SETTINGS = {
 
 THEMES = ["lg", "night", "graphite", "calm", "old"]
 
+# v1.6.3 theme ids that v2 renamed (the installer migrates the v1
+# settings file as-is, so an upgraded install may still carry one of
+# these). Anything unknown falls back to the Liquid Glass default.
+_THEME_ALIASES = {"night-glass": "night", "dashboard": "graphite"}
+
 
 def _atomic_write(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -87,6 +92,11 @@ def get_settings() -> dict:
         stored = _read_json(DATA_DIR / "settings.json", {})
         merged = dict(DEFAULT_SETTINGS)
         merged.update({k: v for k, v in stored.items() if k in merged})
+        theme = merged.get("theme")
+        if theme in _THEME_ALIASES:
+            merged["theme"] = _THEME_ALIASES[theme]
+        elif theme not in THEMES:
+            merged["theme"] = "lg"
         return merged
 
 

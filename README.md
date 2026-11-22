@@ -1,398 +1,132 @@
-# Memo AI v1.4.1 — مساعدك الذكي على اللابتوب
+# LONA v2 — personal AI assistant for your laptop
 
-مساعد محلي نص أوفلاين ونص أونلاين — مجاني بالكامل. المخ المحلي Ollama +
-Qwen 2.5 3B، والمخ الأونلاين Groq ‏(gpt-oss-120b)‏. الصوت: Gemini TTS أونلاين،
-‏Azure احتياطي، Piper أوفلاين. الواجهة HTML/CSS/JS وبتشتغل كبرنامج ديسكتوب
-عادي (pywebview) — مش في المتصفح.
+A from-scratch rebuild of LONA (Python + pywebview/WebView2 on Windows).
+The online brain is Groq (gpt-oss-120b) with a Gemini 2.5 Flash fallback;
+API keys are entered by hand and stored in Windows Credential Manager
+(DPAPI) — the program ships with no key. The local Ollama fallback is
+optional and disabled until Ollama is installed.
 
-## الجديد في v1.4.1 (إلغاء القطة والجزيرة + إصلاحات ميدانية)
+v1.6.3 stays the stable release until this rebuild is proven in the
+field. v2 releases are prereleases by design.
 
-- **القطة والـ Dynamic Island اتشالوا من التطبيق الشغال** 🐾➖: بناءً على طلبك
-  (لسه فيهم مشاكل — القطة بترسم أسود ومش بتتمسك، والجزيرة رمادية ودوساتها
-  كانت بتموت). النافذة الرئيسية هي الواجهة الوحيدة وبتفتح على طول من أول
-  تشغيل، والشات واخد مساحته الكبيرة من الأول. الكود لسه موجود ورا flags
-  (`pet_enabled` / `island_enabled` في الإعدادات) عشان يرجعوا بعد ما
-  يتصلحوا — بس من وجهة نظرك مش موجودين خالص.
-- **إغلاق النافذة (X) → System Tray** 🗂️: النافذة بتختفي لأيقونة في شريط
-  المهام (فتح / إنهاء) بدل ما البرنامج يقفل — القاعدة الأصلية لسه قائمة
-  (البرنامج مبيتقفلش تماماً إلا بإنهاء صريح من جوّه البرنامج أو من الـ tray).
-  لو مفيش tray متاح، الإغلاق بيصغّر لشريط المهام بدل ما يخفي النافذة.
-- **إصلاحات الحفظ** 💾: الصوت والأفاتار ورقم مالك الواتساب بيتحفظوا لحظة
-  الاختيار وبيتطبقوا بعد إعادة التشغيل (كان الاختيار بيرجع للافتراضي،
-  ورقم الواتساب كان بيختفي، والـ QR مبيظهرش — السبب: الحفظ كان بيعيد رسم
-  الإعدادات في نص الحفظ ويمسح الحقول قبل ما تتقرأ). الأفاتارات الأربعة
-  (قطة/كلب/ولد/بنت) شغالة دلوقتي بصور حقيقية.
-- **الإعدادات منظمة زي DeliveryFlow** ⚙️: قائمة زراير رأسية (عام / WhatsApp /
-  الأصوات / الأفاتار / سجل التشخيص / التحديثات)، كل زرار بيفتح قسمه الخاص
-  مع زرار رجوع. قسم "عام" فيه كمان تفعيل وضع المالك بالكود من الإعدادات.
-- **"مين المطور؟"** 👨‍💻: المساعد بيجاوب بكل المعلومات العامة عن المطور
-  (Mohamed El Sayed — طالب علوم حاسب، مطوّر Memo AI وDeliveryFlow،
-  البورتفوليو والـ GitHub) — وممنوع تماماً أي معلومات خاصة في الإجابة
-  (لا تليفون ولا كود طالب ولا إيميلات)، حتى للمالك. نفس المعلومات في About.
-- **وضع المالك بيشتغل فعلاً** 🔓: الفتح بالكود كان بيأكد بس مبيشتغلش —
-  المخ كان بيرفض أسئلة الكود المصدري من الـ system prompt حتى ووضع المالك
-  مفتوح. دلوقتي العلم بيوصل للمخ والرد بييجي عادي (والكود نفسه hash بس
-  ومبيتسجلش في أي مكان).
-- **إصلاح الـ "none" والـ 400** 🛠️: بعد كام رد كويس، الرد كان بيقلب
-  "حصلت مشكلة وأنا بفكّر" وبيظهر نص "none" في الشات. السبب: الـ history
-  كان بيتسجل فيه جولات الأدوات الخام (محتوى null + رسايل أدوات يتيمة)،
-  فالطلب اللي بعده كان Groq وOllama بيرفضوه 400 — والـ fallback المحلي
-  كان بيفشل بنفس الطلب الفاسد. دلوقتي الطلب بيتطهّر قبل كل مكالمة، والـ
-  history بيتسجل فيه النص العادي بس، والـ fallback المحلي بياخد سياق
-  نضيف من غير أدوات وبيشتغل فعلاً. ونص "none"/"null" ممنوع يظهر في الشات
-  نهائياً — أي رد ناقص بيظهر كرسالة خطأ بشرية بالسبب الحقيقي.
-- **تحقق الـ region بتسامح ±1px** 📐: التحقق كان بيطلع "VERIFICATION FAILED"
-  بفرق 1px ثابت رغم إن الـ region مطبق صح — دلوقتي بتسامح 1px والـ error spam وقف.
+## What is in v2 (Phase 1)
 
-## الجديد في v1.4.0 (ربط الواتساب 💬)
+- Frameless main window (1280x860) with working minimize / maximize /
+  close traffic lights and header drag. Window buttons fetch the bridge
+  fresh on every click and surface errors instead of swallowing them.
+- Dynamic Island as its OWN frameless window (380x60 collapsed,
+  720x400 expanded, no idle shrink). Transparency is SetWindowRgn,
+  applied to the hidden window and verified on read-back before the
+  window is shown — no white/black rectangle.
+- Chat: Groq → Gemini fallback, Deep Think, model switcher (unavailable
+  options are disabled with a reason), engine badge under every reply.
+- Device page with live bridge data. CPU temperature prefers
+  LibreHardwareMonitor CPU Package / Core sensors BY NAME; when only a
+  thermal-zone value answers, the UI says so honestly.
+- Tasks (persisted), 5 themes (Liquid Glass default; the old theme is
+  never deleted), full 13-section settings — every control wired to
+  real storage. Wake-word listening is OFF by default (continuous
+  listening heated the laptop to 99C in the field).
+- Invite gate: 6-box code entry, checked locally against a SHA-256 hash
+  only (the code value never appears in source). 5 wrong attempts lock
+  the gate for 60 seconds; a failed state write never fails a correct
+  code.
+- Owner code (PBKDF2, salted), encrypted backup (scrypt + AES-GCM),
+  diagnostics log from day one (in-app viewer, secrets redacted —
+  a Bearer token is removed whole, not just the word "Bearer").
+- In-app updater rules: background download with progress, the setup
+  file is never deleted before install, relaunch only after a
+  successful install.
 
-- **ربط الواتساب كجهاز مرتبط** 📱: من الإعدادات ← واتساب، فعّل الربط وامسح
-  الـ QR من واتساب على **الرقم التالت** (اللي شبه مش بيستخدمه — مش رقم
-  الشغل ومش الرقم الأساسي). Memo AI بيظهر في واتساب ← الأجهزة المرتبطة
-  باسم "Memo AI"، والجلسة بتتحفظ محلياً على جهازك بس وبتتعاد تلقائياً من
-  غير QR جديد إلا لو اتقطعت.
-- **رقمك الأساسي = owner، وأي رقم تاني = رد بس** 👑: اكتب رقمك الأساسي في
-  الإعدادات — رسايله أوامر للابتوب (بيفتح برامج ويعمل ملفات وينفذ أوامر
-  زي الشات بالظبط). أي رقم تاني بياخد ردود شات بس، من غير أدوات. الجروبات
-  والحالات والميديا بتتجاهل — نص بس في v1.4.0.
-- **المخ بقى يعرف حالة الواتساب** 🧠: `app/capabilities.py` بقى بيقرأ حالة
-  الربط الحقيقية (مربوط / مستني QR / بيتصل / مقفول) — فلو سألت "ممكن
-  تسجل دخول بالواتساب؟" وهو مش مربوط، هيشرحلك إنه محتاج QR من الرقم
-  التالت وإزاي تعمله، مش رفض جاف.
-- **التقنية** 🔧: مكتبة Baileys ‏(@whiskeysockets/baileys 6.7.24)‏ — بتكلم
-  بروتوكول WhatsApp Web مباشرة عبر WebSocket، من غير متصفح ومن غير
-  Puppeteer — في sidecar صغير (`app/whatsapp_sidecar/sidecar.js`) بيشتغل
-  بـ Node 20 مضمّن مع المثبّت (مش محتاج تثبّت Node بنفسك). ليه Baileys
-  مش whatsapp-web.js؟ من غير متصفح أخف (~50MB رام بدل 300–600MB) وأثبت،
-  وmulti-device أصلي، وصيانته نشطة (2.3M تحميل/أسبوع).
-- **أمان** 🔒: الأوامر المدمّرة محظورة من الواتساب زي الشات بالظبط
-  (blocklist)، ومفيش أداة حذف أصلاً. الرقم هو المصادقة: أوامر الـ owner
-  بتتنفذ من غير نافذة سماح/رفض على اللابتوب (لأنه بعيد بالتعريف) — لكن
-  كل تنفيذ بيتسجل في سجل التشخيص، وبيترد عليه بتأكيد. الأرقام والرسايل
-  **مش** بتتسجل في اللوج خالص — ملخصات بس (آخر رقمين).
-- **ملحوظة صريحة** ⚠️: Baileys مكتبة غير رسمية (مش من Meta). الاستخدام
-  الشخصي الخفيف (ردود 1:1) مخاطره قليلة، لكن فيه خطر حظر نظري لو
-  الواتساب اعتبر الحساب بوت — متستخدموش في رسايل جماعية أو سبام. والربط
-  نص بس: صور/صوت/ملفات لسه مش مدعومة.
+## What is deferred (Phase 2)
 
-## الجديد في v1.3.2 (إصلاح عاجل بعد تعليق أول تشغيل لـ v1.3.1)
+Deep-files permission flow (path optional), cache cleanup with Undo,
+morning brief, WhatsApp text-only, Chrome extension re-wire, voice +
+wake word, Ollama local model. The bridge already carries the methods;
+the UI wires them when the features land.
 
-- **إصلاح التعليق** 🧊: أول تشغيل لـ v1.3.1 علّق ("Not Responding"). السبب
-  الجذري: الكود كان بيقرأ `window.native.Handle` من thread تاني غير thread
-  الواجهة (WinForms بيخلق الـ handle على الـ thread اللي طلبه — فالنافذة
-  بتتجمد)، وبيعدّل `Form.MinimumSize` من thread الأنيميشن. الاتنين
-  اتشالوا: البحث عن النوافذ بقى EnumWindows بس، والمورف بقى من غير أي لمس
-  لـ .NET (النافذة الرئيسية بتتخلق بـ min_size صغير يسمح بالتصغير للجزيرة).
-  والمثبّت نفسه بقى بيرفض التثبيت والبرنامج شغال (AppMutex +
-  CloseApplications) — التثبيت فوق نسخة شغالة كان بيخلط ملفات قديمة وجديدة.
-- **الأدوات بقت للكل** 🛠️: في v1.3.0 الأدوات كانت ورا الكود السري، فالشات
-  العادي كان من غير أدوات أصلاً والمخ كان بيرفض "افتح VS Code" بالنص. دلوقتي
-  كل شات بيمشي في مسار الأدوات (Groq tool-calling) — والسماح/الرفض لسه
-  بيحكم كل إجراء. الكود السري بقى بيفتح وضع المالك بس (تجاوز قاعدة السورس).
-- **المخ بقى يعرف اسمك** 🙋: الـ system prompt كان بيقول "على لابتوب محمد"
-  بس — فالمخ كان بيرد "معرفش اسمك". دلوقتي الاسم بيتقال صراحةً في الـ prompt
-  (Groq والمحلي)، وبيتستخدم في الترحيب والردود.
-- **المخ بقى يعرف قدراته الحقيقية** 🧠: ملف `app/capabilities.py` بيحمل
-  حالة كل ميزة (واتساب بيتبني في v1.4.0، ترجمة الشاشة والمجلس لسه مش
-  مبنيين...) والـ prompt بيتبني منها — فالمخ بيشرح السبب الحقيقي وإزاي
-  يتوصل وبيقدّم بديل، بدل الرفض الجاف "مش هقدر أساعدك" (جملة ممنوعة دلوقتي).
-- **المستطيل الأسود اتقتل** ⬛: كان نافذة القطة وهي مخفية — صفحة القطة كانت
-  بتتجول حتى وهي مخفية، وكل حركة `move()` بتظهر النافذة المخفية. دلوقتي
-  القطة المخفية مبتتحركش أبداً (حارس في Python + حارس في صفحة القطة +
-  `suspendRoaming()` عند الإخفاء)، والقطة بقت بتتمسك وتتسحب عادي.
-- **القطة بتطير للهيدر والشات بيكبر** 🐱: مع أول رسالة، القطة الكبيرة
-  بتطير (eased) للصورة الصغيرة فوق على اليمين، والشات بياخد المساحة الفاضية.
-- **فحص ذاتي عند التشغيل** 🔍: ملفات الصفحات + الأصول + ملفات الجسر + إصدار
-  WebView2 بيتفحصوا عند البدء، وكل صفحة بتبلّغ READY — ولو صفحة موصلتش
-  في 20 ثانية، السجل بيقول أنهي صفحة والسبب بالظبط (مش "ثبّت WebView2" العامة).
-
-## الجديد في v1.3.0
-
-- **المخ بقى ليه إيدين** 🛠️: المساعد دلوقتي بينفّذ على اللابتوب — يفتح
-  برامج (VS Code وغيره)، يعمل ملفات ويكتب فيها، يعدّل ملفات، يقرأ
-  ملفات، ويشغّل أوامر. كل إجراء كتابة/تشغيل/فتح بيعرض نافذة **سماح /
-  رفض** فيها الإجراء بالظبط (اسم البرنامج / مسار الملف / الأمر كامل)
-  قبل ما يتنفذ — ومفيش «سماح دائم» في النسخة دي. الأوامر المدمرة
-  (format، del /s، rm -rf، shutdown، تعديل الريجستري...) بتترفض مع
-  شرح ومتنفذش أبداً. القراءة بس بتتسجل في السجل من غير نافذة إذن.
-  الأدوات شغالة مع مخ Groq أونلاين بس (المخ المحلي Qwen 3B شات بس —
-  ضعيف في الـ tool calls). لو Groq مش متاح، الأدوات بتتعطل برسالة
-  واضحة والشات بيكمل عادي.
-- **وضع المالك** 🔐: اكتب الكود السري في الشات يتفتح وضع المالك — بيتجاوز
-  قاعدة "السورس للمطور بس". (v1.3.2: الأدوات بقت شغالة في كل شات من غير
-  الكود — الكود دلوقتي للسورس بس، مش للأدوات.) الكود متخزّن كـ SHA-256 hash
-  بس، مش plaintext أبداً — لا في الكود ولا في الإعدادات ولا في أي سجل.
-  نوافذ السماح / الرفض شغالة حتى في وضع المالك.
-- **زرار سماعة لصوت المساعد** 🔊: زرار بضغطة واحدة جنب الإعدادات —
-  لو مقفول، الردود نص بس من **غير أي استدعاء TTS أصلاً** (لا Gemini
-  ولا Azure ولا Piper — توفيراً لاستهلاك الـ API). الحالة بتتحفظ
-  بعد إعادة التشغيل، والافتراضي شغال. ده للصوت الخارج بس — زرار
-  المايك بتاع الإدخال الصوتي منفصل زي ما هو.
-- **الشفافية الحقيقية أخيراً** 🪟: الجزيرة والقطة من غير مستطيل أسود.
-  السبب الجذري (مثبت من كود pywebview 6.2 نفسه): `transparent=True`
-  على ويندوز بيشفّف WebView2 **داخل** الكنترول بس، لكن نافذة WinForms
-  نفسها بتفضل معتمة والبكسلات الشفافة بتظهر سودا — مفيش أي تعديل
-  CSS/HTML كان هيصلّح ده. الحل: **chroma-key** — خلفية الصفحات بقت
-  ماجنتا صافية `#FF00FF` (لون مش مستخدم في الواجهة خالص)، وويندوز
-  نفسه بيشيل اللون ده من النافذة (Win32 layered window،
-  LWA_COLORKEY). ملاحظات: هالة وردية ~1px ممكن تبان على الحواف
-  المموّهة (أوضح على الخلفيات الفاتحة)، والبكسلات المفتاحية بتبقى
-  click-through (النقر بيعدّي من الفراغ حوالين القطة — وده المطلوب).
-  والقطة السودا خدت هالة بيضا خفيفة عشان تبان على الخلفيات الداكنة.
-  **لسه محتاج تأكيد ميداني**: لقطة شاشة فوق خلفية فاتحة وداكنة.
-
-## الجديد في v1.2.5
-
-- **ملفات جسر بايثون مضمونة في المثبّت** 🔌: سبب تاني أعمق للأزرار
-  الميتة — pywebview بيبني اتصال بايثون من ملفات `webview/js`، ولو
-  الملفات دي ناقصة من نسخة المثبّت الاتصال مش بيتعمل أصلاً (في صمت
-  تام). المثبّت دلوقتي بيثبّت الملفات دي صراحةً، وبيفشل بصوت عالي لو
-  مش لاقيها، والبرنامج بيفحصها عند التشغيل ويسجّل خطأ واضح لو ناقصة.
-  ورسالة «وضع المعاينة» اتغيرت: دلوقتي بتقولك «مش قادر أوصل لمحرك
-  البرنامج — اقفل البرنامج وافتحه تاني، ولو المشكلة فضلت ثبّت WebView2».
-
-## الجديد في v1.2.4
-
-- **إصلاح جذري: كل الأزرار كانت ميتة على المحرك القديم** 🔌: النافذة
-  الرئيسية كانت بتلقط اتصال بايثون مرة واحدة لحظة التحميل — وعلى محرك
-  MSHTML القديم (اللي بيشتغل لحد ما WebView2 يتثبّت) الاتصال ده بيتأخر،
-  فالالتقاطة كانت بتطلع فاضية للأبد، وكل زرار (التحديثات، الشات، المايك،
-  الحفظ) كان بيرجع في صمت من غير ما يعمل حاجة. دلوقتي الواجهة بتجيب
-  الاتصال **في لحظة الضغطة نفسها**، فحتى لو الاتصال اتأخر هتشتغل أول ما
-  يوصل — ولو لسه مش جاهز، الزرار بيقولك «البرنامج لسه بيجهز — استنى
-  ثانية ودوس تاني» بدل ما يسكت. ده نفس السبب اللي كان ورا خطأي الشات
-  والصوت في v1.1، فالتلاتة اتصلحوا بضربة واحدة.
-
-## الجديد في v1.2.3
-
-- **الجزيرة بتصغر وتكبر** 🏝️: وهي فاضية بتبقى حبة صغيرة (~190×52 —
-  القطة والمايك بس، من غير أي نص). لما تشتغل (تحية الصباح، أو بتسمعك،
-  أو بتعرض رد) **بتكبر تدريجياً** في حوالي نص ثانية لحد الحبة الكاملة
-  (380×56) أو حجم الرد (380×120) — والنص بيظهر تدريجياً مع الكبر.
-  وبعد ~7 ثواني من غير نشاط بتصغر تاني تدريجياً للحبة الصغيرة. لون
-  الحبة الكحلي زي ما هو. (الخلفية السودا اللي كانت باينة سببها نافذة
-  WinForms نفسها مش WebView2 — وده اللي بيصلحه الـ chroma-key في
-  v1.3.0، مش تثبيت WebView2.)
-
-## الجديد في v1.2.2
-
-- **نسخة واحدة بس** 🔒: لو البرنامج شغال أصلاً (من أي مكان — نسخة الـ zip
-  أو المثبّت)، أي تشغيلة تانية بتتقفل لوحدها من غير ما تفتح جزيرة وقطة
-  تانيين. كده مستحيل يظهر قطتين على الشاشة.
-- **المثبّت بينزّل WebView2 لوحده** 🌐: الشفافية بتشتغل بس لو محرك
-  WebView2 موجود (السبب الجذري للمستطيل الداكن). المثبّت بيفحصه قبل
-  التثبيت، ولو ناقص بينزّل الـ Evergreen Bootstrapper الرسمي ويثبّته
-  صامتاً. ولو التنزيل فشل (مفيش نت مثلاً)، التثبيت بيكمل عادي وبيطلع
-  تحذير بس — والبرنامج بيشتغل، بس المستطيل ممكن يفضل لحد ما WebView2
-  يتثبّت يدوياً.
-- **السجل بقى يثبت المحرك** 📋: كل صفحة واجهة (الجزيرة والقطة والنافذة)
-  بتبعت الـ user agent بتاعها للسجل عند التشغيل — سطر «UA:» فيه
-  `Edg/` يعني WebView2 شغال والشفافية المفروض تشتغل، و`MSIE` أو
-  `Trident` يعني المحرك القديم (MSHTML) اللي مبيعرفش الشفافية أصلاً.
-  كمان السجل بقى فيه نسخة pywebview عند التشغيل.
-
-## الجديد في v1.2.1
-
-- **مثبّت ويندوز حقيقي** 🖥️: نزّل `MemoAI-Setup-1.2.1.exe` من صفحة
-  الإصدارات على GitHub ودوس عليه مرتين — بيتثبّت زي أي برنامج ويندوز
-  (من غير Python ومن غير pip ومن غير فك ضغط). بيتثبّت في مجلدك الخاص
-  من غير ما يحتاج صلاحيات أدمن، وبيعمل اختصار في قائمة Start (واختياري
-  على الديسكتوب). لو كان عندك نسخة الـ zip القديمة في
-  `Downloads\memo-ai\keys`، المثبّت بينقل مفاتيحك لوحده للمكان الجديد.
-- **التحديثات من داخل البرنامج بقت شغالة**: من الإعدادات →
-  «التحقق من التحديثات» — المانيفست بقى على GitHub
-  (`mohamed5946/memo-ai`)، والنسخة المثبّتة بتحدّث نفسها عن طريق
-  المثبّت الجديد (من غير ما تعمل حاجة يدوياً).
-
-## الجديد في v1.2
-
-- **الحيوان الأليف بقى حي** 🐱: القطة بتنط لوحدها حوالين الشاشة كل شوية
-  (نطة بقوس + هبوط)، ولو دست عليها بتعمل حركة فرح وبتقول «مياو! 🐾».
-  لو سحبتها وحطيتها جنب أي حافة (أو دست مرتين) بتقعد وتلعب بكورة صغيرة
-  بتتدحرج رايح جاي وهي بتخبطها بكفّها كل شوية. اسحبها بعيد أو دوس مرتين
-  تاني عشان ترجع تتنطط.
-- **الجزيرة بقت حبة حقيقية**: اتشال الـ `backdrop-filter` اللي كان بيخلي
-  النافذة تظهر كمستطيل أبيض على بعض نسخ WebView2، وبقى لون الجزيرة كحلي
-  ثابت شبه معتم. حوالين الحبة مفيش أي مستطيل — خلفية الشاشة باينة.
-- **تحديثات من داخل البرنامج**: من الإعدادات → «التحقق من التحديثات».
-  مفعّلة عن طريق المانيفست على GitHub
-  (`https://raw.githubusercontent.com/mohamed5946/memo-ai/main/version.json`).
-  النسخة المثبّتة بتحدّث نفسها بالمثبّت الجديد، ونسخة الـ zip بتتحدّث
-  بملف الـ zip (شوف قسم التحديثات تحت).
-
-## إصلاح الشفافية — ليه كان فيه مستطيل؟ (السبب الجذري)
-
-السبب اتأكد من سورس مكتبة pywebview 6.2 نفسها (`platforms/winforms.py` +
-`platforms/edgechromium.py`): لما النافذة بتتعمل بـ `transparent=True`،
-المكتبة بتخلي خلفية WebView2 شفافة — **بس لو شغالة على محرك EdgeChromium
-(WebView2)**. لو الـ WebView2 runtime مش موجود أو بايظ، المكتبة بترجع
-بهدوء لمحرك MSHTML القديم (إنترنت إكسبلورر) اللي **ميعرفش الشفافية أصلاً**
-وبيرسم لون الخلفية الافتراضي (أبيض) — فبتشوف مستطيل أبيض حوالين القطة
-والجزيرة. سبب تاني: الـ `backdrop-filter: blur()` في CSS بيجبر طبقة
-النافذة تتركب بشكل معتم على بعض نسخ WebView2.
-
-**إزاي تتأكد إنها اتصلحت (على اللابتوب):**
-1. فك الضغط فوق المجلد القديم (زي v1.1)، وبعدين من جوه `memo-ai`:
-   ```
-   pip install -r app/requirements.txt
-   pip show pywebview
-   ```
-   لازم النسخة تبقى **6.2 أو أحدث** — لو لسه 5.x، الشفافية ممكن تفضل بايظة.
-2. شغّل `python app/main.py` — لازم تشوف **الحبة بس** فوق الشاشة و**القطة
-   بس** على الديسكتوب، وخلفية الشاشة باينة حواليهم من غير أي مستطيل.
-3. **اتأكد من المحرك في السجل** (الإعدادات ← عرض السجل): دوّر على سطور
-   `UA:` — لو فيها `Edg/` يبقى WebView2 هو اللي بيرسم النوافذ
-   والشفافية شغالة، ولو فيها `MSIE` أو `Trident` يبقى المحرك القديم
-   (MSHTML) هو اللي شغال ومبيعرفش الشفافية. السجل كمان بيسجل نسخة
-   pywebview عند التشغيل («pywebview version: ...»).
-4. لو لسه فيه مستطيل: حدّث الـ WebView2 runtime من صفحة مايكروسوفت
-   الرسمية (Microsoft Edge WebView2 — نزّل الـ Evergreen Bootstrapper
-   وثبّته)، وبعدين أعد تشغيل البرنامج. ده بيصلّح المحرك اللي بيرسم
-   النوافذ الشفافة. **ومن v1.2.2 المثبّت بيعمل ده لوحده** — لو بتثبّت
-   من الـ setup.exe، هو اللي بينزّل WebView2 ويثبّته قبل البرنامج.
-
-## التحديثات من داخل البرنامج
-
-من الإعدادات → «التحقق من التحديثات»:
-- البرنامج بيجيب ملف المانيفست (`version.json`) من GitHub، ولو فيه
-  نسخة أحدث بيعرضها — والتثبيت **بضغطة منك بس** (مش إجباري أبداً).
-- **النسخة المثبّتة (setup.exe)**: بينزّل المثبّت الجديد، يتأكد من
-  الـ SHA-256، يشغّله صامتاً، ويعيد تشغيل البرنامج. مفاتيحك (`keys/`)
-  وإعداداتك (`app/data/`) مبيتلمسوش أبداً.
-- **نسخة الـ zip**: بينزّل الـ zip، يتأكد من الـ SHA-256، يفكّه فوق
-  مجلد البرنامج، وبعدين يعيد التشغيل. مفاتيحك وإعداداتك مبيتلمسوش.
-- التفعيل: رابط المانيفست متظبط أصلاً في `app/data/update.json`:
-  ```json
-  {"manifest_url": "https://raw.githubusercontent.com/mohamed5946/memo-ai/main/version.json", "channel": "stable"}
-  ```
-  وشكل المانيفست نفسه:
-  ```json
-  {"version": "1.3.0", "url": "https://.../memo-ai-v1.3.zip",
-   "sha256": "<بصمة الملف>", "notes": "ملخص التغييرات بالعربي",
-   "setup_url": "https://.../MemoAI-Setup-1.3.0.exe",
-   "setup_sha256": "<بصمة المثبّت>"}
-  ```
-
-## التركيب (مرة واحدة)
-
-### الطريقة الأولى — المثبّت (الأسهل، من غير Python)
-
-1. نزّل `MemoAI-Setup-1.3.0.exe` من صفحة الإصدارات:
-   https://github.com/mohamed5946/memo-ai/releases
-2. دوس عليه مرتين وثبّت زي أي برنامج — من غير أدمن، ومن غير Python.
-3. لو كان عندك مفاتيح في نسخة الـ zip القديمة (`Downloads\memo-ai\keys`)،
-   المثبّت بينقلها لوحده. ولو عايز تضيف مفتاح يدوياً بعد التثبيت، حطه في
-   مجلد `keys` جوه مجلد التثبيت (`%LOCALAPPDATA%\Programs\Memo AI\keys`).
-
-بعد التثبيت شغّل «Memo AI» من قائمة Start — بيفتح كـ **Dynamic Island**
-بس (حبة صغيرة فوق الشاشة).
-
-### الطريقة التانية — ملف الـ zip (للمطورين)
-
-1. **بايثون 3.12** — متثبتة أصلاً على جهازك.
-2. **Ollama** — متثبت، وتأكد إن الموديل موجود:
-   ```
-   ollama pull qwen2.5:3b
-   ollama serve
-   ```
-3. **Piper** (اختياري — للصوت الأوفلاين): نزّل برنامج `piper` وحطه على الـ PATH،
-   وحط ملف الموديل `ar_JO-kareem-medium.onnx` في `app/data/piper/`.
-4. **المكتبات**:
-   ```
-   pip install -r app/requirements.txt
-   ```
-
-## المفاتيح
-
-حط مفاتيحك في مجلد `keys/` — ملف واحد لكل خدمة (شوف `keys/README.txt`):
-- `groq-key.txt` — مفتاح Groq
-- `gemini-key.txt` — مفتاح Google AI Studio
-- `azure-key.txt` — اختياري (السطر الأول المفتاح، التاني الـ Region)
-
-المفاتيح مش موجودة في المشروع — لازم تحطها بنفسك. لو ملف ناقص، الميزة
-بتاعته بتتخطى والبرنامج بيكمل بالبديل من غير ما يقع.
-
-## التشغيل
-
-```
-python app/main.py
-```
-
-البرنامج بيفتح كـ **Dynamic Island** بس (حبة صغيرة فوق الشاشة).
-دوس عليها عشان تفتح النافذة الكاملة. زرار ✕ بيصغّر للجزيرة تاني —
-البرنامج **مش بيتقفل** غير من زرار «إغلاق البرنامج» جوه الإعدادات.
-
-## الاستخدام
-
-- **كتابة**: اكتب في الخانة ودوس ➤ أو Enter.
-- **صوت**: دوس 🎙️ واتكلم 5 ثواني بالعربي — هيسمعك ويرد عليك صوت وكتابة.
-- **الإعدادات** (⚙️): اسم المساعد، اسمك، لغة الواجهة (عربي/إنجليزي)،
-  اختيار الصوت (4 أصوات: ولدين + بنتين)، التحية الصباحية، الكود السري
-  لوضع المالك، سجل التشخيص، وعن المطور.
-- **الحيوان الأليف** (🐾): قطة صغيرة عايمة على الشاشة — بتتنطط لوحدها
-  حوالين الشاشة، دوس عليها (من غير سحب) عشان تفرح وتقول «مياو! 🐾».
-  اسحبها لأي مكان، ولو حطيتها جنب حافة أو دست مرتين بتقعد وتلعب بكورة
-  صغيرة؛ اسحبها بعيد أو دوس مرتين تاني عشان ترجع تتنطط. زرار 🐾 بيخفيها
-  ويظهرها.
-- **التحديثات**: من الإعدادات → «التحقق من التحديثات» — مفعّلة عن طريق
-  GitHub، والنسخة المثبّتة بتحدّث نفسها بالمثبّت الجديد (شوف قسم
-  التحديثات فوق).
-- **قواعد وأسئلة مخصصة**: عدّل `app/data/rules.json` و `app/data/qa.json`
-  بنفسك — أسئلة بتتطابق حرفياً بتترد عليها قبل المخ.
-
-## سجل التشخيص
-
-كل حاجة بتتسجل في `app/data/logs/memo-ai-YYYY-MM-DD.log`
-(معلومة / تحذير / خطأ + السبب بالظبط). تقدر تشوفه وتنسخه من الإعدادات.
-
-## بنية المشروع
+## Layout
 
 ```
 memo-ai/
-├── app/
-│   ├── main.py            # نقطة التشغيل (pywebview: الجزيرة + النافذة + الحيوان)
-│   ├── brain.py           # المخ: Groq أونلاين / Ollama محلي + fallback على 429
-│   ├── hear.py            # السمع: Groq Whisper أونلاين / faster-whisper محلي
-│   ├── speak.py           # الصوت: Gemini TTS ← Azure ← Piper
-│   ├── updater.py         # التحديثات من داخل البرنامج (مانيفست + SHA-256)
-│   ├── weather.py         # الطقس من Open-Meteo (مجاني، من غير مفتاح)
-│   ├── rules.py           # القواعد والأسئلة المخصصة + رفض السورس
-│   ├── logger.py          # سجل التشخيص
-│   ├── settings_store.py  # الإعدادات + قراءة المفاتيح
-│   ├── requirements.txt
-│   ├── ui/                # الواجهة (index.html + styles.css + app.js)
-│   │   ├── island.html    # Dynamic Island
-│   │   ├── pet.html       # الحيوان الأليف
-│   │   └── assets/avatar-cat.png
-│   └── data/
-│       ├── settings.json  # إعداداتك (الكود السري هنا بس)
-│       ├── update.json    # رابط مانيفست التحديثات (متظبط على GitHub)
-│       ├── rules.json     # قواعدك المخصصة
-│       ├── qa.json        # أسئلتك وأجوبتك
-│       └── logs/          # سجلات التشخيص
-├── scripts/               # سكربتات اختبار السمع (المحلي + Groq)
-├── installer/             # المثبّت: PyInstaller spec + Inno Setup + سكربت الـ zip
-├── .github/workflows/     # بناء المثبّت تلقائياً على GitHub Actions
-├── version.json           # مانيفست التحديثات (النسخة + روابط + SHA-256)
-├── keys/                  # مفاتيحك (فاضي — حطها بنفسك)
-└── README.md
+├── lona2/                  # the v2 program (one module, one job each)
+│   ├── main.py             # entry: main window + separate island window
+│   ├── bridge.py           # the Api object the UI calls
+│   ├── brain.py            # Groq -> Gemini, Deep Think, model switcher
+│   ├── monitor.py          # device overview, cache-first, LHM by name
+│   ├── winshape.py         # SetWindowRgn island clip, single instance
+│   ├── webview2.py         # WebView2 detection incl. WOW6432Node
+│   ├── invite.py           # invite gate (hash only)
+│   ├── owner.py            # owner code (PBKDF2)
+│   ├── apikeys.py          # DPAPI key store (+ v1.6.3 key migration)
+│   ├── backup.py           # encrypted backup (scrypt + AES-GCM)
+│   ├── stores.py           # settings / tasks / memories (JSON)
+│   ├── health.py           # threshold alerts
+│   ├── updater.py          # in-app update check / download / install
+│   ├── logger.py           # diagnostics log with redaction
+│   ├── ui/                 # Liquid Glass UI (index / island / invite)
+│   │   └── assets/         # bridge.js, lona.css, fonts, mascot.webp
+│   ├── tests/              # pytest suite (bridge, security, UI)
+│   └── requirements.txt
+├── lona.spec               # PyInstaller spec (one-folder, windowed)
+├── installer/
+│   ├── lona.iss            # Inno Setup: per-user, no admin, Arabic
+│   ├── lona.ico            # mascot icon, 16–256px
+│   ├── file_version_info_v2.txt
+│   └── build_source_zip_v2.py
+├── scripts/
+│   └── security_check_v2.py
+├── .github/workflows/
+│   ├── build-v2.yml        # Windows CI for v2.* tags (prerelease)
+│   └── build-installer.yml # v1 workflow — v1.* tags only
+├── version.json            # updater manifest (updated by CI per release)
+├── app/                    # the OLD v1.6.3 code. Untouched, never built
+│                           # from, never shipped in v2. Kept in the
+│                           # branch only so the history stays intact.
+└── extension/              # Chrome extension source (Phase 2)
 ```
 
-## اللي لسه مش موجود (متأجل)
+## Build
 
-- ترجمة الشاشة («ترجم الشاشة»)
-- المجلس متعدد النماذج
-- تنبيهات الجيميل والتقويم في التحية الصباحية (مكانها متعلم TODO في الكود)
-- أصوات XTTS المستنسخة (بعد ترقية الرام)
-- موديل 7B (بعد ترقية الرام)
-- الأفاتارات التانية (كلب / ولد / بنت) — القطة بس في v1
-- حذف الملفات (مفيش أداة حذف في v1.3.0 — المسح محتاج إذن صريح، ولسه مش موجود)
+On Windows, from the repo root:
 
-## ملاحظات
+```
+pip install -r lona2/requirements.txt
+pip install pyinstaller pyinstaller-hooks-contrib
+pyinstaller lona.spec
+ISCC /DAppVersion=2.0.0 installer\lona.iss
+```
 
-- مفيش إعلانات خالص.
-- البرنامج مش بيبعت أي حاجة من جهازك غير طلبات المخ والصوت للخدمات
-  اللي انت حاطط مفاتيحها (Groq / Gemini / Azure) — وده مكتوب بوضوح
-  في الإعدادات.
-- المصدر والكود السري: لو حد سأل عن السورس، الرد «تواصل مع المطور» —
-  إلا لو انت كتبت الكود السري في الشات (وضع المالك).
+Output: `dist\LONA\LONA.exe` and `release\LONA-Setup-2.0.0.exe`.
+CI does the same on every `v2*` tag and publishes a prerelease with
+the setup.exe + the source zip (`lona-v2.0.0.zip`).
+
+## Tests
+
+```
+python -m pytest lona2/tests/ -q
+python scripts/security_check_v2.py
+```
+
+The suite covers the bridge contract, the security subset (redaction,
+invite gate, owner code, backup) and the UI static checks (every UI
+call maps to a real bridge method; no CDN links, no Math.random, no
+emoji; fonts bundled, mascot present).
+
+## Upgrade from v1.6.3
+
+v2 installs over v1.6.3 in place: same AppId, same folder
+(%LOCALAPPDATA%\Programs\LONA), one Add/Remove Programs entry. The
+installer migrates the v1.6.3 settings + invite state into the new
+data folder (%LOCALAPPDATA%\LONA), and the app migrates the three
+saved API keys from the old Credential Manager targets on first
+launch — so the upgrade never asks for the invite code again and
+never loses a key or a setting.
+
+## The old code
+
+`app/` is the v1.6.3 program. It stays in this branch untouched so the
+v1 history is preserved, but v2 never imports it, never builds from
+it, and never ships it. Do not "fix" v2 by copying v1 code into
+`lona2/` — the rebuild exists precisely because the old code carried
+the old bugs.

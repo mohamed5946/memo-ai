@@ -1,0 +1,184 @@
+# LONA v2 — build the Windows installer + source zip, attach both to a prerelease.
+#
+# Triggers: a v2 version tag push (v2*) or a manual dispatch.
+# Runs on windows-latest: PyInstaller (one-folder exe) -> Inno Setup
+# (setup.exe) -> source zip -> GitHub PRERELEASE. Every step fails loudly;
+# a silent skip is a bug, not a pass.
+#
+# The release is ALWAYS a prerelease: v2 is a from-scratch rebuild and
+# v1.6.3 stays the stable release until the rebuild is field-proven.
+# The in-app updater (GitHub "latest release") ignores prereleases by
+# design, so v2 is installed from the setup.exe link, not offered as an
+# automatic update.
+#
+# After the release is created, version.json on the rebuild-v2 branch is
+# updated with the release URLs + SHA-256 hashes (zip + setup) and pushed
+# back, so the updater manifest matches the real release files.
+#
+# The v1 workflow (build-installer.yml) triggers only on v1.* tags and
+# must never run for a v2 tag.
+
+name: Build LONA v2 installer
+
+on:
+  push:
+    tags:
+      - "v2*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Full history: the version.json update step checks out the
+          # rebuild-v2 branch and pushes back to it.
+          fetch-depth: 0
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $init = Get-Content lona2/__init__.py -Raw
+          if ($init -notmatch 'VERSION\s*=\s*"([^"]+)"') { throw "VERSION not found in lona2/__init__.py" }
+          $ver = $Matches[1]
+          "LONA_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if ("${{ github.ref_type }}" -eq "tag") {
+            "LONA_TAG=${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } else {
+            "LONA_TAG=v$ver-rebuild.1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+          Write-Host "Building LONA $ver (tag $env:LONA_TAG)"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pip install --upgrade pip
+          pip install -r lona2/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw "pip install -r lona2/requirements.txt failed" }
+          pip install pyinstaller pyinstaller-hooks-contrib
+          if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed" }
+
+      - name: Security checklist (v2 automated subset)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python scripts/security_check_v2.py
+          if ($LASTEXITCODE -ne 0) { throw "Security checklist v2 failed" }
+
+      - name: Run v2 test suite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pytest lona2/tests/ -q
+          if ($LASTEXITCODE -ne 0) { throw "v2 test suite failed" }
+
+      - name: Build exe with PyInstaller
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          pyinstaller lona.spec
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+          if (-not (Test-Path "dist\LONA\LONA.exe")) { throw "LONA.exe was not produced" }
+          if (-not (Test-Path "dist\LONA\_internal\lona2\ui\index.html")) { throw "Bundled UI is missing from dist (expected under _internal\lona2\ui)" }
+          if (-not (Test-Path "dist\LONA\_internal\lona2\ui\island.html")) { throw "Bundled island page is missing from dist" }
+          if (-not (Test-Path "dist\LONA\_internal\lona2\ui\invite.html")) { throw "Bundled invite page is missing from dist" }
+          if (-not (Test-Path "dist\LONA\_internal\webview\js\api.js")) { throw "webview/js/api.js missing from bundle — window.pywebview would never exist" }
+          if (-not (Test-Path "dist\LONA\_internal\lona2\ui\assets\mascot.webp")) { throw "mascot.webp missing from bundle" }
+          $fonts = Get-ChildItem "dist\LONA\_internal\lona2\ui\assets\fonts\*.woff2"
+          if ($fonts.Count -lt 8) { throw "Bundled fonts missing from dist (expected 8 woff2, got $($fonts.Count))" }
+          # The v2 icon must be the mascot .ico (multi-size) — a missing
+          # icon would silently fall back to the PyInstaller default.
+          if (-not (Test-Path "installer\lona.ico")) { throw "installer/lona.ico missing" }
+
+      - name: Build source zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python installer/build_source_zip_v2.py $env:LONA_VERSION release
+          if ($LASTEXITCODE -ne 0) { throw "Source zip build failed" }
+          if (-not (Test-Path "release\lona-v$env:LONA_VERSION.zip")) { throw "Source zip was not produced" }
+
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "ISCC.exe" }
+          & $iscc /DAppVersion=$env:LONA_VERSION installer\lona.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed" }
+          if (-not (Test-Path "release\LONA-Setup-$env:LONA_VERSION.exe")) { throw "setup.exe was not produced" }
+
+      - name: Upload setup.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LONA-Setup-${{ env.LONA_TAG }}
+          path: release/LONA-Setup-*.exe
+          if-no-files-found: error
+
+      # Tag builds only: create (or update) the prerelease. A manual
+      # dispatch builds + uploads the artifact but creates no release.
+      - name: Create or update GitHub prerelease
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:LONA_TAG
+          $setup = (Get-ChildItem release\LONA-Setup-*.exe | Select-Object -First 1).FullName
+          $zip = (Get-ChildItem release\lona-*.zip | Select-Object -First 1).FullName
+          if (-not $setup -or -not $zip) { throw "Release files missing" }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $setup $zip --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+          } else {
+            gh release create $tag $setup $zip --prerelease --title "LONA $tag" --notes "LONA v2 — إعادة بناء من الصفر (نسخة معاينة). ثبّت من setup.exe زي أي برنامج ويندوز. النسخة المستقرة لسه v1.6.3 لحد ما إعادة البناء تتأكد ميدانياً."
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          }
+
+      # The manifest (raw version.json on the branch) must match the real
+      # release files, so update it with the built files' URLs + hashes
+      # and push it back to rebuild-v2. Runs only for tag builds.
+      - name: Update version.json manifest on rebuild-v2
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:LONA_TAG
+          $ver = $env:LONA_VERSION
+          $setup = (Get-ChildItem release\LONA-Setup-*.exe | Select-Object -First 1).FullName
+          $zip = (Get-ChildItem release\lona-*.zip | Select-Object -First 1).FullName
+          $setupSha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          $zipSha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          git fetch origin rebuild-v2
+          git checkout rebuild-v2
+          python -c "import json; p='version.json'; m=json.load(open(p, encoding='utf-8')); m.update({'version':'$ver','url':'https://github.com/mohamed5946/memo-ai/releases/download/$tag/lona-v$ver.zip','sha256':'$zipSha','setup_url':'https://github.com/mohamed5946/memo-ai/releases/download/$tag/LONA-Setup-$ver.exe','setup_sha256':'$setupSha'}); json.dump(m, open(p,'w',encoding='utf-8'), ensure_ascii=False, indent=2)"
+          if ($LASTEXITCODE -ne 0) { throw "version.json update failed" }
+          git config user.name "LONA builder"
+          git config user.email "lona-builder@users.noreply.github.com"
+          git add version.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "version.json: point manifest at $tag (zip + setup hashes)"
+            git push origin rebuild-v2
+            if ($LASTEXITCODE -ne 0) { throw "git push of version.json failed" }
+          } else {
+            Write-Host "version.json already up to date"
+          }

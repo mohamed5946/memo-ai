@@ -235,8 +235,16 @@ class App:
 
     def _on_main_closing(self):
         # Closing the main window hides it to the tray when the island
-        # is on; otherwise it quits.
+        # is on; otherwise it quits. (pywebview: returning False vetoes
+        # the close — the hide below is what actually puts the window
+        # in the tray; without it, closing would silently do nothing.)
         if self.settings.get("island_enabled", True) and self._tray:
+            try:
+                if self.main_window is not None:
+                    self.main_window.hide()
+                    self._main_visible = False
+            except Exception:
+                pass
             return False
         return True
 
@@ -301,6 +309,9 @@ class App:
         if winshape.signal_show_main():
             info("app", "Another instance is already running")
             return
+        # Hold the installer mutex (Local\LONA-SingleInstance) so Inno
+        # Setup's AppMutex check can see a running instance.
+        winshape.create_single_instance_mutex()
         event = winshape.create_show_main_event()
         if event is not None:
             threading.Thread(

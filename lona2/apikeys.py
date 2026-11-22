@@ -48,6 +48,51 @@ def _target(provider: str) -> str:
     return f"LONA/api-key/{provider}"
 
 
+# One-time migration from the v1.6.3 credential targets (LONA:groq,
+# LONA:gemini-voice, LONA:gemini-chat). v2 stores keys under
+# LONA/api-key/<provider>; without this, an upgrade from v1.6.3 would
+# silently lose all three saved keys and the user would have to
+# re-enter them. Runs at most once per process, on the first key read.
+# Windows only. The value is never logged.
+_V1_TARGETS = {
+    "groq": "LONA:groq",
+    "gemini_voice": "LONA:gemini-voice",
+    "gemini_chat": "LONA:gemini-chat",
+}
+_migration_done = False
+
+
+def _migrate_v1_keys() -> None:
+    global _migration_done
+    if _migration_done or not IS_WINDOWS:
+        return
+    _migration_done = True
+    for provider, old_target in _V1_TARGETS.items():
+        try:
+            if get_api_key_value(provider) not in (None, ""):
+                continue  # v2 target already has a key — keep it
+            out = ctypes.POINTER(_CREDENTIAL)()
+            if not _advapi32.CredReadW(old_target, _CRED_TYPE_GENERIC,
+                                       0, ctypes.byref(out)):
+                continue
+            try:
+                cred = out.contents
+                size = cred.CredentialBlobSize
+                raw = bytes(cred.CredentialBlob[i] for i in range(size))
+                value = raw.decode("utf-16-le")
+            finally:
+                _advapi32.CredFree(ctypes.cast(out, ctypes.c_void_p))
+            if not value:
+                continue
+            if save_api_key(provider, value).get("ok"):
+                try:
+                    _advapi32.CredDeleteW(old_target, _CRED_TYPE_GENERIC, 0)
+                except Exception:
+                    pass
+        except Exception:
+            continue
+
+
 def _fallback_path() -> Path:
     from .stores import DATA_DIR
     return DATA_DIR / "keys-fallback.json"
@@ -137,6 +182,7 @@ def save_api_key(provider: str, value: str) -> dict:
 
 def get_api_key_value(provider: str):
     """The raw value — call ONLY on the user's explicit 'show' press."""
+    _migrate_v1_keys()
     if provider not in PROVIDERS:
         return None
     if not IS_WINDOWS:

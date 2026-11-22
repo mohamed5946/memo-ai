@@ -290,6 +290,34 @@ def watch_show_main_event(event_handle, on_signal, stop_flag,
             return
 
 
+# --- single-instance mutex (the installer checks it) ----------------------
+# Inno Setup's AppMutex is Local\LONA-SingleInstance. The app must hold
+# this mutex while it runs, or Setup cannot tell a running LONA from a
+# stopped one (CloseApplications still catches it, but the mutex is the
+# first line of defence against installing over a running app — the
+# v1.3.1 "Not Responding" lesson). The ShowMain event above handles
+# second-launch focus; the mutex exists only for the installer.
+_SINGLE_INSTANCE_MUTEX = "Local\\LONA-SingleInstance"
+_mutex_handle = None
+
+
+def create_single_instance_mutex():
+    """Create + hold the installer mutex. Returns the handle or None.
+    The handle is kept module-level so it lives for the process."""
+    global _mutex_handle
+    if not IS_WINDOWS:
+        return None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateMutexW(None, False, _SINGLE_INSTANCE_MUTEX)
+        if not handle:
+            return None
+        _mutex_handle = handle
+        return handle
+    except Exception:
+        return None
+
+
 # --- main-window MinimumSize (morph needs to go below it) -------------------
 # v1.3.2: DELETED. clear_min_size()/restore_min_size() touched the
 # Form's MinimumSize .NET property from the morph thread (cross-thread
