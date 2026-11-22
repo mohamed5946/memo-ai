@@ -44,6 +44,10 @@ def test_ui_calls_map_to_real_bridge_methods():
         # B.call('method', ...) / B.call("method", ...)
         for match in re.finditer(r"""B\.call\(\s*['"](\w+)['"]""", text):
             called.add(match.group(1))
+        # Ternary form: B.call(cond ? 'a' : 'b') — capture both arms.
+        for match in re.finditer(r"""B\.call\([^)]*\?\s*['"](\w+)['"]\s*:\s*['"](\w+)['"]""", text):
+            called.add(match.group(1))
+            called.add(match.group(2))
     assert called, "no bridge calls found in the UI at all"
     unknown = called - methods
     assert not unknown, f"UI calls unknown bridge methods: {unknown}"
