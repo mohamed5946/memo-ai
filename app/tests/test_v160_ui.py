@@ -125,41 +125,57 @@ def test_all_13_moods():
 
 
 def test_island_collapsed_and_expanded():
-    # v1.6.4 reskin (fixed canvas): the pill is .i-mini inside the
-    # fixed 720x400 canvas - mascot bubble + live ai_name title +
-    # green .dot + "Listening..." + wave. Expanding toggles the .open
+    # v1.6.4-rc.2 (Mohamed 2026-11-23 00:20, island redesign spec):
+    # the island keeps the PILL shape always. Collapsed = a NARROW
+    # pill (220x60) inside the fixed 520x300 canvas - mascot FACE
+    # circle (.bubble.mascot-face, mascot.webp cropped to the face)
+    # + live ai_name title + green .dot, and NO mic icon, NO
+    # "Listening" text. The waveform bars animate ONLY while music
+    # is playing (.island.playing gates .wave in lona.css).
+    # Expanded = a larger rounded pill (520x300, border-radius 44px),
+    # NOT the old 720x400 rectangle. Expanding toggles the .open
     # class (setOpen -> island_expand/island_collapse); the window
     # never resizes. No clock widget anywhere in the island (time
     # shows only inside the expanded timer/music panels, via fmtClock).
     assert 'id="mini"' in ISLAND
-    assert 'class="bubble"' in ISLAND
+    assert 'class="i-mini"' in ISLAND
+    assert 'class="bubble mascot-face"' in ISLAND
+    assert 'src="assets/mascot.webp"' in ISLAND
     # The pill title is the LIVE ai_name (id="pillName", default لونا,
     # set from get_settings) — never a static label.
     assert 'id="pillName"' in ISLAND
     assert "ai_name" in ISLAND
-    assert "Listening..." in ISLAND
+    # rc.2 removals: no mic icon and no "Listening" text on the pill.
+    assert "micBtn" not in ISLAND
+    assert "Listening" not in ISLAND
     assert '<span class="dot">' in ISLAND
     assert ".dot{" in LONA_CSS
     assert 'class="wave"' in ISLAND
+    # Waveform only when playing: hidden by default, shown only
+    # under .island.playing.
+    assert ".wave{display:none" in LONA_CSS
+    assert ".island.playing .wave" in LONA_CSS
     assert "island-clock" not in ISLAND
     assert "exp-clock" not in ISLAND
     assert "setOpen" in ISLAND
     assert "classList.toggle('open'" in ISLAND
     assert "island_expand" in ISLAND and "island_collapse" in ISLAND
-    assert "body.fixed-canvas .island{width:380px;height:60px}" in ISLAND
-    assert ".island.open{width:720px;height:400px" in ISLAND
+    assert "body.fixed-canvas .island{width:220px;height:60px}" in ISLAND
+    assert ".island.open{width:520px;height:300px;border-radius:44px}" in ISLAND
     # v1.6.2 island redesign: Quick Actions / Tools / Skills / More
     # are all removed.
     assert "Quick Actions" not in ISLAND and "Tools" not in ISLAND
     assert "Skills" not in ISLAND and "More" not in ISLAND
     assert 'class="stand"' in ISLAND  # full mascot on the expanded side
-    assert 'class="mascot"' in ISLAND
+    assert 'class="mascot-face"' in ISLAND  # face circle, pill + stand
     assert 'id="greet"' in ISLAND
     assert "أهلًا، أقدر أساعدك في إيه؟" in ISLAND
     # Tapping the island toggles it open/closed (the old reactJump
-    # robot-tap animation is gone with the SVG robot).
+    # robot-tap animation is gone with the SVG robot); tapping the
+    # FACE greets instead (greetFromFace, rc.2 interactive face).
     assert "isl.addEventListener('click'" in ISLAND
     assert "reactJump" not in ISLAND
+    assert "greetFromFace" in ISLAND
 
 
 def test_island_swipe_panels():
@@ -175,13 +191,21 @@ def test_island_swipe_panels():
 
 
 def test_main_window_shell():
-    # v1.6.4 reskin (frameless, Liquid Glass): the traffic lights are
-    # real buttons in the header bar (tlClose/tlMin/tlMax); the sidebar
-    # is .side/#nav with data-v destinations; the robot stage is the
-    # hero with the mascot image.
+    # v1.6.4-rc.2 (Mohamed 2026-11-23 00:24, title-bar requirement):
+    # the main window has a STANDARD Windows title bar (native
+    # minimize / maximize / close, like Task Manager). The custom frameless header with the three
+    # macOS-style colored dots is GONE: no tlClose/tlMin/tlMax in the
+    # UI at all. The in-app header (.bar: brand/model/clock/mute)
+    # remains, as does the sidebar (.side/#nav with data-v
+    # destinations) and the hero with the mascot face circle.
+    # (The native frame itself is covered by
+    # test_v162_backend.TestMainWindow.test_main_window_native_frame_resizable.)
     assert "window-bar" not in HTML
-    assert 'id="tlClose"' in HTML and 'id="tlMin"' in HTML
-    assert 'id="tlMax"' in HTML and 'class="bar"' in HTML
+    assert 'id="tlClose"' not in HTML
+    assert 'id="tlMin"' not in HTML
+    assert 'id="tlMax"' not in HTML
+    assert "native Windows title bar" in HTML
+    assert 'class="bar"' in HTML
     assert 'class="side' in HTML and 'id="nav"' in HTML
     for item in ("الشات", "الجهاز", "المهام", "الثيمات", "الإعدادات"):
         assert item in HTML, "sidebar item missing: " + item
@@ -340,13 +364,17 @@ def test_island_has_no_window_control_buttons():
     assert "setOpen" in ISLAND
     assert "classList.toggle('open'" in ISLAND
     assert "e.target.closest" in ISLAND
-    # v1.6.4 reskin: the pill DOES have one mic button again by
-    # design (micBtn) - but it is data-stop (never toggles the
-    # island) and only flips the local listening indicator; there is
-    # still no settings button on the pill.
-    assert 'id="micBtn"' in ISLAND
-    assert "mic-live" in ISLAND and "بسمعك…" in ISLAND
+    # v1.6.4-rc.2 (Mohamed 2026-11-23 00:20): the mic icon is REMOVED
+    # from the pill entirely - no micBtn, no mic-live indicator, no
+    # "بسمعك…" text - and there is still no settings button on the
+    # pill. The face circle (.mascot-face) is the pill's only
+    # interactive element: tapping it greets (greetFromFace).
+    assert 'id="micBtn"' not in ISLAND
+    assert "mic-live" not in ISLAND
+    assert "بسمعك…" not in ISLAND
     assert "island-settings" not in ISLAND
+    assert 'class="bubble mascot-face"' in ISLAND
+    assert "greetFromFace" in ISLAND
 
 
 def test_customizable_ai_name():

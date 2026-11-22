@@ -139,12 +139,22 @@ class TestRobotIsTheDefaultIdentity(unittest.TestCase):
         # only the 4 letter options. The default identity stays the
         # robot: settings DEFAULTS avatar is "robot" (see
         # test_defaults_are_lona_and_robot) and the hero shows it.
-        self.assertIn('<img src="assets/mascot.webp" alt="لونا">', HTML)
+        # v1.6.4-rc.2: the hero image is the FACE CIRCLE now
+        # (class="mascot-face", 170px circle crop of mascot.webp) -
+        # the bare <img src="assets/mascot.webp" alt="لونا"> form is
+        # gone; match the img by src + mascot-face class.
+        self.assertRegex(
+            HTML,
+            r'<img[^>]*src="assets/mascot\.webp"[^>]*class="mascot-face"')
         self.assertNotIn("avatar-robot.png", HTML)
 
     def test_header_and_hero_show_robot(self):
-        self.assertIn('<img src="assets/mascot.webp" alt="لونا">',
-                      HTML)
+        # v1.6.4-rc.2: the hero is the mascot FACE CIRCLE
+        # (mascot-face class on the img) and the header brand is LONA.
+        self.assertRegex(
+            HTML,
+            r'<img[^>]*src="assets/mascot\.webp"[^>]*class="mascot-face"')
+        self.assertIn('<b class="brand">LONA</b>', HTML)
 
     def test_picker_keeps_exactly_four_options(self):
         # v2 design: 4 gold-circle Arabic-letter options, no robot

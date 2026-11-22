@@ -71,6 +71,7 @@ def _run_js(cases):
         "});\n"
         "process.stdout.write(JSON.stringify(out));\n")
     with tempfile.NamedTemporaryFile("w", suffix=".js",
+                                    encoding="utf-8",
                                     delete=False) as fh:
         fh.write(_pure_js() + "\n" + driver)
         tmp = fh.name
@@ -106,6 +107,7 @@ class TestTokenBarSection(unittest.TestCase):
         scripts = re.findall(r"<script>(.*?)</script>", src, re.S)
         self.assertTrue(scripts, "no inline script found")
         with tempfile.NamedTemporaryFile("w", suffix=".js",
+                                        encoding="utf-8",
                                         delete=False) as fh:
             fh.write("\n".join(scripts))
             tmp = fh.name

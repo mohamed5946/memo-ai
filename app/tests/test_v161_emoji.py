@@ -272,12 +272,14 @@ class TestIconWiring(unittest.TestCase):
 
     def test_island_buttons_use_their_icons(self):
         html = ISLAND.read_text(encoding="utf-8")
-        # v1.6.4 reskin: the island buttons are inline <svg> icons
-        # (no sprite <use> refs anymore - the old exp-send / #send /
-        # #avatar / #back assertions are gone with the sprite wiring).
-        # Pill mic + expanded attach/send + panels button each carry
-        # their own inline SVG and no emoji.
-        for btn_id in ("micBtn", "attachBtn", "islSend", "panelsBtn"):
+        # v1.6.4-rc.2: the mic button is REMOVED from the pill
+        # (Mohamed 2026-11-23 00:20) - the island buttons that remain
+        # are inline <svg> icons (no sprite <use> refs anymore - the
+        # old exp-send / #send / #avatar / #back assertions are gone
+        # with the sprite wiring). Expanded attach/send + panels
+        # button each carry their own inline SVG and no emoji.
+        self.assertNotIn('id="micBtn"', html, "mic button removed in rc.2")
+        for btn_id in ("attachBtn", "islSend", "panelsBtn"):
             m = re.search(r'id="' + btn_id + r'"[^>]*>(.*?)</button>', html,
                           flags=re.S)
             self.assertIsNotNone(m, f"{btn_id} missing")

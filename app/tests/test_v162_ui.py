@@ -390,26 +390,34 @@ class TestParity3LiveCard(unittest.TestCase):
 
 class TestParity5IslandPill(unittest.TestCase):
     def test_pill_has_robot_name_dot_listening_wave(self):
-        # v1.6.4 reskin: the pill is .i-mini - mascot bubble (.bubble
-        # img), LIVE ai_name title (id="pillName", default لونا),
-        # green .dot, "Listening..." status, wave bars.
-        assert 'class="bubble"' in ISLAND
+        # v1.6.4-rc.2 (Mohamed 2026-11-23 00:20): the pill is .i-mini
+        # - mascot FACE circle (.bubble.mascot-face, mascot.webp),
+        # LIVE ai_name title (id="pillName", default لونا), green
+        # .dot. NO mic icon, NO "Listening" text - and the waveform
+        # bars animate ONLY while music is playing (.island.playing
+        # gates .wave in lona.css; .wave is display:none by default).
+        assert 'class="bubble mascot-face"' in ISLAND
         assert 'src="assets/mascot.webp"' in ISLAND
         assert 'id="pillName"' in ISLAND
         assert "ai_name" in ISLAND
         assert '<span class="dot">' in ISLAND
         assert ".dot{" in LONA_CSS
-        assert "Listening..." in ISLAND
+        assert "Listening" not in ISLAND
+        assert "micBtn" not in ISLAND
         assert 'class="wave"' in ISLAND
+        assert ".wave{display:none" in LONA_CSS
+        assert ".island.playing .wave" in LONA_CSS
 
     def test_no_window_control_buttons(self):
-        # v1.6.4 reskin: no settings/X buttons on the pill; the one
-        # mic button (micBtn) is data-stop, so it never toggles the
-        # island - it only flips the local listening indicator.
+        # v1.6.4-rc.2: no settings/X buttons on the pill, and the mic
+        # button (micBtn) is REMOVED entirely - the pill has no
+        # buttons at all now; its only interactive element is the
+        # face circle, which greets on tap (greetFromFace).
         assert "island-settings" not in ISLAND
         assert "island-close" not in ISLAND
-        assert 'id="micBtn"' in ISLAND
-        assert "mic-live" in ISLAND
+        assert 'id="micBtn"' not in ISLAND
+        assert "mic-live" not in ISLAND
+        assert "greetFromFace" in ISLAND
 
 
 class TestF4IslandHugsPill(unittest.TestCase):
@@ -434,13 +442,13 @@ class TestF4IslandHugsPill(unittest.TestCase):
         assert "calc(100vw - 16px)" not in ISLAND
 
     def test_robot_bubble_inside_pill(self):
-        # v1.6.4 reskin: the robot bubble is .bubble (42px, fits the
-        # 60px pill) inside .i-mini, which is absolutely positioned
-        # over the whole island (inset:0) - the bubble can never sit
-        # outside the pill bounds. The old negative-offset bug stays
-        # gone.
+        # v1.6.4-rc.2: the robot face is .bubble.mascot-face (42px
+        # circle, fits the 60px pill) inside .i-mini, which is
+        # absolutely positioned over the whole island (inset:0) - the
+        # bubble can never sit outside the pill bounds. The old
+        # negative-offset bug stays gone.
         assert "inset-inline-start: -6px" not in ISLAND
-        assert 'class="bubble"' in ISLAND
+        assert 'class="bubble mascot-face"' in ISLAND
         m = re.search(r"\.bubble\s*\{([^}]*)\}", LONA_CSS)
         assert m, ".bubble rule missing from lona.css"
         assert "width:42px" in m.group(1)
@@ -453,15 +461,15 @@ class TestF4IslandHugsPill(unittest.TestCase):
 
 class TestIslandRedesign(unittest.TestCase):
     def test_no_x_mic_settings_buttons(self):
-        # v1.6.4 reskin: no X and no settings button on the island.
-        # The pill DOES have one mic button again by design (micBtn) -
-        # data-stop, so it never toggles the island; it only flips the
-        # local listening indicator (mic-live).
+        # v1.6.4-rc.2: no X, no mic, and no settings button on the
+        # island - the mic button (micBtn) is REMOVED entirely, not
+        # just data-stop. The face circle greets on tap instead.
         assert "island-close" not in ISLAND
         assert "exp-close" not in ISLAND
         assert "island-settings" not in ISLAND
-        assert 'id="micBtn"' in ISLAND
-        assert "mic-live" in ISLAND
+        assert 'id="micBtn"' not in ISLAND
+        assert "mic-live" not in ISLAND
+        assert "greetFromFace" in ISLAND
 
     def test_no_quick_actions_tools_skills_more(self):
         for gone in ("Quick Actions", "Tools", "Skills", "More"):
@@ -484,9 +492,11 @@ class TestIslandRedesign(unittest.TestCase):
             assert tab in ISLAND, "panel tab missing: " + tab
 
     def test_keeps_expand_collapse_greeting_robot_composer(self):
-        # v1.6.4 reskin (fixed canvas): expand/collapse is setOpen()
-        # toggling the .open class (island_expand/island_collapse on
-        # the bridge); greeting #greet, mascot .stand, composer
+        # v1.6.4-rc.2 (fixed canvas, pill shape always): expand/collapse
+        # is setOpen() toggling the .open class (island_expand/
+        # island_collapse on the bridge) between the 220x60 pill and
+        # the 520x300 rounded pill; greeting #greet, mascot face
+        # circle (.mascot-face, pill + expanded stand), composer
         # #islInput + #islSend.
         assert "setOpen" in ISLAND
         assert "island_expand" in ISLAND
@@ -495,7 +505,7 @@ class TestIslandRedesign(unittest.TestCase):
         assert 'id="greet"' in ISLAND
         assert "أهلًا، أقدر أساعدك في إيه؟" in ISLAND
         assert 'class="stand"' in ISLAND
-        assert 'class="mascot"' in ISLAND
+        assert 'class="mascot-face"' in ISLAND
         assert 'id="islInput"' in ISLAND
         assert 'id="islSend"' in ISLAND
 
@@ -643,22 +653,22 @@ class TestLayoutClarity(unittest.TestCase):
         assert "Escape" in JS
 
     def test_header_has_window_controls_and_drag_region(self):
-        # v1.6.4 reskin: the frameless header (.bar) has the three
-        # traffic-light controls wired to the window_* bridge calls.
-        assert 'id="tlClose"' in HTML
-        assert 'id="tlMin"' in HTML
-        assert 'id="tlMax"' in HTML
-        assert "window_close" in HTML
-        assert "window_minimize" in HTML
-        assert "window_toggle_maximize" in HTML
-        assert 'class="bar"' in HTML
-        # REAL GAP (reskin): there is NO drag region — no
-        # -webkit-app-region, no mousedown handler, no window_move_to
-        # call in index.html, so the frameless window cannot be
-        # dragged by its header (the backend window_move_to at
-        # main.py:2380 exists but nothing in the UI calls it).
-        assert "window_move_to" in HTML
-        assert "-webkit-app-region" in HTML
+        # v1.6.4-rc.2 (Mohamed 2026-11-23 00:24): the main window has
+        # a STANDARD Windows title bar - the macOS-style traffic
+        # lights (tlClose/tlMin/tlMax) are GONE from the UI, and there
+        # is no in-app drag region either (-webkit-app-region /
+        # window_move_to are not called from index.html): minimize /
+        # maximize / close + dragging are the native title bar's job.
+        # The native frame is covered by
+        # test_v162_backend.TestMainWindow.test_main_window_native_frame_resizable
+        # and the bridge calls by TestWindowControls there.
+        assert 'id="tlClose"' not in HTML
+        assert 'id="tlMin"' not in HTML
+        assert 'id="tlMax"' not in HTML
+        assert "native Windows title bar" in HTML
+        assert 'class="bar"' in HTML  # in-app header (brand/model/clock/mute)
+        assert "-webkit-app-region" not in HTML
+        assert "window_move_to" not in HTML
 
     def test_deep_files_empty_state_has_request_button(self):
         assert "محتاجة إذن صريح" in JS or "محتاجة إذن صريح" in HTML
