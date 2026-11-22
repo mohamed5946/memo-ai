@@ -340,8 +340,16 @@
   }
   tickClock(); setInterval(tickClock, 15000);
 
-  /* Window sizing (Win32 region follows via island_resize). */
-  const IDLE_W = 190, IDLE_H = 52, FULL_W = 380, FULL_H = 60, EXPANDED_W = 720, EXPANDED_H = 400;
+  /* Window sizing (Win32 region follows via island_resize).
+     v1.6.3 (F4): there is NO idle shrink anymore. v1.6.2 created the
+     window 380x60 but the JS still shrank to 190x52 seven seconds
+     after every greeting — while the pill CSS stays 380px wide, so
+     the pill was clipped to its central 190px most of the time.
+     IDLE == FULL now: the pill is 380x60 in every collapsed state;
+     only the expanded state is 720x400. curW/curH start at the real
+     window size (380x60), so the first goActive() is a no-op instead
+     of a shrink-then-grow squeeze. */
+  const IDLE_W = 380, IDLE_H = 60, FULL_W = 380, FULL_H = 60, EXPANDED_W = 720, EXPANDED_H = 400;
   const ANIM_MS = 450;
   let curW = IDLE_W, curH = IDLE_H, sizeRAF = null, lastResizeSent = 0, idleTimer = null;
   function animateSize(toW, toH) {
@@ -362,15 +370,23 @@
     }
     sizeRAF = requestAnimationFrame(frame);
   }
-  function armIdleTimer() { clearTimeout(idleTimer); idleTimer = setTimeout(goIdle, 7000); }
+  function armIdleTimer() {
+    clearTimeout(idleTimer);
+    /* v1.6.3: window.__islandIdleMs is a test hook (same pattern as
+       window.__islandCapMs) — the 7s timer shortens under test. */
+    const idleMs = (typeof window !== "undefined" && window.__islandIdleMs) || 7000;
+    idleTimer = setTimeout(goIdle, idleMs);
+  }
   function goActive() {
     document.body.classList.remove("expanded");
     animateSize(FULL_W, FULL_H); armIdleTimer();
   }
   function goIdle() {
+    /* v1.6.3: the idle timer is harmless now — it only clears the
+       expanded-reply text. It must NEVER resize the window: the pill
+       stays 380x60 in every collapsed state. */
     document.body.classList.remove("expanded");
     $("exp-reply").textContent = "";
-    animateSize(IDLE_W, IDLE_H);
   }
   function expandIsland() {
     /* Clicking the island expands it: the full-body robot appears on
@@ -453,7 +469,8 @@
   }
   $("exp-send").addEventListener("click", sendIslandText);
   $("exp-input").addEventListener("keydown", e => { if (e.key === "Enter") sendIslandText(); });
-  // Start collapsed.
+  // Start collapsed at the full pill size (380x60 — v1.6.3: this is a
+  // no-op by construction, since curW/curH already start at 380x60).
   animateSize(IDLE_W, IDLE_H);
 </script>
 </body>
