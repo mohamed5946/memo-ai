@@ -3,9 +3,10 @@
 
 The zip contains a single top-level lona/ folder with the files needed
 to run v2 from source (and for a manual update):
-  README.md, lona.spec, lona2/**, installer/lona.iss, installer/lona.ico,
-  installer/file_version_info_v2.txt, installer/build_source_zip_v2.py,
-  scripts/security_check_v2.py, keys/README.txt
+  README.md, run.py, lona.spec, lona2/**, installer/lona.iss,
+  installer/lona.ico, installer/file_version_info_v2.txt,
+  installer/build_source_zip_v2.py, scripts/security_check_v2.py,
+  keys/README.txt
 
 Excluded on purpose: the v1 app/ tree (dead weight in the v2 branch —
 it is never built from and never runs), the Phase 2 extension/,
@@ -38,8 +39,11 @@ FIXED_DATE = (2026, 1, 1, 0, 0, 0)
 
 # Only these top-level entries go in the zip (everything else in the
 # repo is v1 leftovers, CI config, or build output).
-INCLUDE_TOP = {"README.md", "lona.spec", "lona2", "scripts", "installer",
-               "keys"}
+# run.py is the frozen/source entry bootstrap (see its docstring) -
+# without it a source install from this zip would hit the same
+# relative-import startup crash as v2.0.0-rebuild.4.
+INCLUDE_TOP = {"README.md", "run.py", "lona.spec", "lona2", "scripts",
+               "installer", "keys"}
 INCLUDE_FILES = {
     "installer/lona.iss",
     "installer/lona.ico",

@@ -74,8 +74,15 @@ for _pkg in ("webview", "clr_loader", "pystray", "PIL",
     hiddenimports += _h
 
 a = Analysis(
-    [os.path.join(LONA2, "main.py")],
-    pathex=[LONA2],
+    # v2.0.0-rebuild.5: the entry is run.py (repo root), NOT
+    # lona2/main.py. PyInstaller freezes the entry script as top-level
+    # __main__ with no parent package, so main.py's relative imports
+    # ("from . import ...") crashed the frozen app at startup while
+    # the tests (which import lona2 as a package) stayed green.
+    # run.py imports lona2.main as a module inside the package, so
+    # the relative imports work frozen exactly as they do from source.
+    [os.path.join(ROOT, "run.py")],
+    pathex=[ROOT],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

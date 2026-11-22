@@ -108,6 +108,24 @@ jobs:
           # icon would silently fall back to the PyInstaller default.
           if (-not (Test-Path "installer\lona.ico")) { throw "installer/lona.ico missing" }
 
+      # v2.0.0-rebuild.4 shipped a startup ImportError (relative import
+      # in frozen main.py) that CI never caught: the tests import lona2
+      # as a package, so they pass while the installed app crashes on
+      # launch. This step runs the FROZEN exe on the runner: a fast
+      # exit with an error fails the build; still alive after 15s
+      # means startup succeeded (the invite window stays open on a
+      # fresh machine, so the app never exits by itself here).
+      - name: Smoke test frozen app startup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $proc = Start-Process -FilePath "dist\LONA\LONA.exe" -PassThru
+          if ($proc.WaitForExit(15000)) {
+            throw "LONA.exe exited within 15s (exit code $($proc.ExitCode)) — startup crash"
+          }
+          Stop-Process -Id $proc.Id -Force
+          Write-Host "LONA.exe stayed alive for 15s — startup smoke test passed"
+
       - name: Build source zip
         shell: pwsh
         run: |
