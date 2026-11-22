@@ -131,11 +131,15 @@ class TestApiContract(unittest.TestCase):
         self.assertIn('from native_host import run_host_main', src)
 
     def test_version_is_1_6_2_everywhere(self):
+        # v1.6.4 reskin: the version is 1.6.4-rc.1 everywhere; the
+        # manifest version matches it while its URLs still point at
+        # the v1.6.3 release (the RC tag is gated out of the updater
+        # manifest). Test name kept for continuity with the v1 suite.
         src = self._main_source()
-        self.assertIn('VERSION = "1.6.3"', src)
+        self.assertIn('VERSION = "1.6.4-rc.1"', src)
         manifest = json.loads((ROOT / "version.json").read_text(
             encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.6.3")
+        self.assertEqual(manifest["version"], "1.6.4-rc.1")
         self.assertTrue(manifest.get("features"))
 
 

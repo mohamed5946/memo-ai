@@ -7,8 +7,14 @@ Run only this file (plus test_v161_typing_mood.py):
 
 What is proven here (all with mocked outputs - no Windows, no real
 sensors, no installs):
-  * Thermal Zone perf counters: Get-Counter Kelvin values convert to
-    Celsius before the plausibility filter.
+  * Thermal Zone perf counters + MSAcpi zones are ZONE readings, not
+    CPU temperature: they live in _powershell_thermal_zones() /
+    _wmi_thermal_zones() only, and read_cpu_temp() reports
+    (None, False) when no CPU sensor answers — never a ~24 C room
+    value as CPU temperature.
+  * Libre/OpenHardwareMonitor sensors are filtered by name: only
+    CPU-named sensors (CPU Package / Core) count; GPU and board
+    sensors are ignored.
   * Win32_TemperatureProbe (root\\cimv2): tenths-of-Kelvin readings
     convert; plain-Celsius readings pass through; garbage is dropped.
   * Dell DCIM sensors (root\\dcim\\sysman): DCIM_ThermalSensor and
@@ -137,13 +143,33 @@ class TestPowerShellTempPaths(unittest.TestCase):
         with mock.patch("subprocess.run", fake):
             return monitor_mod._powershell_temps()
 
+    def _run_zones_with(self, outputs):
+        fake = _fake_ps_run_factory(outputs)
+        with mock.patch("subprocess.run", fake):
+            return monitor_mod._powershell_thermal_zones()
+
     def test_get_counter_kelvin_to_celsius(self):
-        temps = self._run_with([
+        # v1.6.4 (F-E): the Thermal Zone perf counter is a ZONE
+        # reading, not CPU temperature — it lives in
+        # _powershell_thermal_zones() now, and its Kelvin values
+        # still convert to Celsius before the plausibility filter.
+        temps = self._run_zones_with([
             ("Get-Counter", "37.0\n25.0\n"),
         ])
         self.assertEqual(len(temps), 2)
         self.assertAlmostEqual(temps[0], 37.0, 2)
         self.assertAlmostEqual(temps[1], 25.0, 2)
+
+    def test_msacpi_zone_is_not_a_cpu_temp(self):
+        # v1.6.4 (F-E): an MSAcpi thermal-zone value must never come
+        # back as a CPU temperature — the zone script parses it, the
+        # CPU script never queries it (pinned by source below, since
+        # the mock above cannot simulate stage selection).
+        temps = self._run_zones_with([
+            ("MSAcpi_ThermalZoneTemperature", "36.85\n"),
+        ])
+        self.assertEqual(len(temps), 1)
+        self.assertAlmostEqual(temps[0], 36.85, 2)
 
     def test_win32_temperature_probe_tenths_kelvin(self):
         temps = self._run_with([
@@ -169,38 +195,43 @@ class TestPowerShellTempPaths(unittest.TestCase):
 
     def test_all_sources_empty_is_empty(self):
         self.assertEqual(self._run_with([]), [])
-
-    def test_msacpi_still_wins_first(self):
-        temps = self._run_with([
-            ("MSAcpi_ThermalZoneTemperature", "36.85\n"),
-            ("Get-Counter", "126.85\n"),
-        ])
-        self.assertEqual(len(temps), 1)
-        self.assertAlmostEqual(temps[0], 36.85, 2)
+        self.assertEqual(self._run_zones_with([]), [])
 
     def test_script_converts_units_and_orders_stages(self):
         # v1.6.2 B24: the conversion lives in the single PowerShell
         # script now (the mock above only simulates its already-
         # converted output), so pin the script's conversions and
         # stage order here, against the real code.
+        # v1.6.4 (F-E): CPU sensors first (Libre/OpenHardwareMonitor
+        # CPU-named sensors, then Win32_TemperatureProbe, then DCIM);
+        # thermal zones are NOT in the CPU script at all — they live
+        # in _powershell_thermal_zones(), probed last and only for
+        # the honestly-labelled diagnostics log.
         import inspect
         src = inspect.getsource(monitor_mod._powershell_temps)
         # Only the script itself, not the docstring above it (the
         # docstring names some stages in a different order).
         src = src[src.index('script = r"""'):]
         self.assertIn("/ 10 - 273.15", src)  # tenths-Kelvin -> C
-        self.assertIn("- 273.15", src)  # Kelvin -> C
-        self.assertLess(src.index("MSAcpi_ThermalZoneTemperature"),
-                        src.index("Get-Counter"))
-        self.assertLess(src.index("Get-Counter"),
+        self.assertLess(src.index("LibreHardwareMonitor"),
                         src.index("Win32_TemperatureProbe"))
         self.assertLess(src.index("Win32_TemperatureProbe"),
                         src.index("DCIM_ThermalSensor"))
+        self.assertNotIn("MSAcpi_ThermalZoneTemperature", src)
+        self.assertNotIn("Get-Counter", src)
+        # The CPU-name filter: only CPU Package / Core sensors count;
+        # GPU sensors are excluded.
+        self.assertIn("CPU|Core|Package", src)
+        self.assertIn("-notmatch 'GPU'", src)
+        zone_src = inspect.getsource(monitor_mod._powershell_thermal_zones)
+        zone_src = zone_src[zone_src.index('script = r"""'):]
+        self.assertIn("MSAcpi_ThermalZoneTemperature", zone_src)
+        self.assertIn("Get-Counter", zone_src)
+        self.assertIn("- 273.15", zone_src)  # Kelvin -> C
 
-    def test_libre_monitor_still_wins_over_perf_counters(self):
+    def test_libre_monitor_cpu_sensor_is_returned(self):
         temps = self._run_with([
             ("LibreHardwareMonitor", "61.5\n"),
-            ("Get-Counter", "126.85\n"),
         ])
         self.assertEqual(temps, [61.5])
 
@@ -211,6 +242,39 @@ class TestPowerShellTempPaths(unittest.TestCase):
 
 
 class TestWmiTempPaths(unittest.TestCase):
+    def test_cpu_named_lhm_sensor_wins_and_gpu_is_ignored(self):
+        # v1.6.4 (F-E): only CPU-named LHM sensors count ("CPU
+        # Package" / "Core #1"); a GPU sensor and a board sensor are
+        # ignored, and the MSAcpi zone is NOT a CPU temp at all.
+        namespaces = {
+            r"root\wmi": _FakeNS({"MSAcpi_ThermalZoneTemperature": [
+                _FakeObj(CurrentTemperature=2972)]}),  # 24.05 C zone
+            r"root\LibreHardwareMonitor": _FakeNS({"Sensor": [
+                _FakeObj(SensorType="Temperature", Name="CPU Package",
+                         Identifier="/intelcpu/0/temperature/0",
+                         Value=61.5),
+                _FakeObj(SensorType="Temperature", Name="Core #1",
+                         Identifier="/intelcpu/0/temperature/1",
+                         Value=58.0),
+                _FakeObj(SensorType="Temperature", Name="GPU Core",
+                         Identifier="/nvidiagpu/0/temperature/0",
+                         Value=70.0),
+                _FakeObj(SensorType="Temperature", Name="Temperature #1",
+                         Identifier="/lpc/nct6798d/temperature/0",
+                         Value=30.0),
+            ]}),
+            r"root\cimv2": _FakeNS({"Win32_TemperatureProbe": []}),
+            r"root\dcim\sysman": _FakeNS({"DCIM_ThermalSensor": [],
+                                          "CIM_TemperatureSensor": []}),
+        }
+        fake = _fake_wmi_module(namespaces)
+        with mock.patch.dict(sys.modules, {"wmi": fake}):
+            temps = monitor_mod._wmi_temps()
+            zones = monitor_mod._wmi_thermal_zones()
+        self.assertEqual(sorted(temps), [58.0, 61.5])
+        self.assertEqual(len(zones), 1)
+        self.assertAlmostEqual(zones[0], 24.05, 2)
+
     def test_probe_and_dcim_via_wmi_package(self):
         namespaces = {
             r"root\wmi": _FakeNS({"MSAcpi_ThermalZoneTemperature": []}),
@@ -243,15 +307,31 @@ class TestWmiTempPaths(unittest.TestCase):
 
 
 class TestReadCpuTemp(unittest.TestCase):
-    def test_counter_reading_is_reported(self):
-        fake = _fake_ps_run_factory([("Get-Counter", "37.0\n")])
+    def test_cpu_sensor_reading_is_reported(self):
+        fake = _fake_ps_run_factory([("LibreHardwareMonitor", "61.5\n")])
         with mock.patch("subprocess.run", fake), \
                 mock.patch.object(sys, "platform", "win32"), \
                 mock.patch.object(monitor_mod, "_wmi_temps",
                                   return_value=[]):
             temp, available = monitor_mod.read_cpu_temp()
         self.assertTrue(available)
-        self.assertAlmostEqual(temp, 37.0, 2)
+        self.assertAlmostEqual(temp, 61.5, 2)
+
+    def test_zone_only_reading_is_not_reported_as_cpu_temp(self):
+        # v1.6.4 (F-E): the field bug — a ~24 C thermal-zone value
+        # presented as CPU temperature. With no CPU sensor answering,
+        # only zones do: read_cpu_temp() is (None, False) and the
+        # caller shows "not available" + the LHM hint instead.
+        with mock.patch.object(sys, "platform", "win32"), \
+                mock.patch.object(monitor_mod, "_wmi_temps",
+                                  return_value=[]), \
+                mock.patch.object(monitor_mod, "_powershell_temps",
+                                  return_value=[]), \
+                mock.patch.object(monitor_mod, "_wmi_thermal_zones",
+                                  return_value=[24.0]), \
+                mock.patch.object(monitor_mod, "_powershell_thermal_zones",
+                                  return_value=[]):
+            self.assertEqual(monitor_mod.read_cpu_temp(), (None, False))
 
     def test_implausible_kelvin_is_never_reported(self):
         # 500 K = 226.85 C: outside 0-125, so no number is invented.

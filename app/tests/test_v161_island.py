@@ -45,10 +45,13 @@ UI = APP_DIR / "ui"
 HTML = (UI / "index.html").read_text(encoding="utf-8")
 JS = (UI / "app.js").read_text(encoding="utf-8")
 MAIN = (APP_DIR / "main.py").read_text(encoding="utf-8")
+BRIDGE_V2 = (APP_DIR / "bridge_v2.py").read_text(encoding="utf-8")
 SPEC = (ROOT / "installer" / "memo-ai.spec").read_text(encoding="utf-8")
 ISS = (ROOT / "installer" / "memo-ai.iss").read_text(encoding="utf-8")
 ROBOT_PNG = UI / "assets" / "avatar-robot.png"
+MASCOT = UI / "assets" / "mascot.webp"
 ICO = ROOT / "installer" / "memo-ai.ico"
+LONA_ICO = ROOT / "installer" / "lona.ico"
 
 EXPECTED_ICO_SIZES = {16, 32, 48, 64, 128, 256}
 
@@ -115,43 +118,42 @@ def test_startup_creates_island_and_hides_main():
 # ---------------- Item 4: Settings toggle wiring ----------------
 
 def test_settings_toggle_wired():
-    # HTML: the checkbox exists, checked by default, with its label.
-    assert 'id="set-island"' in HTML
-    assert 'data-i18n="island_toggle"' in HTML
-    # i18n: the label exists in both languages, and says honestly
-    # that the change applies after a restart.
-    assert JS.count('island_toggle:') >= 2
-    assert "التغيير يسري بعد إعادة التشغيل" in JS
-    assert "change applies after restart" in JS
+    # v1.6.4 reskin: the toggle is a tg() toggle in the General
+    # section of index.html (the v1 checkbox id="set-island" and the
+    # island_toggle i18n keys are gone - the v2 UI uses inline Arabic
+    # labels, no i18n table). The label still says honestly that the
+    # change applies after a restart.
+    assert "tg('island', 'Dynamic Island (بعد إعادة التشغيل)')" in HTML
     # refreshStatus restores the toggle from the real setting.
-    assert ('setVal("set-island", st.settings.island_enabled !== false)'
-            in JS)
+    assert "S.island = num01(s.island_enabled" in HTML
     # save-general persists the toggle.
-    assert 'island_enabled: $("set-island").checked' in JS
+    assert "island_enabled: S.island" in HTML
 
 
 def test_bridge_save_accepts_island_flag():
-    """Api.save_settings() allowlist includes island_enabled - without
-    this the toggle would look saved and silently do nothing."""
-    tree = ast.parse(MAIN)
+    """v1.6.4 reskin: Api.save_settings() no longer has its own
+    allowlist - it routes through bridge_v2.translate_save_settings_
+    patch(), which maps the UI's island/island_enabled keys onto the
+    island_enabled setting. Without this the toggle would look saved
+    and silently do nothing."""
+    assert "translate_save_settings_patch" in MAIN
+    tree = ast.parse(BRIDGE_V2)
     for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef) and node.name == "Api":
-            for item in node.body:
-                if (isinstance(item, ast.FunctionDef)
-                        and item.name == "save_settings"):
-                    for sub in ast.walk(item):
-                        if isinstance(sub, ast.Tuple):
-                            keys = {e.value for e in sub.elts
-                                    if isinstance(e, ast.Constant)}
-                            assert "island_enabled" in keys
-                            return
-    pytest.fail("Api.save_settings allowlist not found")
+        if isinstance(node, ast.FunctionDef) \
+                and node.name == "translate_save_settings_patch":
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Tuple):
+                    keys = {e.value for e in sub.elts
+                            if isinstance(e, ast.Constant)}
+                    if "island_enabled" in keys:
+                        return
+    pytest.fail("translate_save_settings_patch never maps island_enabled")
 
 
 # ---------------- Item 2: gold robot logo ----------------
 
-def _ico_entries():
-    raw = ICO.read_bytes()
+def _ico_entries(ico_path=ICO):
+    raw = ico_path.read_bytes()
     _reserved, typ, count = struct.unpack("<HHH", raw[:6])
     assert typ == 1
     entries = []
@@ -176,18 +178,33 @@ def test_robot_ico_is_valid_multisize():
 
 
 def test_installer_and_spec_reference_robot_ico():
-    assert ICO.is_file()
-    assert 'icon=os.path.join(ROOT, "installer", "memo-ai.ico")' in SPEC
-    assert "SetupIconFile=memo-ai.ico" in ISS
+    # v1.6.4 reskin: the program icon was renamed memo-ai.ico ->
+    # lona.ico (same gold robot, new name). The spec + Inno script
+    # reference lona.ico, and it is a valid multi-size icon.
+    assert LONA_ICO.is_file()
+    assert 'icon=os.path.join(ROOT, "installer", "lona.ico")' in SPEC
+    assert "SetupIconFile=lona.ico" in ISS
+    assert "memo-ai.ico" not in SPEC and "memo-ai.ico" not in ISS
+    raw, entries = _ico_entries(LONA_ICO)
+    assert {w for w, _h, _b, _s, _o in entries} == EXPECTED_ICO_SIZES
+    for w, _h, bpp, size, offset in entries:
+        assert bpp == 32
+        assert raw[offset:offset + 4] == b"\x89PNG"
+        assert size > 0
+    assert set(Image.open(str(LONA_ICO)).info["sizes"]) == {
+        (s, s) for s in EXPECTED_ICO_SIZES}
 
 
 def test_tray_uses_robot_icon():
-    assert ROBOT_PNG.is_file()
-    img = Image.open(str(ROBOT_PNG))
-    assert img.size == (256, 256)
+    # v1.6.4 reskin: the tray icon is the LONA mascot (the gold robot,
+    # mascot.webp - verified visually: white head, gold glowing eyes,
+    # gold headphones), not avatar-robot.png anymore.
+    assert MASCOT.is_file()
+    img = Image.open(str(MASCOT))
+    assert img.size == (1600, 1600)
     assert img.mode in ("RGB", "RGBA")
-    # main.py points the tray at the robot, not the cat.
-    assert ('icon_path=APP_DIR / "ui" / "assets" / "avatar-robot.png"'
+    # main.py points the tray at the mascot, not the cat.
+    assert ('icon_path=APP_DIR / "ui" / "assets" / "mascot.webp"'
             in MAIN)
     assert ('icon_path=APP_DIR / "ui" / "assets" / "avatar-cat.png"'
             not in MAIN)

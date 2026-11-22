@@ -229,6 +229,11 @@ class TestTray(unittest.TestCase):
             main._APP = None
 
     def test_close_minimizes_without_tray(self):
+        # NOTE (reskin port): left untouched — this fails on the
+        # pristine v1.6.3 tag too (verified 2026-11-22): island_enabled
+        # defaults True since v1.6.1, so hide_main() takes the island
+        # morph path and never reaches the minimize fallback. It is a
+        # PRE-EXISTING failure, not a reskin regression.
         import main
         app, calls = self._app_with_fake_windows()
         try:
@@ -313,19 +318,24 @@ class TestVoiceAvatarPersistence(unittest.TestCase):
 
     def test_avatar_images_exist_and_valid(self):
         from PIL import Image
-        html = _read("app/ui/index.html")
+        # The 4 avatar PNGs still ship in the bundle and stay valid —
+        # but the reskin picker no longer shows them: it shows the 4
+        # gold-circle Arabic letters (ق/ك/و/ب) instead.
         for name in ("cat", "dog", "boy", "girl"):
             p = APP_DIR / "ui" / "assets" / f"avatar-{name}.png"
             self.assertTrue(p.is_file(), f"avatar-{name}.png missing")
             self.assertEqual(p.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
             with Image.open(p) as im:
                 im.load()
-            self.assertIn(f"assets/avatar-{name}.png", html)
         # The three NEW avatars ship at 640x640 (the original cat is
         # 1175x1471 - object-fit: cover handles every size).
         for name in ("dog", "boy", "girl"):
             with Image.open(APP_DIR / "ui" / "assets" / f"avatar-{name}.png") as im:
                 self.assertEqual(im.size, (640, 640), f"avatar-{name} size")
+        html = _read("app/ui/index.html")
+        for entry in ("['cat', 'ق', 'قطة']", "['dog', 'ك', 'كلب']",
+                      "['boy', 'و', 'ولد']", "['girl', 'ب', 'بنت']"):
+            self.assertIn(entry, html, "avatar option missing: " + entry)
 
     def test_speak_uses_saved_voice(self):
         src = _read("app/main.py")
@@ -470,29 +480,31 @@ class TestWhatsAppSettings(unittest.TestCase):
 class TestSettingsReorg(unittest.TestCase):
     def test_menu_and_sections(self):
         html = _read("app/ui/index.html")
-        for section in ("general", "whatsapp", "memory", "system",
-                        "notifications", "voices", "avatar",
-                        "logs", "updates"):
-            self.assertIn(f'data-section="{section}"', html)
-            self.assertIn(f'id="section-{section}"', html)
-        # v1.6.0 adds 5 sections (themes, api-keys, self-view,
-        # first-run, backup), each with its own back button: 9 + 5.
-        # v1.6.1: the invite code left Settings for the first-launch
-        # gate, so first-run has no section/back button anymore: 9 + 4.
-        self.assertEqual(html.count('class="back-btn'), 13)
-        self.assertIn('id="settings-menu"', html)
+        # v1.6.4 reskin: 13 Settings sections (SEC in index.html), each
+        # with a menu button (renderMenu) and a Bsec builder; the menu
+        # and the section back button are rendered by renderMenu /
+        # renderSec into #setRoot.
+        for section in ("general", "wa", "memory", "health", "notif",
+                        "sound", "avatar", "log", "update", "themes",
+                        "api", "self", "backup"):
+            self.assertIn(f"['{section}',", html, section)
+            self.assertIn(f"{section}: function ()", html, section)
+        self.assertIn("function renderMenu()", html)
+        self.assertIn("function renderSec(id)", html)
+        self.assertIn("data-back", html)
+        self.assertIn("data-quit", html)
+        self.assertIn("data-save", html)
         # Quit lives on the menu; Save lives in its own section.
-        self.assertIn('id="quit-btn"', html)
-        self.assertIn('id="save-general"', html)
-        self.assertIn('id="save-whatsapp"', html)
-        # General holds the owner code + speaker toggle.
-        self.assertIn('id="set-owner-code"', html)
-        self.assertIn('id="owner-unlock-btn"', html)
-        self.assertIn('id="set-voice-output"', html)
-        # About: public info only, portfolio + GitHub buttons.
+        self.assertIn("إغلاق البرنامج", html)
+        self.assertIn("حفظ", html)
+        # General holds the owner code + voice toggle.
+        self.assertIn("inp('owner', 'password')", html)
+        self.assertIn("تفعيل وضع المالك", html)
+        self.assertIn("tg('voice'", html)
+        # About: public info only — the General section credits the
+        # developer by name. (The v1 portfolio/GitHub buttons are gone
+        # with the v1 About section; the reskin has no About section.)
         self.assertIn("ENG/Mohamed El Sayed", html)
-        self.assertIn('id="portfolio-btn"', html)
-        self.assertIn('id="github-btn"', html)
         self.assertNotIn("ma4670156", html)
         self.assertNotIn("01557887719", html)
 
@@ -869,17 +881,24 @@ class TestVersionAndInstaller(unittest.TestCase):
 
     def test_version_consistency_v141(self):
         import main
-        self.assertEqual(main.VERSION, "1.6.3")
-        self.assertIn("v1.6.3", _read("app/ui/index.html"))
-        self.assertIn("1, 6, 3, 0",
+        # v1.6.4 reskin: the version is 1.6.4-rc.1; version.json carries
+        # the RC version while its URLs still point at the v1.6.3
+        # release (the RC tag is gated out of the updater manifest).
+        self.assertEqual(main.VERSION, "1.6.4-rc.1")
+        self.assertIn("LONA v\" + B.escapeHtml(VERSION ||",
+                      _read("app/ui/index.html"))
+        self.assertIn("'1.6.4-rc.1'",
                       _read("installer/file_version_info.txt"))
-        self.assertIn("'1.6.3'", _read("installer/file_version_info.txt"))
+        self.assertIn("'1.6.4.0'",
+                      _read("installer/file_version_info.txt"))
         # v1.4.2: the manifest is updated by the post-release commit
         # (af85c62 did this for v1.4.1) - so it must EQUAL the app
         # version now, not lag one behind. Checked after that commit.
         manifest = json.loads(_read("version.json"))
         self.assertEqual(manifest["version"], main.VERSION)
-        self.assertIn("1.6.3", manifest["notes"])
+        self.assertIn("1.6.4-rc.1", manifest["notes"])
+        self.assertIn("v1.6.3", manifest["url"])
+        self.assertIn("v1.6.3", manifest["setup_url"])
 
 
 if __name__ == "__main__":

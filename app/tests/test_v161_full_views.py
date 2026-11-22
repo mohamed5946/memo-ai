@@ -20,12 +20,21 @@ ROOT = Path(__file__).resolve().parents[2]
 HTML = (ROOT / "app" / "ui" / "index.html").read_text(encoding="utf-8")
 JS = (ROOT / "app" / "ui" / "app.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app" / "ui" / "styles.css").read_text(encoding="utf-8")
+# v1.6.4 reskin: the live main window is index.html (inline script) +
+# assets/lona.css. app.js / styles.css are dead v1 files kept in the
+# tree; tests ported to the reskin read the live files below.
+LONA_CSS = (ROOT / "app" / "ui" / "assets" / "lona.css").read_text(
+    encoding="utf-8")
 
-SIDEBAR_VIEWS = ("chat", "device", "themes", "api-keys", "self-view",
-                 "logs", "settings")
-SECTIONS = ("general", "whatsapp", "memory", "system", "notifications",
-            "voices", "avatar", "logs", "themes", "api-keys", "self-view",
-            "backup", "updates")
+# v1.6.4 reskin sidebar destinations (data-v): chat / device / tasks /
+# themes (a popover panel, not a view) / settings (the settings menu).
+# The v1 sidebar entries api-keys / self-view / logs are Settings
+# sections now, not sidebar destinations.
+SIDEBAR_VIEWS = ("chat", "device", "tasks", "themes", "settings")
+# The 13 Settings sections (SEC in index.html), each with a Bsec
+# builder and a menu button with an inline-SVG icon.
+SECTIONS = ("general", "wa", "memory", "health", "notif", "sound",
+            "avatar", "log", "update", "themes", "api", "self", "backup")
 
 
 class TestNoModalForNavigation(unittest.TestCase):
@@ -49,43 +58,44 @@ class TestNoModalForNavigation(unittest.TestCase):
 class TestEverySidebarDestinationIsAFullView(unittest.TestCase):
     def test_sidebar_buttons_still_exist(self):
         for view in SIDEBAR_VIEWS:
-            self.assertIn(f'data-view="{view}"', HTML, view)
+            self.assertIn(f'data-v="{view}"', HTML, view)
 
     def test_chat_and_device_views_unchanged(self):
-        self.assertIn('id="view-chat"', HTML)
-        self.assertIn('id="view-device"', HTML)
+        self.assertIn('class="view" data-v="chat"', HTML)
+        self.assertIn('class="view page" data-v="device"', HTML)
 
     def test_settings_menu_is_a_main_view(self):
-        self.assertIn(
-            'id="settings-menu" class="main-view settings-view" hidden',
-            HTML)
+        # The settings menu is the data-v="settings" view; renderMenu()
+        # builds its 13 section buttons into #setRoot.
+        self.assertIn('class="view page" data-v="settings"', HTML)
+        self.assertIn('id="setRoot"', HTML)
+        self.assertIn("function renderMenu()", HTML)
 
     def test_every_section_is_a_main_view(self):
+        # Every section is a SEC entry with a Bsec builder, rendered
+        # into the settings view by renderSec() — no modal, no separate
+        # static section markup anymore.
         for section in SECTIONS:
-            self.assertIn(
-                f'id="section-{section}" class="main-view settings-view"',
-                HTML, section)
+            self.assertIn(f"['{section}',", HTML, section)
+            self.assertIn(f"{section}: function ()", HTML, section)
+        self.assertIn("function renderSec(id)", HTML)
 
     def test_views_live_inside_main_col(self):
-        main_col = HTML.split('id="main-col"')[1].split(
-            'id="invite-gate"')[0]
-        for section in SECTIONS:
-            self.assertIn(f'id="section-{section}"', main_col, section)
-        self.assertIn('id="settings-menu"', main_col)
-        self.assertIn('id="view-chat"', main_col)
-        self.assertIn('id="view-device"', main_col)
+        # The views live inside .main (the reskin's main column):
+        # chat / device / tasks / settings + the settings root.
+        main = HTML.split('<div class="main">')[1]
+        for view in ("chat", "device", "tasks", "settings"):
+            self.assertIn(f'data-v="{view}"', main, view)
+        self.assertIn('id="setRoot"', main)
+        self.assertIn('id="thGrid"', main)
 
     def test_all_views_start_hidden_except_chat(self):
         # Default view is chat; every other view must start hidden or it
         # would render below the chat in the main column.
-        self.assertIn('id="view-device" hidden', HTML)
-        for section in SECTIONS:
-            self.assertIn(
-                f'id="section-{section}" class="main-view settings-view" hidden',
-                HTML, section)
-        self.assertIn(
-            'id="settings-menu" class="main-view settings-view" hidden',
-            HTML)
+        self.assertIn('<div class="view" data-v="chat">', HTML)
+        self.assertIn('data-v="device" hidden', HTML)
+        self.assertIn('data-v="tasks" hidden', HTML)
+        self.assertIn('data-v="settings" hidden', HTML)
 
     def test_show_view_hides_settings_views_for_chat_device(self):
         block = JS.split("function showView")[1].split(
@@ -158,8 +168,15 @@ class TestSectionWiringUnchanged(unittest.TestCase):
             self.assertIn(needle, sec, needle)
 
     def test_back_button_count_unchanged(self):
-        # 13 sections, one back button each (menu has none).
-        self.assertEqual(HTML.count('class="back-btn btn-3d"'), 13)
+        # 13 sections, one back button each — in the reskin they share a
+        # single data-back template rendered by renderSec() for whichever
+        # section is open (so the static markup has exactly one).
+        self.assertEqual(HTML.count("data-back"), 1)
+        m = re.search(r"var SEC = \[(.*?)\];", HTML, re.S)
+        self.assertIsNotNone(m, "SEC list missing from index.html")
+        sec = re.findall(r"\['([a-z]+)',", m.group(1))
+        self.assertEqual(len(sec), 13, f"expected 13 sections, got {sec}")
+        self.assertEqual(sorted(sec), sorted(SECTIONS))
 
 
 if __name__ == "__main__":

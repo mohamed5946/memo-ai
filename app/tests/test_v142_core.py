@@ -618,17 +618,28 @@ class TestMonitorNotificationApi(unittest.TestCase):
         self.assertEqual(alerts[0]["level"], "warn")
 
     def test_ui_has_system_and_notification_sections(self):
+        # v1.6.4 reskin: system health is the "health" section (monitor
+        # toggle + thresholds r1-r8) and notifications the "notif"
+        # section (toggle + important apps/keywords), both rendered by
+        # the Bsec builders in index.html. The device view refreshes
+        # the live overview every 5s (refreshDevice /
+        # get_device_overview). The v1 alerts banner is gone — monitor
+        # alerts surface via the in-app / Windows-toast toggles instead.
         html = _read("app/ui/index.html")
-        js = _read("app/ui/app.js")
-        css = _read("app/ui/styles.css")
-        for section in ("system", "notifications"):
-            self.assertIn(f'data-section="{section}"', html)
-            self.assertIn(f'id="section-{section}"', html)
-        self.assertIn("refreshMonitor", js)
-        self.assertIn("refreshNotifications", js)
-        self.assertIn("pollAlerts", js)
-        self.assertIn('id="alerts"', html)
-        self.assertIn(".alert-banner", css)
+        for section in ("health", "notif"):
+            self.assertIn(f"['{section}',", html, section)
+            self.assertIn(f"{section}: function ()", html, section)
+        self.assertIn("tg('mon'", html)  # monitor toggle (health)
+        for threshold in ("r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8"):
+            self.assertIn(f"'{threshold}'", html, threshold)
+        self.assertIn("tg('notif'", html)  # notifications toggle
+        self.assertIn("data-i='apps'", html)  # important apps
+        self.assertIn("data-i='kws'", html)  # important keywords
+        self.assertIn("tg('inapp'", html)  # in-app alert
+        self.assertIn("tg('toast'", html)  # Windows toast alert
+        self.assertIn("refreshDevice", html)
+        self.assertIn("get_device_overview", html)
+        self.assertIn("setInterval(refreshDevice, 5000)", html)
 
 
 if __name__ == "__main__":

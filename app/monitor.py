@@ -16,6 +16,7 @@
 
 import ctypes
 import os
+import re
 import sys
 import threading
 import time
@@ -67,6 +68,11 @@ _TEMP_PROBE_INTERVAL_SEC = 600
 # powershell.exe every 5 s for numbers that barely move is pure waste.
 _SAMPLE_FAST_SEC = 5
 _SAMPLE_SLOW_SEC = 60
+# v1.6.4 perf (b): the GPU counter is itself a PowerShell spawn, so
+# it is probed at most this often inside the 60 s slow sample - the
+# Device tab reads the cache every 5 s, so the display never waits
+# on it, and GPU usage moves too slowly to justify a spawn a minute.
+_GPU_PROBE_INTERVAL_SEC = 120
 # A cached reading older than this is re-seeded synchronously with fast
 # fields only (psutil, never a subprocess) -- so a dead sampler thread
 # can never leave the UI showing stale numbers, and the UI thread never
@@ -80,6 +86,31 @@ _TEMP_PLAUSIBLE_C = (0.0, 125.0)
 
 def _now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ---------------------------------------------------------------------------
+# Island toast payload (v1.6.4, WindyLand method: brief island expansions
+# for alerts instead of only in-app banners)
+# ---------------------------------------------------------------------------
+
+def alert_to_toast(alert: dict) -> dict:
+    """Map a monitor/notification alert dict to the island toast
+    payload {"title", "body", "kind", "level"}. Pure - no I/O, no
+    window access. The caller (MemoApp._on_system_alert) decides
+    whether the island is enabled and shows it with
+    island_window.evaluate_js("showIslandToast(...)"). Unknown or
+    empty alerts still return a payload with empty strings - the
+    caller skips toasts with no title AND no body."""
+    alert = alert or {}
+    title = str(alert.get("title_ar") or alert.get("title") or "")
+    body = str(alert.get("message_ar") or alert.get("message") or "")
+    notification_title = str(alert.get("notification_title") or "")
+    if notification_title and notification_title not in body:
+        body = f"{notification_title}\n{body}" if body \
+            else notification_title
+    return {"title": title, "body": body,
+            "kind": str(alert.get("kind") or ""),
+            "level": str(alert.get("level") or "warn")}
 
 
 def _system_drive() -> str:
@@ -116,39 +147,53 @@ def _probe_value_to_celsius(raw) -> float | None:
     return None
 
 
+# v1.6.4 (F-E): Libre/OpenHardwareMonitor sensor names. A CPU sensor is
+# named like "CPU Package" or "Core #1" (identifier like
+# "/intelcpu/0/temperature/0"); a GPU sensor ("GPU Core") or a board
+# sensor ("Temperature #1") is NOT a CPU sensor, and its value must
+# never be reported as CPU temperature.
+_CPU_TEMP_SENSOR_RE = re.compile(r"cpu|core|package", re.I)
+_GPU_SENSOR_RE = re.compile(r"gpu", re.I)
+
+
+def _is_cpu_temp_sensor(name, identifier="") -> bool:
+    """True when an LHM/OHM Temperature sensor measures the CPU."""
+    text = f"{name or ''} {identifier or ''}"
+    if _GPU_SENSOR_RE.search(text):
+        return False
+    return bool(_CPU_TEMP_SENSOR_RE.search(text))
+
+
 def _wmi_temps() -> list:
-    """Temperatures via the `wmi` package, if it happens to be installed.
-    Tries MSAcpi_ThermalZoneTemperature (root\\wmi) and the
-    LibreHardwareMonitor / OpenHardwareMonitor Sensor classes, plus
-    (v1.6.1) Win32_TemperatureProbe (root\\cimv2) and the Dell DCIM
-    thermal sensors (root\\dcim\\sysman, present when Dell Command
-    Monitor is installed). Every namespace is best-effort: a missing
-    namespace or class is skipped silently, never raised."""
+    """CPU temperatures via the `wmi` package, if it happens to be
+    installed. Sources, in order (v1.6.4 F-E): LibreHardwareMonitor /
+    OpenHardwareMonitor sensors NAMED for the CPU (CPU Package / Core)
+    first, then Win32_TemperatureProbe (root\\cimv2), then the Dell
+    DCIM thermal sensors (root\\dcim\\sysman). ACPI thermal zones are
+    NOT here — see _wmi_thermal_zones(): a zone reading (~24 C room
+    value) is not a CPU temperature and must never be presented as
+    one. Every namespace is best-effort: a missing namespace or class
+    is skipped silently, never raised."""
     temps = []
     try:
         import wmi as _wmi
     except Exception:
         return temps
-    try:
-        c = _wmi.WMI(namespace=r"root\wmi")
-        for zone in c.MSAcpi_ThermalZoneTemperature():
-            kelvin_tenths = getattr(zone, "CurrentTemperature", None)
-            if kelvin_tenths:
-                temps.append(kelvin_tenths / 10.0 - 273.15)
-    except Exception:
-        pass
     for namespace in (r"root\LibreHardwareMonitor",
                       r"root\OpenHardwareMonitor"):
         try:
             c = _wmi.WMI(namespace=namespace)
             for sensor in c.Sensor():
                 if getattr(sensor, "SensorType", "") == "Temperature":
+                    if not _is_cpu_temp_sensor(
+                            getattr(sensor, "Name", ""),
+                            getattr(sensor, "Identifier", "")):
+                        continue
                     value = getattr(sensor, "Value", None)
                     if value is not None:
                         temps.append(float(value))
         except Exception:
             pass
-    # v1.6.1: generic temperature probes + Dell DCIM sensors.
     try:
         c = _wmi.WMI(namespace=r"root\cimv2")
         for probe in c.Win32_TemperatureProbe():
@@ -174,31 +219,82 @@ def _wmi_temps() -> list:
     return temps
 
 
+def _wmi_thermal_zones() -> list:
+    """ACPI thermal-zone readings via the `wmi` package
+    (MSAcpi_ThermalZoneTemperature, root\\wmi). These are ZONE
+    temperatures, not CPU temperatures — read_cpu_temp() only logs
+    them (honestly labelled) and never reports them as CPU temp."""
+    temps = []
+    try:
+        import wmi as _wmi
+    except Exception:
+        return temps
+    try:
+        c = _wmi.WMI(namespace=r"root\wmi")
+        for zone in c.MSAcpi_ThermalZoneTemperature():
+            kelvin_tenths = getattr(zone, "CurrentTemperature", None)
+            if kelvin_tenths:
+                temps.append(kelvin_tenths / 10.0 - 273.15)
+    except Exception:
+        pass
+    return temps
+
+
 def _powershell_temps() -> list:
-    """Temperatures via ONE PowerShell spawn (v1.6.2 B24): a single
-    script tries every source in order (MSAcpi thermal zones,
-    Libre/OpenHardwareMonitor sensors, Thermal Zone perf counters,
-    Win32_TemperatureProbe, Dell DCIM sensors) and emits the first
-    source's Celsius values, one per line. The old code spawned up to
-    7 separate powershell.exe processes, one per source. Each stage is
-    a cheap no-op when its source does not exist; the first stage that
-    yields a value wins."""
+    """CPU temperatures via ONE PowerShell spawn (v1.6.2 B24): a single
+    script tries every CPU source in order (Libre/OpenHardwareMonitor
+    sensors NAMED for the CPU — CPU Package / Core — then
+    Win32_TemperatureProbe, then Dell DCIM sensors) and emits the
+    first source's Celsius values, one per line. The old code spawned
+    up to 7 separate powershell.exe processes, one per source. Each
+    stage is a cheap no-op when its source does not exist; the first
+    stage that yields a value wins. ACPI thermal zones are NOT
+    queried here (v1.6.4 F-E) — see _powershell_thermal_zones(): a
+    zone reading (~24 C room value) is not a CPU temperature."""
+    import subprocess
+
+    script = r"""
+$out = @()
+try { foreach ($ns in 'root/LibreHardwareMonitor','root/OpenHardwareMonitor') { $vals = Get-CimInstance -Namespace $ns -ClassName Sensor -ErrorAction Stop | Where-Object { $_.SensorType -eq 'Temperature' -and $_.Value -ne $null -and (($_.Name -match 'CPU|Core|Package') -or ($_.Identifier -match 'cpu')) -and ($_.Name -notmatch 'GPU') } | Select-Object -ExpandProperty Value; foreach ($v in $vals) { $out += [double]$v }; if ($out.Count -gt 0) { break } } } catch {}
+if ($out.Count -eq 0) {
+  try { $r = Get-CimInstance -Namespace root/cimv2 -ClassName Win32_TemperatureProbe -ErrorAction Stop | Select-Object -ExpandProperty CurrentReading; foreach ($v in $r) { $c = $null; if ($v -gt 200) { $c = $v / 10 - 273.15 } elseif ($v -ge 0 -and $v -le 125) { $c = [double]$v }; if ($null -ne $c) { $out += $c } } } catch {}
+}
+if ($out.Count -eq 0) {
+  try { foreach ($cls in 'DCIM_ThermalSensor','CIM_TemperatureSensor') { $r = Get-CimInstance -Namespace root/dcim/sysman -ClassName $cls -ErrorAction Stop | Select-Object -ExpandProperty CurrentReading; foreach ($v in $r) { $c = $null; if ($v -gt 200) { $c = $v / 10 - 273.15 } elseif ($v -ge 0 -and $v -le 125) { $c = [double]$v }; if ($null -ne $c) { $out += $c } }; if ($out.Count -gt 0) { break } } } catch {}
+}
+$out | ForEach-Object { "$_" }
+"""
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive",
+             "-Command", script],
+            capture_output=True, text=True, timeout=15,
+            **hidden_spawn.run_kwargs())
+        out = proc.stdout or ""
+    except Exception:
+        return []
+    temps = []
+    for line in out.splitlines():
+        try:
+            temps.append(float(line.strip()))
+        except (TypeError, ValueError):
+            pass
+    return temps
+
+
+def _powershell_thermal_zones() -> list:
+    """ACPI thermal-zone readings via ONE PowerShell spawn (v1.6.4
+    F-E): MSAcpi thermal zones, then the Thermal Zone perf counters.
+    ZONE temperatures, not CPU temperatures — read_cpu_temp() only
+    logs them (honestly labelled) and never reports them as CPU
+    temp. Hidden spawn (no console flash), like _powershell_temps."""
     import subprocess
 
     script = r"""
 $out = @()
 try { $t = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop | Select-Object -ExpandProperty CurrentTemperature; foreach ($v in $t) { $out += ($v / 10 - 273.15) } } catch {}
 if ($out.Count -eq 0) {
-  try { foreach ($ns in 'root/LibreHardwareMonitor','root/OpenHardwareMonitor') { $vals = Get-CimInstance -Namespace $ns -ClassName Sensor -ErrorAction Stop | Where-Object { $_.SensorType -eq 'Temperature' -and $_.Value -ne $null } | Select-Object -ExpandProperty Value; foreach ($v in $vals) { $out += [double]$v }; if ($out.Count -gt 0) { break } } } catch {}
-}
-if ($out.Count -eq 0) {
   try { $c = Get-Counter '\Thermal Zone Information(*)\Temperature' -ErrorAction Stop | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue; foreach ($v in $c) { $out += ([double]$v - 273.15) } } catch {}
-}
-if ($out.Count -eq 0) {
-  try { $r = Get-CimInstance -Namespace root/cimv2 -ClassName Win32_TemperatureProbe -ErrorAction Stop | Select-Object -ExpandProperty CurrentReading; foreach ($v in $r) { $c = $null; if ($v -gt 200) { $c = $v / 10 - 273.15 } elseif ($v -ge 0 -and $v -le 125) { $c = [double]$v }; if ($null -ne $c) { $out += $c } } } catch {}
-}
-if ($out.Count -eq 0) {
-  try { foreach ($cls in 'DCIM_ThermalSensor','CIM_TemperatureSensor') { $r = Get-CimInstance -Namespace root/dcim/sysman -ClassName $cls -ErrorAction Stop | Select-Object -ExpandProperty CurrentReading; foreach ($v in $r) { $c = $null; if ($v -gt 200) { $c = $v / 10 - 273.15 } elseif ($v -ge 0 -and $v -le 125) { $c = [double]$v }; if ($null -ne $c) { $out += $c } }; if ($out.Count -gt 0) { break } } } catch {}
 }
 $out | ForEach-Object { "$_" }
 """
@@ -246,20 +342,37 @@ def _read_cpu_temp_capped(timeout: float = 15.0) -> tuple:
 def read_cpu_temp() -> tuple:
     """Best-effort CPU temperature.
 
-    Returns (temp_c or None, available bool). On non-Windows, or when no
-    WMI / perf-counter source answers, this is (None, False) - the
-    caller MUST report that honestly and never substitute a number.
-    Sources, in order: MSAcpi thermal zones, Libre/OpenHardwareMonitor
-    sensors, Thermal Zone perf counters, Win32_TemperatureProbe, Dell
-    DCIM thermal sensors (v1.6.1 added the last three)."""
+    Returns (temp_c or None, available bool). On non-Windows, or when
+    no CPU sensor answers, this is (None, False) - the caller MUST
+    report that honestly (the Device panel shows _TEMP_HINT: "not
+    available on this device" + the LibreHardwareMonitor install
+    link) and never substitute a number. CPU sources, in order
+    (v1.6.4 F-E): Libre/OpenHardwareMonitor sensors NAMED for the CPU
+    (CPU Package / Core), Win32_TemperatureProbe, Dell DCIM thermal
+    sensors. ACPI thermal zones are probed LAST and only for the
+    diagnostics log, labelled as what they are — a zone/room reading
+    (~24 C), NOT a CPU temperature — so they can never be presented
+    as one again."""
     if sys.platform != "win32":
         return None, False
     candidates = _wmi_temps() or _powershell_temps()
     plausible = [t for t in candidates
                  if _TEMP_PLAUSIBLE_C[0] <= t <= _TEMP_PLAUSIBLE_C[1]]
     if not plausible:
+        # v1.6.4 (F-E): no CPU sensor — say so honestly. A thermal
+        # zone may still answer, but its value is a zone/room reading,
+        # not CPU temperature: log it labelled as such, never return
+        # it. The caller shows the LibreHardwareMonitor hint instead.
+        zone = _wmi_thermal_zones() or _powershell_thermal_zones()
+        zone_plausible = [t for t in zone
+                          if _TEMP_PLAUSIBLE_C[0] <= t <= _TEMP_PLAUSIBLE_C[1]]
+        if zone_plausible:
+            info("monitor", "No CPU temperature sensor answered; "
+                            f"thermal zone reads {max(zone_plausible):.1f}C "
+                            "- a zone/room reading, NOT CPU temperature, "
+                            "so it is not reported as one")
         return None, False
-    # Several zones / sensors: the hottest one is the one that matters.
+    # Several sensors: the hottest one is the one that matters.
     return max(plausible), True
 
 
@@ -660,6 +773,11 @@ class SystemMonitor:
         self._active = set()        # alert kinds whose condition is true
         self._last_fired = {}       # kind -> timestamp of last firing
         self._temp_cache = {"at": 0.0, "temp_c": None, "available": False}
+        # v1.6.4 perf (b): last GPU probe (a PowerShell spawn) - see
+        # _sample_slow. None = never probed (first slow sample probes).
+        self._last_gpu_at = None
+        self._last_gpu = {"available": False, "percent": None,
+                          "detail": ""}
         self._uses_injected_sampler = sample_fn is not None
         # v1.6.1 item 21: background sample cache. The UI thread (pywebview
         # bridge) never waits on a subprocess or a full process scan: it
@@ -780,11 +898,21 @@ class SystemMonitor:
         thread -- never on the UI thread, so a slow PowerShell start
         or a full process scan can never freeze the window."""
         temp_c, temp_available = self._read_temp_cached()
-        gpu = {"available": False, "percent": None, "detail": ""}
-        try:
-            gpu = read_gpu_usage()
-        except Exception as exc:
-            warn("monitor", f"GPU reading failed: {exc}")
+        # v1.6.4 perf (b): the GPU counter costs a PowerShell spawn,
+        # so it is probed at most every _GPU_PROBE_INTERVAL_SEC
+        # (120 s) - the UI reads this cache, never the probe, and GPU
+        # usage moves too slowly to justify a spawn every slow sample.
+        gpu = dict(self._last_gpu)
+        now = self._clock()
+        if self._last_gpu_at is None \
+                or now - self._last_gpu_at >= _GPU_PROBE_INTERVAL_SEC:
+            try:
+                gpu = read_gpu_usage()
+            except Exception as exc:
+                warn("monitor", f"GPU reading failed: {exc}")
+                gpu = {"available": False, "percent": None, "detail": ""}
+            self._last_gpu_at = now
+            self._last_gpu = dict(gpu)
         storage = []
         try:
             storage = read_storage()

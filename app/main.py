@@ -316,7 +316,9 @@ import tray as tray_mod
 import updater
 import weather
 import winshape
+import island_canvas
 import autostart
+import bridge_v2
 
 # v1.6.0: backend workstream modules. All guarded like WhatsApp: a
 # missing/broken module never blocks startup - the feature just
@@ -374,16 +376,17 @@ try:
 except Exception:
     wakeword_mod = None
 
-VERSION = "1.6.3"
+VERSION = "1.6.4-rc.1"
 # v1.6.2: bigger default main window (was 960x720) -- more room for
 # the chat. Frameless since v1.6.2: the native title bar is gone and
 # the in-app header owns minimize/maximize/close + drag.
 MAIN_W, MAIN_H = 1280, 860
-ISLAND_W, ISLAND_H = 380, 56
-ISLAND_EXPANDED_H = 120
 # v1.6.2 (F4): the idle pill is 380x60 -- the 190x52 numbers were the
 # old small-pill design; the pill is the full 380-wide island.
 ISLAND_IDLE_W, ISLAND_IDLE_H = 380, 60
+# v1.6.4 reskin (fixed canvas, WindyLand/Nusa method): the island window
+# is created ONCE at the expanded canvas size and never resized.
+ISLAND_CANVAS_W, ISLAND_CANVAS_H = 720, 400
 PET_SIZE = 150
 
 # Single-instance mutex (Windows named mutex, no admin needed).
@@ -422,10 +425,21 @@ _chats_lock = threading.Lock()
 # v1.6.2 (A2/A4): background-check results, same shape as _chats.
 # check_updates() / test_api_key() return at once; the UI polls the
 # matching getter until "checking"/"pending" is False.
-_CHECK_UPDATES = {"checking": False, "update": None, "error": None}
+_CHECK_UPDATES = {"checking": False, "update": None, "error": None,
+                  "id": None}
 _CHECK_UPDATES_LOCK = threading.Lock()
 _TEST_KEY_RESULTS: dict = {}
 _TEST_KEY_LOCK = threading.Lock()
+
+# v1.6.4 perf (a): island slow-call results. island_music (SMTC, up
+# to 5 s), island_lyrics (LRCLIB network, up to 8 s) and
+# island_notifications (WinRT, unbounded) MUST NOT run on the
+# pywebview bridge thread - they return {"pending": True, "id"} at
+# once and the island UI polls bridge_v2.job_result(id), exactly
+# like test_api_key / check_updates above. Entry: {"done", "created",
+# "result"}; pruned like _chats (oldest finished first, cap 50).
+_ISLAND_JOBS: dict = {}
+_ISLAND_JOBS_LOCK = threading.Lock()
 
 # Result of the startup bridge-files self-check (None = not run yet).
 _BRIDGE_FILES_OK = None
@@ -441,7 +455,8 @@ ISLAND_BG = "#0D121C"
 PET_BG = "#0A0A0A"
 
 
-def _find_hwnd_by_title(title: str, max_width: int | None = None):
+def _find_hwnd_by_title(title: str, max_width: int | None = None,
+                        max_height: int | None = None):
     """Fallback HWND lookup (EnumWindows): first top-level window whose
     title matches exactly. max_width distinguishes the small island
     ("LONA", <=400px) from the big main window (same title).
@@ -468,8 +483,10 @@ def _find_hwnd_by_title(title: str, max_width: int | None = None):
             if buf.value == title:
                 rect = RECT()
                 user32.GetWindowRect(hwnd, ctypes.byref(rect))
-                if max_width is None or \
-                        (rect.right - rect.left) <= max_width:
+                if (max_width is None or
+                        (rect.right - rect.left) <= max_width) and \
+                        (max_height is None or
+                         (rect.bottom - rect.top) <= max_height):
                     found.append(hwnd)
             return True
 
@@ -608,15 +625,19 @@ def _webview2_version() -> str:
     try:
         import winreg
         guid = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
-        path = f"SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{guid}"
+        paths = (
+            f"SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{guid}",
+            f"SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{guid}",
+        )
         for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
-            try:
-                with winreg.OpenKey(root, path) as key:
-                    val, _ = winreg.QueryValueEx(key, "pv")
-                    if val:
-                        return str(val)
-            except OSError:
-                continue
+            for path in paths:
+                try:
+                    with winreg.OpenKey(root, path) as key:
+                        val, _ = winreg.QueryValueEx(key, "pv")
+                        if val:
+                            return str(val)
+                except OSError:
+                    continue
     except Exception:
         pass
     return ""
@@ -760,15 +781,17 @@ class Api:
             "bridge_files_missing": _BRIDGE_FILES_OK is False,
             "bridge_ready": ready,
             "keys": keys_status(),
-            "settings": {k: v for k, v in _APP.settings.items()
-                         if k != "owner_unlocked"},
+            "settings": bridge_v2.with_v2_aliases(
+                {k: v for k, v in _APP.settings.items()
+                 if k != "owner_unlocked"}),
             "owner_unlocked": _APP.owner_unlocked,
         }
 
     @_log_slow
     def get_settings(self):
-        return {k: v for k, v in _APP.settings.items()
-                if k != "owner_unlocked"}
+        return bridge_v2.with_v2_aliases(
+            {k: v for k, v in _APP.settings.items()
+             if k != "owner_unlocked"})
 
     @_log_slow
     def save_settings(self, new_values):
@@ -777,35 +800,53 @@ class Api:
         except Exception as exc:
             error("app", f"Bad settings payload: {exc}")
             return {"ok": False}
-        for key in ("ai_name", "user_name", "language", "voice",
-                    "greeting_enabled", "voice_output", "avatar",
-                    "pet_visible", "pet_parked", "autostart",
-                    "island_enabled",  # v1.6.1: Settings island toggle
-                    "wakeword_enabled", "wakeword_phrase", "theme",
-                    "deep_think_enabled", "focus_mode",
-                    "quiet_hours_enabled", "companion_enabled",
-                    "tempwatch_enabled", "morning_brief_enabled",
-                    "routine_learning_enabled", "privacy_mode", "exams",
-                    "model_choice"):  # v1.6.2: model picker
-            if key in data:
-                _APP.settings[key] = data[key]
+        if not isinstance(data, dict):
+            return {"ok": False}
+        split = bridge_v2.translate_save_settings_patch(data)
+        canonical = split["settings"]
+        for key, value in canonical.items():
+            _APP.settings[key] = value
         ok = save_settings(_APP.settings)
         info("app", "Settings saved from UI")
-        # v1.3.1: autostart applies immediately (HKCU Run key follows
-        # the setting; the pet toggle takes effect at once too).
         autostart.set_enabled(bool(_APP.settings.get("autostart", True)))
-        # v1.4.1: apply_settings() is NOT called here anymore. It used to
-        # re-render the whole Settings form mid-save (via evaluate_js ->
-        # refreshStatus), which wiped the not-yet-read WhatsApp fields
-        # back to their old values and the handler then saved THOSE -
-        # the v1.4.0 owner-number / missing-QR bug. The JS save handler
-        # re-renders once at the end, after all saves. apply_settings()
-        # itself stays for the flag-on path (pet visibility only).
-        return {"ok": ok}
+        out = {"ok": ok}
+        wa = split.get("whatsapp") or {}
+        if wa:
+            try:
+                wa_res = self.whatsapp_save(wa)
+                out["whatsapp_pending_id"] = wa_res.get("id")
+            except Exception as exc:
+                error("app", f"WhatsApp save from settings failed: {exc}")
+        # Monitor thresholds + wake-word toggle apply at once. The
+        # monitor snapshots settings at start (monitor.py __init__),
+        # so a plain save would only take effect after a restart.
+        # stop/start joins can take ~4s - run off the bridge thread.
+        monitor_changed = any(k.startswith("monitor_") for k in canonical)
+        wake_changed = "wakeword_enabled" in canonical
+        if monitor_changed or wake_changed:
+            def _apply_live():
+                if monitor_changed:
+                    try:
+                        if _APP._monitor is not None:
+                            _APP._monitor.stop()
+                            _APP._monitor = None
+                        _APP._start_monitor()
+                    except Exception as exc:
+                        warn("app", f"Monitor restart after save failed: {exc}")
+                if wake_changed:
+                    try:
+                        if _APP.settings.get("wakeword_enabled"):
+                            _APP.start_wakeword()
+                        else:
+                            _APP.stop_wakeword()
+                    except Exception as exc:
+                        warn("app", f"Wake-word toggle after save failed: {exc}")
+            threading.Thread(target=_apply_live, daemon=True).start()
+        return out
 
     # -- chat --------------------------------------------------------------
     @_log_slow
-    def chat(self, text):
+    def _chat_raw(self, text):
         text = (text or "").strip()
         if not text:
             return {"reply": "", "engine": ""}
@@ -892,6 +933,12 @@ class Api:
         info("app", "Chat started in background (thinking mood on)")
         return {"reply": "", "engine": "groq", "pending": True,
                 "chat_id": chat_id}
+
+    @_log_slow
+    def chat(self, text, opts=None):
+        """v1.6.4 reskin: v2 chat(text, {deep_think}) — applies the
+        per-message Deep Think flag, then runs the v1 chat flow."""
+        return bridge_v2.chat(self, text, opts)
 
     @_log_slow
     def unlock_owner(self, code):
@@ -1163,16 +1210,11 @@ class Api:
     def get_device_overview(self):
         """Live device overview (RAM/CPU/battery/temp/storage/processes/
         mood) - served from the monitor's background sample cache
-        (v1.6.1 item 21), never sampled synchronously on the UI thread."""
-        try:
-            if _APP._monitor is not None:
-                overview = _APP._monitor.get_device_overview()
-            else:
-                overview = _fallback_monitor().get_device_overview()
-            return {"ok": True, "overview": overview}
-        except Exception as exc:
-            error("app", f"get_device_overview failed: {exc}")
-            return {"ok": False, "overview": None}
+        (v1.6.1 item 21), never sampled synchronously on the UI thread.
+        v1.6.4 reskin: translated to the v2 UI's shape by bridge_v2
+        (GB aliases, temp {value,label}, top_processes {name,cpu,
+        mem_mb}) - the v1 keys (incl. mood/mood_reason) are kept."""
+        return bridge_v2.get_device_overview_v2(self)
 
     @_log_slow
     def get_mood(self):
@@ -1237,6 +1279,92 @@ class Api:
         except Exception as exc:
             error("app", f"get_self_view failed: {exc}")
             return {"ok": False, "rows": []}
+
+    # -- v1.6.4 reskin: v2 UI bridge methods -------------------------
+    # Thin delegates to bridge_v2 (the v2 UI's flat call names).
+    @_log_slow
+    def set_muted(self, on):
+        return bridge_v2.set_muted(self, on)
+
+    @_log_slow
+    def get_morning_brief(self):
+        return bridge_v2.get_morning_brief(self)
+
+    @_log_slow
+    def clean_cache(self, kind="temp"):
+        return bridge_v2.clean_cache(self, kind)
+
+    @_log_slow
+    def get_clean_cache_result_v2(self, req_id):
+        return bridge_v2.get_clean_cache_result_v2(self, req_id)
+
+    @_log_slow
+    def undo_clean(self, token):
+        return bridge_v2.undo_clean(self, token)
+
+    @_log_slow
+    def get_tasks(self):
+        return bridge_v2.get_tasks(self)
+
+    @_log_slow
+    def add_task(self, text):
+        return bridge_v2.add_task(self, text)
+
+    @_log_slow
+    def toggle_task(self, task_id):
+        return bridge_v2.toggle_task(self, task_id)
+
+    @_log_slow
+    def delete_task(self, task_id):
+        return bridge_v2.delete_task(self, task_id)
+
+    @_log_slow
+    def get_memories(self):
+        return bridge_v2.get_memories(self)
+
+    @_log_slow
+    def delete_memory(self, item_id):
+        return bridge_v2.delete_memory(self, item_id)
+
+    @_log_slow
+    def clear_memories(self):
+        return bridge_v2.clear_memories(self)
+
+    @_log_slow
+    def get_log(self):
+        return bridge_v2.get_log(self)
+
+    @_log_slow
+    def log_error(self, source, message):
+        return bridge_v2.log_error(self, source, message)
+
+    @_log_slow
+    def job_result(self, job_id):
+        return bridge_v2.job_result(self, job_id)
+
+    @_log_slow
+    def get_update_status(self, job_id=None):
+        return bridge_v2.get_update_status(self, job_id)
+
+    @_log_slow
+    def check_owner_code(self, code):
+        return bridge_v2.check_owner_code(self, code)
+
+    @_log_slow
+    def island_expand(self):
+        return bridge_v2.island_expand(self)
+
+    @_log_slow
+    def island_collapse(self):
+        return bridge_v2.island_collapse(self)
+
+    @_log_slow
+    def get_themes_v2(self):
+        return bridge_v2.get_themes_v2(self)
+
+    @_log_slow
+    def set_theme_v2(self, theme_id):
+        return bridge_v2.set_theme_v2(self, theme_id)
 
     @_log_slow
     def get_api_keys_status(self):
@@ -1478,7 +1606,7 @@ class Api:
         return {"done": bool(entry.get("done")), **result}
 
     @_log_slow
-    def request_deep_file_access(self, path):
+    def _request_deep_file_access_raw(self, path=None):
         """Deep-file access (RED): starts the permission-card flow in
         a background thread (never blocks the bridge) and returns a
         pending id; poll get_deep_file_access_result(id)."""
@@ -1495,6 +1623,13 @@ class Api:
                                                "result": result}
         threading.Thread(target=_run, daemon=True).start()
         return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def request_deep_file_access(self, path=None):
+        """v1.6.4 reskin: v2 request_deep_file_access — the ported UI
+        reads res.message synchronously and never polls, so the
+        adapter adds that message at once."""
+        return bridge_v2.request_deep_file_access_v2(self, path)
 
     @_log_slow
     def get_deep_file_access_result(self, req_id):
@@ -1728,15 +1863,12 @@ class Api:
         return {"done": bool(entry.get("done")), **result}
 
     @_log_slow
-    def export_backup(self, path, password):
+    def export_backup(self, password):
         """Export settings + encrypted keys (password from the UI -
-        never logged, never stored)."""
-        try:
-            import backup as backup_mod
-            return backup_mod.export_settings_backup(path, password)
-        except Exception as exc:
-            error("app", f"export_backup failed: {exc}")
-            return {"ok": False, "detail": str(exc)}
+        never logged, never stored). v1.6.4 reskin: one arg (the v2
+        UI passes the password only); the path defaults under
+        DATA_DIR via bridge_v2."""
+        return bridge_v2.export_backup(self, password)
 
     @_log_slow
     def import_backup(self, path, password):
@@ -1792,19 +1924,238 @@ class Api:
 
     @_log_slow
     def island_resize(self, w, h):
-        # v1.2.3: the island animates its window size (idle compact <->
-        # full pill <-> expanded reply). Keep it centered at the top.
-        # v1.3.1: the window REGION follows the size - a resized window
-        # keeps its old region, so re-apply it on every resize step.
+        # v1.6.4 fixed canvas (WindyLand/Nusa): the island window is
+        # NEVER resized anymore. This is a STATE SHIM for the old call
+        # path (island.html calls island_expand/island_collapse, which
+        # call this with 720x400 / 380x60): it records the state and
+        # toggles WS_EX_TRANSPARENT so the invisible canvas band stays
+        # click-through while collapsed. The visual animation is the
+        # .open class in island.html, inside the fixed 720x400 canvas.
+        # No window resize, no region re-application - the region was
+        # applied once at creation and the shape is drawn, not cut.
         try:
-            if _APP.island_window:
-                sw, _sh = screen_size()
-                _APP.island_window.resize(int(w), int(h))
-                _APP.island_window.move(max(0, (sw - int(w)) // 2), 12)
-                _APP.refresh_island_region(int(w), int(h))
+            expanded = int(w) >= ISLAND_CANVAS_W
+            _APP._island_expanded = bool(expanded)
+            hwnd = _APP._island_hwnd
+            if hwnd:
+                island_canvas.set_click_through(hwnd, not expanded)
         except Exception as exc:
-            error("ui", f"Could not resize island: {exc}")
+            error("ui", f"Could not apply island state: {exc}")
         return {"ok": True}
+
+    # -- island features (v1.6.4, app/island_features.py) ----------------
+    # v1.6.4 perf (a): the slow island calls run off the bridge.
+    def _run_island_job(self, fn):
+        """Run fn() on a daemon thread; return {"pending": True, "id"}
+        at once. The island UI polls job_result(id) until done.
+        Same shape as test_api_key / check_updates."""
+        req_id = uuid.uuid4().hex[:8]
+        with _ISLAND_JOBS_LOCK:
+            _ISLAND_JOBS[req_id] = {"done": False,
+                                    "created": time.time(),
+                                    "result": None}
+            if len(_ISLAND_JOBS) > 50:  # prune oldest finished entries
+                for old_id in sorted(
+                        _ISLAND_JOBS,
+                        key=lambda i: _ISLAND_JOBS[i].get("created", 0))[:10]:
+                    if _ISLAND_JOBS[old_id].get("done"):
+                        _ISLAND_JOBS.pop(old_id, None)
+
+        def _run():
+            try:
+                result = fn() or {}
+            except Exception as exc:
+                result = {"ok": False, "detail": str(exc)}
+            with _ISLAND_JOBS_LOCK:
+                entry = _ISLAND_JOBS.get(req_id)
+                if entry is not None:
+                    entry["done"] = True
+                    entry["result"] = result
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"pending": True, "id": req_id}
+
+    @_log_slow
+    def island_music(self):
+        # v1.6.4 perf (a): SMTC read (up to 5 s) off the bridge.
+        import island_features as _isl
+        return self._run_island_job(_isl.now_playing)
+
+    @_log_slow
+    def island_lyrics(self, artist, title, album="", duration=0):
+        # v1.6.4 perf (a): LRCLIB network call (up to 8 s) off the
+        # bridge. Cached per track inside island_features.lyrics.
+        import island_features as _isl
+        return self._run_island_job(
+            lambda: _isl.lyrics(artist, title, album, duration))
+
+    @_log_slow
+    def island_timer_state(self):
+        import island_features as _isl
+        return _isl.get_timer().state()
+
+    @_log_slow
+    def island_timer_start(self, minutes):
+        import island_features as _isl
+        return _isl.get_timer().start_countdown(minutes)
+
+    @_log_slow
+    def island_stopwatch_start(self):
+        import island_features as _isl
+        return _isl.get_timer().start_stopwatch()
+
+    @_log_slow
+    def island_timer_pause(self):
+        import island_features as _isl
+        return _isl.get_timer().pause()
+
+    @_log_slow
+    def island_timer_resume(self):
+        import island_features as _isl
+        return _isl.get_timer().resume()
+
+    @_log_slow
+    def island_timer_reset(self):
+        import island_features as _isl
+        return _isl.get_timer().reset()
+
+    @_log_slow
+    def island_timer_lap(self):
+        import island_features as _isl
+        return _isl.get_timer().lap()
+
+    @_log_slow
+    def island_task_add(self, text, due=None, remind_at=None):
+        import tasks as _tasks
+        return _tasks.add_task(text, due=due, remind_at=remind_at)
+
+    @_log_slow
+    def island_task_set_due(self, task_id, due=None, remind_at=None):
+        import tasks as _tasks
+        return _tasks.set_task_due(task_id, due=due, remind_at=remind_at)
+
+    @_log_slow
+    def island_tasks_due(self):
+        import island_features as _isl
+        return _isl.due_task_reminders()
+
+    @_log_slow
+    def island_clipboard_list(self):
+        # v1.6.4 perf (d): LAZY start - the clipboard watcher starts
+        # the first time this panel is opened, never at launch.
+        _APP._start_island_clipboard()
+        import island_features as _isl
+        return _isl.get_clipboard().list()
+
+    @_log_slow
+    def island_clipboard_set_enabled(self, enabled):
+        """Enable/disable background clipboard capture while the panel
+        is closed. Default False (see settings_store): history is
+        captured only while the panel has been opened, unless the
+        user explicitly opts into background capture. Disabling
+        stops the watcher; enabling starts it at once."""
+        on = bool(enabled)
+        _APP.settings["island_clipboard_enabled"] = on
+        save_settings(_APP.settings)
+        if on:
+            _APP._start_island_clipboard()
+        else:
+            _APP._stop_island_clipboard()
+        return {"ok": True, "island_clipboard_enabled": on}
+
+    @_log_slow
+    def island_clipboard_pin(self, entry_id, pinned):
+        import island_features as _isl
+        return _isl.get_clipboard().pin(entry_id, pinned)
+
+    @_log_slow
+    def island_clipboard_delete(self, entry_id):
+        import island_features as _isl
+        return _isl.get_clipboard().delete(entry_id)
+
+    @_log_slow
+    def island_clipboard_clear(self):
+        import island_features as _isl
+        return _isl.get_clipboard().clear()
+
+    @_log_slow
+    def island_clipboard_copy(self, entry_id):
+        import island_features as _isl
+        return _isl.get_clipboard().copy_back(entry_id)
+
+    @_log_slow
+    def island_shelf_list(self):
+        import island_features as _isl
+        return _isl.shelf_list()
+
+    @_log_slow
+    def island_shelf_add(self):
+        # Add-via-picker: WM_DROPFILES drag-in is not feasible in
+        # pywebview, so the shelf adds through the file dialog.
+        import island_features as _isl
+        try:
+            paths = _APP.island_window.create_file_dialog(
+                webview.OPEN_DIALOG, allow_multiple=True)
+        except Exception as exc:
+            return {"ok": False, "detail": str(exc)}
+        if not paths:
+            return {"ok": False, "detail": "cancelled"}
+        added = []
+        for path in paths:
+            res = _isl.shelf_add(path)
+            if res.get("ok"):
+                added.append(path)
+        return {"ok": bool(added),
+                "files": _isl.shelf_list().get("files", [])}
+
+    @_log_slow
+    def island_shelf_remove(self, entry_id):
+        import island_features as _isl
+        return _isl.shelf_remove(entry_id)
+
+    @_log_slow
+    def island_shelf_open(self, entry_id):
+        import island_features as _isl
+        return _isl.shelf_open(entry_id)
+
+    @_log_slow
+    def island_water_state(self):
+        import island_features as _isl
+        return _isl.water_state()
+
+    @_log_slow
+    def island_water_add(self, ml):
+        import island_features as _isl
+        return _isl.water_add(ml)
+
+    @_log_slow
+    def island_water_goal(self, ml):
+        import island_features as _isl
+        return _isl.water_set_goal(ml)
+
+    @_log_slow
+    def island_water_reminder(self, enabled, interval_min=None):
+        import island_features as _isl
+        return _isl.water_set_reminder(enabled, interval_min)
+
+    @_log_slow
+    def island_prayer(self, method="egypt"):
+        import island_features as _isl
+        return _isl.prayer_times(method=method)
+
+    @_log_slow
+    def island_notifications(self):
+        # v1.6.4 perf (a): WinRT notification read (asyncio.run, no
+        # timeout of its own) off the bridge - it used to block the
+        # whole app for seconds on first WinRT init.
+        import island_features as _isl
+        return self._run_island_job(
+            lambda: _isl.recent_notifications(_APP.settings))
+
+    @_log_slow
+    def island_media_indicators(self):
+        import island_features as _isl
+        return _isl.media_indicators()
 
     @_log_slow
     def minimize_to_island(self):
@@ -1888,9 +2239,11 @@ class Api:
         get_check_updates_result()."""
         with _CHECK_UPDATES_LOCK:
             if _CHECK_UPDATES["checking"]:
-                return {"checking": True}
+                return {"pending": True,
+                        "id": _CHECK_UPDATES.get("id")}
+            req_id = uuid.uuid4().hex[:8]
             _CHECK_UPDATES.update({"checking": True, "update": None,
-                                   "error": None})
+                                   "error": None, "id": req_id})
 
         def _run():
             try:
@@ -1906,7 +2259,7 @@ class Api:
                                            "error": str(exc)})
 
         threading.Thread(target=_run, daemon=True).start()
-        return {"checking": True}
+        return {"pending": True, "id": req_id}
 
     @_log_slow
     def get_check_updates_result(self):
@@ -1969,8 +2322,10 @@ class Api:
                         # apply_downloaded; just quit so it can run.
                         pass
                     else:
+                        import hidden_spawn
                         subprocess.Popen([sys.executable, str(APP_DIR / "main.py")],
-                                         cwd=str(BASE_DIR))
+                                         cwd=str(BASE_DIR),
+                                         **hidden_spawn.popen_kwargs())
                 except Exception as exc:
                     error("update", f"Could not restart after update: {exc}")
                     return
@@ -1980,7 +2335,8 @@ class Api:
                 info("update", "Saved update unusable - re-downloading it")
                 updater.download_update()
         threading.Thread(target=_run, daemon=True).start()
-        return {"ok": True, "installing": True}
+        return {"pending": True, "id": uuid.uuid4().hex[:8],
+                "ok": True, "installing": True}
 
     @_log_slow
     def move_pet(self, x, y):
@@ -2027,19 +2383,52 @@ class Api:
             error("app", f"window_minimize failed: {exc}")
             return {"ok": False, "error": str(exc)}
 
+    def _main_is_maximized(self) -> bool:
+        """Maximized state from Win32, not from _main_maximized.
+
+        GetWindowPlacement().showCmd == SW_SHOWMAXIMIZED (3) is the
+        truth even when the user maximized via Win+Up / double-click
+        on the title bar, which never touches _main_maximized.
+        Falls back to the flag off Windows or on any failure."""
+        try:
+            if sys.platform != "win32":
+                return bool(_APP._main_maximized)
+            hwnd = _find_main_hwnd()
+            if not hwnd:
+                return bool(_APP._main_maximized)
+
+            class WINDOWPLACEMENT(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_uint),
+                            ("flags", ctypes.c_uint),
+                            ("showCmd", ctypes.c_uint),
+                            ("ptMinPosition", ctypes.c_long * 2),
+                            ("ptMaxPosition", ctypes.c_long * 2),
+                            ("rcNormalPosition", ctypes.c_long * 4)]
+
+            placement = WINDOWPLACEMENT()
+            placement.length = ctypes.sizeof(WINDOWPLACEMENT)
+            if not ctypes.windll.user32.GetWindowPlacement(
+                    hwnd, ctypes.byref(placement)):
+                return bool(_APP._main_maximized)
+            return placement.showCmd == 3  # SW_SHOWMAXIMIZED
+        except Exception:
+            return bool(_APP._main_maximized)
+
     @_log_slow
     def window_toggle_maximize(self):
         """Toggle the main window between maximized and restored.
         Returns {"maximized": bool} -- the state AFTER the toggle."""
         try:
             if _APP.main_window is not None:
-                if _APP._main_maximized:
+                if self._main_is_maximized():
                     _APP.main_window.restore()
                     _APP._main_maximized = False
                 else:
                     _APP.main_window.maximize()
                     _APP._main_maximized = True
-            return {"maximized": bool(_APP._main_maximized)}
+            maximized = self._main_is_maximized()
+            _APP._main_maximized = maximized
+            return {"maximized": bool(maximized)}
         except Exception as exc:
             error("app", f"window_toggle_maximize failed: {exc}")
             return {"maximized": bool(_APP._main_maximized),
@@ -2311,13 +2700,10 @@ class Api:
     def get_whatsapp_status(self):
         """Link state for the Settings UI (status + QR + masked number).
         The brain reads the same state via whatsapp.get_state() to answer
-        truthfully about WhatsApp (v1.3.2 system prompt)."""
-        if whatsapp_mod is None:
-            return {"enabled": False, "running": False,
-                    "status": "unavailable", "qr": None,
-                    "linked_phone": None, "owner_configured": False,
-                    "error": "WhatsApp module not available in this build"}
-        return whatsapp_mod.get_state()
+        truthfully about WhatsApp (v1.3.2 system prompt).
+        v1.6.4 reskin: translated to the v2 UI's shape by bridge_v2
+        (connected/number/qr_data_url/message)."""
+        return bridge_v2.get_whatsapp_status_v2(self)
 
     @_log_slow
     def whatsapp_save(self, payload):
@@ -2517,6 +2903,16 @@ class MemoApp:
         self._morph_lock = threading.Lock()
         # v1.3.1 window shaping: HWNDs once known + cached pet rects.
         self._island_hwnd = None
+        self._island_expanded = False
+        self._island_stop = threading.Event()
+        self._island_clipboard_thread = None
+        # v1.6.4 perf (d): the clipboard watcher is LAZY - it starts
+        # on first clipboard-panel open (or when the
+        # island_clipboard_enabled setting opts into background
+        # capture), never at launch. Its own stop event lets the
+        # setting turn it off without touching _island_stop (quit).
+        self._island_clipboard_stop = threading.Event()
+        self._island_clipboard_lock = threading.Lock()
         self._pet_hwnd = None
         self._pet_region_rects = None     # built once from the cat PNG
         self._pet_bubble = False          # is the "مياو!" bubble showing?
@@ -2540,10 +2936,17 @@ class MemoApp:
         files only when their flags are on - a disabled window's files
         are never required)."""
         files = ["index.html", "app.js", "styles.css",
+                 "assets/lona.css", "assets/bridge.js",
+                 "assets/mascot.webp", "assets/fonts/fonts.css",
                  "assets/avatar-cat.png", "assets/avatar-dog.png",
                  "assets/avatar-boy.png", "assets/avatar-girl.png"]
         if self.settings.get("island_enabled", False):
             files.append("island.html")
+        try:
+            if invite_mod is not None and not invite_mod.is_activated():
+                files.append("invite.html")
+        except Exception:
+            pass
         if self.settings.get("pet_enabled", False):
             files += ["pet.html", "assets/cat-run.png"]
         return files
@@ -2560,8 +2963,19 @@ class MemoApp:
         if rect:
             return rect
         sw, _sh = screen_size()
-        return (max(0, (sw - ISLAND_IDLE_W) // 2), 12,
-                ISLAND_IDLE_W, ISLAND_IDLE_H)
+        return (max(0, (sw - ISLAND_CANVAS_W) // 2), 12,
+                ISLAND_CANVAS_W, ISLAND_CANVAS_H)
+
+    def _open_island_from_hover(self):
+        """Passthrough loop: the cursor is over the pill while the
+        window is click-through. Open via the page (it owns the .open
+        class, which calls island_expand -> the island_resize shim)."""
+        if self._island_expanded or self.island_window is None:
+            return
+        try:
+            self.island_window.evaluate_js("openIslandFromHover()")
+        except Exception:
+            pass
 
     def _main_full_rect(self):
         """Rect the main window restores to (last size/position, or the
@@ -2788,17 +3202,12 @@ class MemoApp:
         self.refresh_pet_region()
 
     def refresh_island_region(self, w: int, h: int):
-        """Re-apply the pill roundrect region for the island's current
-        size (called on every island_resize step). No-op off Windows or
-        before the HWND is known."""
-        if not self._island_hwnd:
-            return
-        try:
-            winshape.apply_round_rect_region(
-                self._island_hwnd, int(w), int(h),
-                winshape.island_radius(int(w), int(h)), "island")
-        except Exception as exc:
-            error("app", f"Island region refresh failed: {exc}")
+        """v1.6.4 fixed canvas: NO-OP by design. The region is applied
+        ONCE at creation for the full canvas (island_canvas.
+        apply_island_canvas_region) and never touched again - the shape
+        is drawn in HTML/CSS, the region is only the hit-test bounding
+        box (Nusa lesson). Kept so old callers keep working."""
+        return
 
     def refresh_pet_region(self):
         """Re-apply the pet silhouette region for the current state
@@ -2926,6 +3335,24 @@ class MemoApp:
                     notif_mod.show_toast(item["title"] or "LONA", msg)
                 except Exception:
                     pass
+            # v1.6.4: brief island expansion for the alert (WindyLand
+            # toast). The page owns open/auto-collapse; Python only
+            # hands it the payload (monitor.alert_to_toast).
+            try:
+                if self.settings.get("island_enabled", False) \
+                        and self.island_window is not None:
+                    import monitor as monitor_mod
+                    import json as _json
+                    payload = monitor_mod.alert_to_toast(item)
+                    if payload["title"] or payload["body"]:
+                        self.island_window.evaluate_js(
+                            "showIslandToast("
+                            + _json.dumps(payload["title"],
+                                         ensure_ascii=False) + ", "
+                            + _json.dumps(payload["body"],
+                                         ensure_ascii=False) + ", 6000)")
+            except Exception:
+                pass
         except Exception as exc:
             warn("app", f"Alert delivery failed: {exc}")
 
@@ -3264,6 +3691,11 @@ class MemoApp:
             info("speak", "Voice output is OFF - reply stays text-only "
                           "(no TTS call)")
             return
+        # v1.6.4 reskin: the header mute button (set_muted) silences
+        # future replies too, not just the one currently playing.
+        if self.settings.get("muted", False):
+            info("speak", "Muted - reply stays text-only (no TTS call)")
+            return
         # v1.5 wake-word guard: the app is about to speak, so the
         # always-listening mic must ignore detections until the reply
         # has finished (its own TTS must never re-wake it). Set
@@ -3330,6 +3762,7 @@ class MemoApp:
 
     def quit(self):
         self._quitting = True
+        self._island_stop.set()
         # v1.4.1: stop the tray icon first (it holds a window handle).
         if self._tray is not None:
             try:
@@ -3504,11 +3937,19 @@ class MemoApp:
         # v1.4.1: the island window is NEVER created while island_enabled
         # is False (default) - the code stays, behind the flag.
         if self.settings.get("island_enabled", False) and not not_activated:
-            # The island starts in its IDLE compact state (v1.2.3).
-            island_x = max(0, (sw - ISLAND_IDLE_W) // 2)
+            # v1.6.4 fixed canvas (WindyLand/Nusa): created ONCE at the
+            # expanded canvas size (720x400 logical) and NEVER resized.
+            # The pill/panel animation is pure HTML/CSS inside it.
+            # Centered with the system DPI scale (the passthrough loop
+            # re-places it from the real HWND DPI once known).
+            _scale = island_canvas.system_dpi_scale()
+            _canvas_pw, _canvas_ph = island_canvas.physical_size(
+                ISLAND_CANVAS_W, ISLAND_CANVAS_H, _scale)
+            island_x = island_canvas.center_x(sw, _canvas_pw)
             self.island_window = webview.create_window(
                 "LONA", str(ui_dir / "island.html"),
-                width=ISLAND_IDLE_W, height=ISLAND_IDLE_H, x=island_x, y=12,
+                width=ISLAND_CANVAS_W, height=ISLAND_CANVAS_H,
+                x=island_x, y=12,
                 # v1.6.2 (F4): transparent window -- only the pill
                 # shows, no dark rectangle around it. ISLAND_BG is the
                 # pill's own CSS color (in island.html), never the
@@ -3558,7 +3999,7 @@ class MemoApp:
         try:
             self._tray = tray_mod.TrayManager(
                 on_open=self.show_main, on_quit=self.quit,
-                icon_path=APP_DIR / "ui" / "assets" / "avatar-robot.png")
+                icon_path=APP_DIR / "ui" / "assets" / "mascot.webp")
             if self._tray.start():
                 info("app", "System tray icon started")
             else:
@@ -3635,6 +4076,44 @@ class MemoApp:
             webview.start()
         info("app", "LONA exited")
 
+    def _start_island_clipboard(self) -> bool:
+        """Start the clipboard-history watcher, once. LAZY (v1.6.4
+        perf d): called from Api.island_clipboard_list (first panel
+        open), from Api.island_clipboard_set_enabled(True), or from
+        _apply_window_regions when the island_clipboard_enabled
+        setting opts into background capture. Never at launch
+        unconditionally. Idempotent; False off Windows (the watcher
+        itself is Windows-only). Stops at quit via _island_stop."""
+        try:
+            import island_features as _isl_feat
+        except Exception:
+            return False
+        if not getattr(_isl_feat, "IS_WINDOWS", False):
+            return False
+        with self._island_clipboard_lock:
+            thread = self._island_clipboard_thread
+            if thread is not None and thread.is_alive():
+                return True
+            self._island_clipboard_stop.clear()
+            thread = threading.Thread(
+                target=_isl_feat.clipboard_watch_loop,
+                args=(lambda: self._quitting
+                      or self._island_stop.is_set()
+                      or self._island_clipboard_stop.is_set(),),
+                daemon=True, name="memo-island-clipboard")
+            self._island_clipboard_thread = thread
+            thread.start()
+            info("app", "Island clipboard watcher started "
+                        "(lazy - first panel open or setting enabled)")
+            return True
+
+    def _stop_island_clipboard(self) -> None:
+        """Stop the clipboard watcher (setting turned off). The
+        thread exits within ~0.1 s of the flag; no join here, so a
+        bridge call never waits on it. Quit still stops it too via
+        _island_stop."""
+        self._island_clipboard_stop.set()
+
     def _apply_window_regions(self):
         """Apply the Win32 window regions (v1.3.1, app/winshape.py) to
         the island + pet windows. Runs in the thread webview.start(func)
@@ -3672,19 +4151,37 @@ class MemoApp:
         deadline = time.time() + 60
         while time.time() < deadline and any(pending.values()):
             if pending.get("island"):
-                # v1.3.2: EnumWindows ONLY - the old _window_hwnd() read
-                # window.native.Handle from THIS thread (WinForms creates
-                # a Form's handle on the calling thread -> frozen window).
-                hwnd = _find_hwnd_by_title("LONA", max_width=400)
+                # v1.6.4 fixed canvas: the window is already 720x400 -
+                # find it by title + canvas height (main is 860 tall),
+                # apply the region ONCE, then start the passthrough +
+                # clipboard loops. No region is ever applied again by
+                # this method (the loop owns the Nusa fallback itself).
+                _scale = island_canvas.system_dpi_scale()
+                _max_h = int(ISLAND_CANVAS_H * _scale) + 40
+                _max_w = int(ISLAND_CANVAS_W * _scale) + 40
+                hwnd = _find_hwnd_by_title("LONA", max_width=_max_w,
+                                           max_height=_max_h)
                 if hwnd:
                     self._island_hwnd = hwnd
                     winshape.log_window("island", hwnd, "before region")
-                    rect = winshape.get_window_rect(hwnd)
-                    w, h = (rect[2], rect[3]) if rect else \
-                        (ISLAND_IDLE_W, ISLAND_IDLE_H)
-                    winshape.apply_round_rect_region(
-                        hwnd, w, h, winshape.island_radius(w, h), "island")
+                    island_canvas.apply_island_canvas_region(hwnd)
                     winshape.log_window("island", hwnd, "after region")
+                    self._island_expanded = False
+                    island_canvas.set_click_through(hwnd, True)
+                    island_canvas.start_passthrough_loop(
+                        hwnd,
+                        lambda: bool(self._island_expanded),
+                        self._open_island_from_hover,
+                        lambda: self._quitting
+                        or self._island_stop.is_set())
+                    # v1.6.4 perf (d): NO permanent clipboard thread
+                    # here anymore. The watcher starts lazily on
+                    # first clipboard-panel open (island_clipboard_
+                    # list), or now only when the user explicitly
+                    # opted into background capture.
+                    if self.settings.get("island_clipboard_enabled",
+                                         False):
+                        self._start_island_clipboard()
                     pending["island"] = False
             if pending.get("pet"):
                 hwnd = _find_hwnd_by_title("LONA Pet")
@@ -3703,6 +4200,12 @@ class MemoApp:
 
 
 def main():
+    # v1.6.4 reskin (F-H): the native-host listener can be spawned
+    # standalone by the frozen exe ([exe, --standalone]); it runs the
+    # stdio loop instead of opening the GUI.
+    if "--standalone" in sys.argv:
+        from native_host import _run_standalone
+        raise SystemExit(_run_standalone())
     # v1.6.0 (LONA Browser): Chrome native-messaging host mode.
     # Chrome launches the exe with the extension origin as an argument
     # (the manifest has no args field), so both triggers are needed.

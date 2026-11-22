@@ -137,7 +137,7 @@ class TestCancelPending(unittest.TestCase):
         self.assertEqual(tools_mod.cancel_pending(), 0)
 
     def test_main_chat_cancels_on_new_turn(self):
-        fn = MAIN_SRC.split("def chat(self, text):")[1].split(
+        fn = MAIN_SRC.split("def _chat_raw(self, text):")[1].split(
             "def unlock_owner")[0]
         self.assertIn("tools.cancel_pending()", fn)
 

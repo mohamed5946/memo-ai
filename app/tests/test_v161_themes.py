@@ -350,6 +350,10 @@ def test_palettes_selectable_and_wired_to_real_colours():
 
 HTML = (UI / "index.html").read_text(encoding="utf-8")
 ISLAND = (UI / "island.html").read_text(encoding="utf-8")
+# v1.6.4 reskin: the live styling is assets/lona.css (the global
+# scrollbar rule lives there) and the invite gate is invite.html.
+LONA_CSS = (UI / "assets" / "lona.css").read_text(encoding="utf-8")
+INVITE = (UI / "invite.html").read_text(encoding="utf-8")
 
 # Every scrollable container in styles.css (overflow-y:auto). If a new
 # one is added, update this set — the global * rule covers it by
@@ -448,13 +452,45 @@ def test_scrollbar_thumb_readable_in_every_theme():
 
 
 def test_html_files_add_no_unstyled_scrollbars():
-    # index.html / island.html (workstream F's files — read-only here)
-    # carry no inline overflow styles and no scrollable areas of their
-    # own: everything scrollable lives in styles.css under the global
-    # rule. island.html has its own inline <style> but all its
-    # overflows are hidden/visible — nothing scrolls there. If this
-    # fails, a scrollable area was added to an HTML file: it IS covered
-    # by the global * rule in styles.css, just update the inventory.
-    for name, text in (("index.html", HTML), ("island.html", ISLAND)):
+    # v1.6.4 reskin: the scrollbar styling lives in assets/lona.css —
+    # ONE global themed rule (thin 6px, transparent track, theme-
+    # coloured thumb, no arrows, plus Firefox scrollbar-width/color)
+    # that covers every scrollable area by construction (the * selector
+    # applies to every element on every page that links lona.css).
+    # index.html / invite.html add no scrollable area of their own;
+    # island.html's reply area scrolls, but it is covered by that same
+    # global rule (island.html links lona.css).
+    assert "::-webkit-scrollbar{width:6px;height:6px}" in LONA_CSS
+    assert "::-webkit-scrollbar-track{background:transparent}" in LONA_CSS
+    assert "::-webkit-scrollbar-thumb{background:" in LONA_CSS
+    assert "scrollbar-width:thin" in LONA_CSS
+    assert "scrollbar-color:" in LONA_CSS
+    # The webkit rules are bare (no element qualifier), so they are
+    # global: they style the scrollbar of every element on every page
+    # that links lona.css. (Check per selector: the text between the
+    # previous rule's closing brace and each ::-webkit-scrollbar must
+    # be whitespace only.)
+    no_comments = re.sub(r"/\*.*?\*/", "", LONA_CSS, flags=re.S)
+    for m in re.finditer(r"::-webkit-scrollbar", no_comments):
+        before = no_comments[:m.start()].rsplit("}", 1)[-1]
+        assert before.strip() == "", \
+            "scrollbar rule is not global, selector is: " + repr(before)
+    for name, text in (("index.html", HTML), ("invite.html", INVITE)):
         found = re.findall(r"overflow(?:-y|-x)?\s*:\s*(?:auto|scroll)", text)
         assert not found, f"{name} adds scrollable area(s): {found}"
+    # island.html may scroll (its reply area) — but only under the
+    # global lona.css rule, which island.html links.
+    assert "assets/lona.css" in ISLAND
+    island_scrolls = re.findall(
+        r"overflow(?:-y|-x)?\s*:\s*(?:auto|scroll)", ISLAND)
+    assert island_scrolls, "expected island.html to have a scrollable area"
+    # No page may bring its own VISIBLE scrollbar styling (thumb /
+    # track paints) — one global rule only. Hiding a scrollbar outright
+    # (display:none, as island.html does for its tab strip) leaves no
+    # unstyled bar behind, so it is allowed.
+    for name, text in (("index.html", HTML), ("invite.html", INVITE)):
+        assert "::-webkit-scrollbar" not in text, \
+            f"{name} has its own scrollbar rule"
+    for rule in re.findall(r"::-webkit-scrollbar[^{]*\{([^}]*)\}", ISLAND):
+        assert "display:none" in rule.replace(" ", ""), \
+            "island.html has its own visible scrollbar styling: " + rule

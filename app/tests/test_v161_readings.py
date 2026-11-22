@@ -44,9 +44,13 @@ UI = APP_DIR / "ui"
 HTML = (UI / "index.html").read_text(encoding="utf-8")
 CSS = (UI / "styles.css").read_text(encoding="utf-8")
 JS = (UI / "app.js").read_text(encoding="utf-8")
+# v1.6.4 reskin: the LIVE main window is index.html (inline script) +
+# assets/lona.css. app.js / styles.css are dead v1 files kept in the
+# tree; tests ported to the reskin read the live files below.
+LONA_CSS = (UI / "assets" / "lona.css").read_text(encoding="utf-8")
 
 HINT_URL = ("https://github.com/LibreHardwareMonitor/"
-            "LibreHardwareMonitor/releases")
+            "LibreHardwareMonitor")
 
 
 def _find_jsdom_node_path():
@@ -172,27 +176,27 @@ def test_live_cards_poll_still_refreshes_overview():
 # ---------------- Item 5: cards start at "—", never fake ----------------
 
 def _stat_cards():
-    cards = re.findall(r'<div class="stat-card" data-stat="(\w+)">(.*?)</div></div>',
-                       HTML, re.S)
-    assert {c[0] for c in cards} == {"ram", "cpu", "battery"}, \
-        "expected ram/cpu/battery stat cards, got: " + str(cards)
+    # Reskin stat cards: <b id="vRam|vCpu|vBat">--</b> (+ vTemp), bars
+    # start at width 0 in lona.css (.barx i).
+    cards = re.findall(r'<b id="(vRam|vCpu|vBat|vTemp)"[^>]*>(.*?)</b>',
+                       HTML)
+    assert {c[0] for c in cards} == {"vRam", "vCpu", "vBat", "vTemp"}, \
+        "expected ram/cpu/battery/temp stats, got: " + str(cards)
     return cards
 
 
 def test_stat_cards_start_blank_not_hardcoded():
     for key, body in _stat_cards():
-        assert "—" in body, key + " card has no '—' initial state"
-        assert 'data-sampled="false"' in body, \
-            key + " card is not marked unsampled"
-        assert "--bar-w:0%" in body, key + " bar starts non-zero"
-        assert 'data-target="0"' in body, key + " has a fake target"
+        assert body.strip() == "--", \
+            key + " card has no '--' initial state: " + repr(body)
     # The v1.6.0 fake placeholders must be gone from the stat cards.
-    assert 'data-target="62"' not in HTML
-    assert 'data-target="18"' not in HTML
-    assert 'data-target="87"' not in HTML
-    assert "--bar-w:62%" not in HTML
-    assert "--bar-w:18%" not in HTML
-    assert "--bar-w:87%" not in HTML
+    for fake in ('data-target="62"', 'data-target="18"',
+                 'data-target="87"', "--bar-w:62%", "--bar-w:18%",
+                 "--bar-w:87%", "62%", "18%", "87%"):
+        assert fake not in HTML, "fake placeholder survives: " + fake
+    # Bars start empty (width 0) until the first real sample.
+    m = re.search(r"\.barx i\s*\{([^}]*)\}", LONA_CSS)
+    assert m and "width:0" in m.group(1).replace(" ", "")
 
 
 # ---------------- Item 6: pill nav removed, sidebar keeps all views ----------------
@@ -205,12 +209,11 @@ def test_pill_nav_fully_removed():
 
 
 def test_sidebar_keeps_every_view():
-    for view in ("chat", "device", "themes", "api-keys", "self-view",
-                 "logs", "settings"):
-        assert 'data-view="%s"' % view in HTML, \
+    for view in ("chat", "device", "tasks", "themes", "settings"):
+        assert 'data-v="%s"' % view in HTML, \
             "sidebar lost view: " + view
-    # The header settings gear still opens settings too.
-    assert 'id="settings-btn"' in HTML
+    # The header settings button still opens settings too.
+    assert 'id="setBtn"' in HTML
 
 
 def test_showview_wires_sidebar_only():
@@ -221,27 +224,30 @@ def test_showview_wires_sidebar_only():
 # ---------------- Item 7: sticky composer ----------------
 
 def _composer_rule():
-    rules = re.findall(r"\.composer \{([^}]*)\}", CSS, re.S)
-    assert rules, ".composer rule missing from styles.css"
+    # Reskin composer: .composer-wrap is absolutely pinned to the
+    # bottom of the chat view (lona.css), outside the scroll area.
+    rules = re.findall(r"\.composer-wrap\s*\{([^}]*)\}", LONA_CSS, re.S)
+    assert rules, ".composer-wrap rule missing from lona.css"
     return "\n".join(rules)
 
 
 def test_composer_is_sticky_at_bottom():
     # v1.6.2 (F1): the sticky-inside-the-scroll-area bar is GONE — the
-    # field bug showed cards rendering BELOW it. The composer is now a
-    # direct flex child of .app, pinned at the very bottom by the flex
-    # column, outside the scroll area entirely.
+    # field bug showed cards rendering BELOW it. The composer is now
+    # pinned at the very bottom of the chat view, outside the scroll
+    # area entirely (absolute bottom, inside .view[data-v=chat]).
     rule = _composer_rule()
-    assert "position: sticky" not in rule
-    assert "flex-shrink: 0" in rule
-    # Content scrolling under the bar must not show through it.
-    assert "background:" in rule
-    main_col = HTML.split('id="main-col"')[1]
-    composer_at = main_col.index('<div class="composer"')
-    # The main-col closes (</div> for main-col, </div> for shell)
-    # BEFORE the composer starts: the composer is not inside it.
-    assert main_col[:composer_at].rstrip().endswith("</div>\n</div>"), (
-        "composer must sit outside .main-col, as a direct child of .app")
+    assert "position:absolute" in rule.replace(" ", "")
+    assert "bottom:16px" in rule.replace(" ", "")
+    # The thread (scroll area) closes before the composer starts: the
+    # composer is not inside it.
+    seg = HTML[HTML.index('id="thread"'):HTML.index('class="composer-wrap"')]
+    assert "</div>" in seg, "composer-wrap must sit outside #thread"
+    # The chat scroll area has bottom padding so the last messages
+    # clear the bar.
+    m = re.search(r"\.thread\s*\{([^}]*)\}", LONA_CSS)
+    assert m, ".thread rule missing from lona.css"
+    assert "90px" in m.group(1)
 
 
 def test_chat_scroll_area_clears_the_composer():
@@ -257,10 +263,13 @@ def test_chat_scroll_area_clears_the_composer():
 
 
 def test_composer_keeps_all_controls():
-    for ctrl in ('id="attach-btn"', 'id="deepthink-btn"',
-                 'id="text-input"', 'id="send-btn"', 'id="mic-btn"'):
+    for ctrl in ('id="attachBtn"', 'id="deepBtn"',
+                 'id="chatInput"', 'id="sendBtn"'):
         assert ctrl in HTML, "composer lost control: " + ctrl
-    # Attach menu still offers all four kinds.
+    # NOTE: the v2 composer has no mic button — voice input moved to
+    # the wake word / island. The attach menu below is a REAL GAP (see
+    # test_v160_ui.test_attach_menu_and_deep_think): the attach button
+    # exists but opens no menu in the reskin UI.
     for kind in ("صور", "ملفات", "فيديو", "مستندات"):
         assert 'data-kind="%s"' % kind in HTML
 
@@ -285,21 +294,28 @@ def test_js_temp_hint_never_shows_when_available():
 
 
 def test_js_temp_hint_once_per_session_with_dismiss():
-    assert "let tempHintDismissed = false" in JS
-    assert "!tempHintDismissed" in _refresh_fn_body()
-    assert 'tempHintDismissed = true' in JS
-    assert 'id="temp-hint-dismiss"' in HTML
+    # v1.6.4 reskin: the dismissible once-per-session popup is gone —
+    # the temperature note is a STATIC inline note in the device view
+    # (vTempNote): it shows the LibreHardwareMonitor install link only
+    # when the temperature is unavailable, and the value when it is.
+    # A static note never nags, so there is nothing to dismiss and no
+    # once-per-session flag to keep.
+    assert 'id="vTempNote"' in HTML
+    assert "مش متاحة على الجهاز ده" in HTML
+    assert "tempHintDismissed" not in HTML
+    assert "temp-hint-dismiss" not in HTML
 
 
 def test_temp_hint_markup_lives_in_device_view():
-    dev_start = HTML.index('id="view-device"')
-    chat_start = HTML.index('id="view-chat"')
-    hint_pos = HTML.index('id="temp-hint"')
-    assert dev_start < hint_pos < chat_start, \
-        "temp hint is not inside the device view"
-    assert '<div class="temp-hint" id="temp-hint" hidden>' in HTML
-    assert 'id="temp-hint-text"' in HTML
-    assert 'id="temp-hint-link"' in HTML
+    # The temp note lives inside the device view (data-v="device"),
+    # in the temperature stat card, with the LHM install link.
+    dev_start = HTML.index('class="view page" data-v="device"')
+    tasks_start = HTML.index('class="view page" data-v="tasks"')
+    hint_pos = HTML.index('id="vTempNote"')
+    assert dev_start < hint_pos < tasks_start, \
+        "temp note is not inside the device view"
+    assert 'id="vTemp"' in HTML
+    assert 'id="vTempNote"' in HTML
     assert 'href="%s"' % HINT_URL in HTML
     assert 'target="_blank"' in HTML
 

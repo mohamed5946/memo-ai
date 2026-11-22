@@ -37,6 +37,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import hidden_spawn
+
 from logger import error, info, warn
 
 OLD_APP_DIR_NAME = "Memo AI"
@@ -140,7 +142,8 @@ def _run_old_uninstaller(old_base: Path) -> bool:
         subprocess.Popen(
             [str(uninst), "/VERYSILENT", "/NORESTART",
              "/SUPPRESSMSGBOXES"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **hidden_spawn.popen_kwargs())
         info("app", f"Migration: old uninstaller launched ({uninst})")
         return True
     except Exception as exc:

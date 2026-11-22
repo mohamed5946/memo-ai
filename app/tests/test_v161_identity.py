@@ -128,25 +128,35 @@ class TestRobotIsTheDefaultIdentity(unittest.TestCase):
         self.assertEqual(settings_mod.DEFAULTS["avatar"], "robot")
 
     def test_js_avatar_map_has_robot(self):
-        self.assertIn('robot: "assets/avatar-robot.png"', JS)
-        self.assertIn('let selectedAvatar = "robot";', JS)
-        self.assertIn('selectedAvatar = st.settings.avatar || "robot";', JS)
-        self.assertIn("AVATAR_IMAGES.robot", JS)
+        # v1.6.4 reskin: there is no avatar image map in the UI JS —
+        # the robot IS the mascot image (hero), and the picker offers
+        # only the 4 letter options. The default identity stays the
+        # robot: settings DEFAULTS avatar is "robot" (see
+        # test_defaults_are_lona_and_robot) and the hero shows it.
+        self.assertIn('<img src="assets/mascot.webp" alt="لونا">', HTML)
+        self.assertNotIn("avatar-robot.png", HTML)
 
     def test_header_and_hero_show_robot(self):
-        self.assertIn('<img src="assets/avatar-robot.png" alt="LONA">',
+        self.assertIn('<img src="assets/mascot.webp" alt="لونا">',
                       HTML)
 
     def test_picker_keeps_exactly_four_options(self):
-        for name in ("cat", "dog", "boy", "girl"):
-            self.assertIn(f'data-avatar="{name}"', HTML)
-            self.assertIn(f"assets/avatar-{name}.png", HTML)
-        self.assertNotIn('data-avatar="robot"', HTML)
+        # v2 design: 4 gold-circle Arabic-letter options, no robot
+        # option (the robot is the identity, not a picker choice).
+        for entry in ("['cat', 'ق', 'قطة']", "['dog', 'ك', 'كلب']",
+                      "['boy', 'و', 'ولد']", "['girl', 'ب', 'بنت']"):
+            self.assertIn(entry, HTML, "avatar option missing: " + entry)
+        avatar = HTML.split("avatar: function ()")[1].split("log: function")[0]
+        self.assertNotIn("robot", avatar)
 
     def test_tray_icon_is_robot(self):
         main = (APP_DIR / "main.py").read_text(encoding="utf-8")
-        self.assertIn('icon_path=APP_DIR / "ui" / "assets" / "avatar-robot.png"',
+        # The tray icon is the robot mascot (mascot.webp), not the old
+        # avatar-robot.png.
+        self.assertIn('icon_path=APP_DIR / "ui" / "assets" / "mascot.webp"',
                       main)
+        self.assertNotIn('icon_path=APP_DIR / "ui" / "assets" / "avatar-robot.png"',
+                         main)
 
 
 class TestNoUserVisibleMemo(unittest.TestCase):

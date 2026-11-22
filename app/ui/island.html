@@ -1,477 +1,855 @@
 <!DOCTYPE html>
+<!--
+  LONA Island page (v1.6.4 reskin).
+  Island method adapted from WindyLand (MIT, Copyright (c) 2026 Shabab)
+  - method and interaction ideas only; no WindyLand code, palette,
+  icons, or assets used. Full license text: THIRD_PARTY.md (repo root).
+
+  Fixed canvas (WindyLand method): the window is created once at
+  720x400 and NEVER resized. Collapsed <-> expanded animates purely
+  in CSS inside that canvas (pill 380x60 <-> panel 720x400); the area
+  outside the pill is transparent HTML. The Python side only toggles
+  WS_EX_TRANSPARENT (island_resize is a state shim now) - no window
+  resize, no region re-application, no race.
+-->
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LONA Island</title>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+<link rel="stylesheet" href="assets/lona.css">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: transparent; background-color: transparent; overflow: hidden; }
-  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: #EDF2F7; }
-  /* v1.6.0 THEMES (CSS vars, morph ~450ms) */
-  :root, [data-theme="night-glass"] {
-    --m-bg:#0A0E14; --m-chrome:#0D131C; --m-side:#0D141F; --m-card:#121A26; --m-listbg:#0D141F;
-    --m-bubble:#16202F; --m-pill:rgba(232,201,122,.13); --m-track:#1D2939; --m-line:rgba(140,170,200,.16);
-    --m-text:#EDF2F7; --m-muted:#8FA5B8; --m-accent:#E8C97A; --m-accent2:#67E8F9; --m-on-accent:#131A08;
-    --m-glass:rgba(16,24,36,.72);
-  }
-  [data-theme="calm-space"] {
-    --m-bg:#F4F6F3; --m-chrome:#E9EDE8; --m-side:#EEF1EC; --m-card:#FFFFFF; --m-listbg:#FFFFFF;
-    --m-bubble:#E7EFE9; --m-pill:rgba(46,125,87,.12); --m-track:#DDE5DC; --m-line:#D8DFD6;
-    --m-text:#1E2B23; --m-muted:#64766A; --m-accent:#2E7D57; --m-accent2:#D99A3D; --m-on-accent:#FFFFFF;
-    --m-glass:rgba(255,255,255,.75);
-  }
-  [data-theme="dashboard"] {
-    --m-bg:#101014; --m-chrome:#141419; --m-side:#141419; --m-card:#1A1A21; --m-listbg:#141419;
-    --m-bubble:#1F1F28; --m-pill:rgba(255,176,102,.13); --m-track:#26262F; --m-line:rgba(200,200,220,.13);
-    --m-text:#F2F0EB; --m-muted:#A3A0A8; --m-accent:#FFB066; --m-accent2:#8FD0C5; --m-on-accent:#241203;
-    --m-glass:rgba(22,22,28,.72);
-  }
-  [data-theme="old"] {
-    --m-bg:#0a0e14; --m-chrome:#10151f; --m-side:#0d121c; --m-card:#121826; --m-listbg:#0d121c;
-    --m-bubble:#16202f; --m-pill:rgba(232,201,122,.16); --m-track:#1d2939; --m-line:rgba(255,255,255,.09);
-    --m-text:#f2f4f8; --m-muted:#9aa3b2; --m-accent:#e8c97a; --m-accent2:#67e8f9; --m-on-accent:#231a05;
-    --m-glass:rgba(13,18,28,.72);
-  }
-  body, .island, .island-expanded { transition: background-color .45s ease, color .45s ease, border-color .45s ease; }
-  /* v1.6.2 (F4): NO clock on the collapsed pill at all — the time
-     shows only inside the expanded island (.exp-clock). */
-  .exp-clock { font-size: 13px; font-weight: 700; color: var(--m-text);
-    text-align: end; letter-spacing: .5px; }
-  /* Collapsed island: SMALL compact gold glass pill, ~56-64px tall,
-     like the TOP of the reference image. Robot head in a bubble on the
-     left, overlapping the pill edge. */
-  .island {
-    position: fixed; top: 0; left: 50%; transform: translateX(-50%);
-    width: 380px; height: 60px;
-    background: linear-gradient(180deg, rgba(24,32,46,.92), rgba(13,18,28,.92));
-    border: 1px solid rgba(232,201,122,.55);
-    border-radius: 999px; display: flex; align-items: center; gap: 8px;
-    padding: 6px 10px 6px 58px; cursor: pointer;
-    box-shadow: 0 8px 26px rgba(0,0,0,.5), 0 0 22px rgba(232,201,122,.18), inset 0 1px 0 rgba(255,255,255,.12);
-    transition: border-radius .4s cubic-bezier(.22,1,.36,1), height .45s ease, width .45s ease;
-  }
-  .island .robot-bubble {
-    position: absolute; inset-inline-start: 0; top: 50%; transform: translateY(-50%);
-    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
-    background: radial-gradient(circle at 35% 30%, #2a3648, #0d121c 70%);
-    border: 1px solid rgba(232,201,122,.6);
-    box-shadow: 0 0 18px rgba(255,207,94,.35);
-    display: flex; align-items: center; justify-content: center; overflow: visible;
-  }
-  .island .robot-bubble svg { width: 42px; height: 42px; }
-  .island .texts { flex: 1; min-width: 0; color: #f2f4f8; }
-  .island .agent-line { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 700; white-space: nowrap; }
-  .island .agent-line .green-dot { width: 8px; height: 8px; border-radius: 50%; background: #3ECF8E; box-shadow: 0 0 8px #3ECF8E; animation: pulse-dot 2.2s ease-in-out infinite; }
-  @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
-  .island .listen-line { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
-  .island .wave { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
-  .island .wave i { width: 3px; background: #E8C97A; border-radius: 2px; box-shadow: 0 0 6px rgba(232,201,122,.7); animation: wave 1s ease-in-out infinite; }
-  .island .wave i:nth-child(1){height:6px} .island .wave i:nth-child(2){height:12px;animation-delay:.15s}
-  .island .wave i:nth-child(3){height:16px;animation-delay:.3s} .island .wave i:nth-child(4){height:10px;animation-delay:.45s}
-  .island .wave i:nth-child(5){height:7px;animation-delay:.6s}
-  @keyframes wave { 0%,100% { transform: scaleY(.6); } 50% { transform: scaleY(1); } }
-  .island .listen-text { font-size: 12.5px; color: #E8C97A; font-weight: 700; }
-  .island .round-btn { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
-    border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #EDF2F7;
-    font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-    transition: transform .18s cubic-bezier(.22,1,.36,1), background .25s ease; }
-  .island .round-btn:active { transform: scale(.9); }
-  .island .round-btn.recording { color: #f87171; border-color: rgba(248,113,113,.6); animation: rec 1.1s ease-in-out infinite; }
-  @keyframes rec { 0%,100% { box-shadow: 0 0 12px rgba(248,113,113,.25); } 50% { box-shadow: 0 0 28px rgba(248,113,113,.5); } }
-  /* Robot moods: gold glowing eyes/mouth on the dark screen — NEVER white. */
-  .robot .eye, .robot .mouth { fill: #FFCF5E; filter: drop-shadow(0 0 3px rgba(255,207,94,.9)); }
-  .robot .blink { transform-origin: 50% 50%; animation: robot-blink 4.8s infinite; }
-  @keyframes robot-blink { 0%, 93%, 100% { transform: scaleY(1); } 94.5% { transform: scaleY(.08); } 96% { transform: scaleY(1); } }
-  .robot-wrap { cursor: pointer; }
-  .robot-wrap.react { animation: reactJump .72s cubic-bezier(.22,1,.36,1); }
-  @keyframes reactJump { 0% { transform: translateY(0) scale(1) rotate(0); } 30% { transform: translateY(-8px) scale(1.07) rotate(4deg); }
-    55% { transform: translateY(0) scale(1.02) rotate(-4deg); } 75% { transform: translateY(-3px) scale(1.03) rotate(2deg); } 100% { transform: translateY(0) scale(1) rotate(0); } }
-  .robot-wrap.wake { animation: wakePop .45s cubic-bezier(.22,1,.36,1); }
-  @keyframes wakePop { 0% { transform: scale(.85); opacity: .6; } 60% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
-  .robot-bubble-say { position: absolute; top: -8px; inset-inline-start: 56px; background: var(--m-accent); color: var(--m-on-accent);
-    font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; white-space: nowrap;
-    opacity: 0; pointer-events: none; transition: opacity .25s ease; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
-  .robot-bubble-say.show { opacity: 1; }
-  .mood-nayem .robot { animation: robot-breathe 3.6s ease-in-out infinite; }
-  @keyframes robot-breathe { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-  .mood-sahee .robot { animation: robot-bob 2.6s ease-in-out infinite; }
-  @keyframes robot-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-  .mood-fudooli .robot { animation: robot-tilt 4.4s ease-in-out infinite; }
-  .mood-bifakkar .robot { animation: robot-tilt2 3.4s ease-in-out infinite; }
-  @keyframes robot-tilt { 0%,100% { transform: rotate(0); } 50% { transform: rotate(5deg); } }
-  @keyframes robot-tilt2 { 0%,100% { transform: rotate(0); } 50% { transform: rotate(-5deg); } }
-  .mood-alqan .robot { animation: robot-tremble .32s ease-in-out infinite; }
-  @keyframes robot-tremble { 0%,100% { transform: translateX(0); } 50% { transform: translateX(1.5px); } }
-  .mood-dayekh .robot { animation: robot-wobble .55s ease-in-out infinite; }
-  @keyframes robot-wobble { 0%,100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
-  .mood-mabsoot .robot, .mood-mabsoot .robot-body { animation: botDance .62s ease-in-out infinite; }
-  @keyframes botDance { 0%,100% { transform: translateY(0) rotate(0); } 30% { transform: translateY(-6px) rotate(5deg); }
-    60% { transform: translateY(0) rotate(-5deg); } 80% { transform: translateY(-3px) rotate(3deg); } }
-  .mood-bihtafel .robot, .mood-bihtafel .robot-body { animation: botParty .5s ease-in-out infinite; }
-  @keyframes botParty { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-8px) scale(1.04); } }
-  .mood-mutafaje .robot { animation: robot-pop .55s cubic-bezier(.22,1,.36,1); }
-  @keyframes robot-pop { 0% { transform: scale(.9); } 60% { transform: scale(1.07); } 100% { transform: scale(1); } }
-  .mood-saeed .robot { animation: robot-pulse 1s ease-in-out infinite; }
-  @keyframes robot-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-  .mood-taaban .robot { animation: robot-nod 2.8s ease-in-out infinite; }
-  @keyframes robot-nod { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(2px) rotate(3deg); } }
-  .mood-nayem .zzz { display: block; }
-  .zzz { display: none; position: absolute; top: -6px; inset-inline-end: -4px; color: var(--m-accent2);
-    font-size: 13px; font-weight: 700; animation: z-float 3.6s ease-in-out infinite; }
-  @keyframes z-float { 0% { opacity: 0; transform: translateY(4px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-8px); } }
-  /* Expanded island: big glass window like the BOTTOM of the reference image. */
-  .island-expanded { display: none; position: fixed; top: 0; left: 50%; transform: translateX(-50%);
-    width: 720px; height: 400px;
-    background: linear-gradient(180deg, rgba(24,32,46,.94), rgba(13,18,28,.94));
-    border: 1px solid rgba(232,201,122,.55); border-radius: 26px;
-    box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 30px rgba(232,201,122,.16), inset 0 1px 0 rgba(255,255,255,.12);
-    padding: 16px; gap: 16px; }
-  body.expanded .island-expanded { display: flex; animation: expand-in .45s cubic-bezier(.22,1,.36,1) both; }
-  body.expanded .island { display: none; }
-  @keyframes expand-in { from { opacity: 0; transform: translateX(-50%) scale(.96) translateY(-6px); } to { opacity: 1; transform: translateX(-50%) scale(1) translateY(0); } }
-  .exp-robot { flex: 0 0 190px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; }
-  .exp-robot .platform { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); }
-  .exp-robot .platform ellipse { fill: none; stroke: #FFCF5E; opacity: .7; }
-  .exp-robot .platform ellipse:nth-child(1) { animation: ring-pulse .9s ease-in-out infinite; }
-  .exp-robot .platform ellipse:nth-child(2) { animation: ring-pulse .9s .2s ease-in-out infinite; }
-  .exp-robot .platform ellipse:nth-child(3) { animation: ring-pulse .9s .4s ease-in-out infinite; }
-  @keyframes ring-pulse { 0%,100% { opacity: .35; } 50% { opacity: .9; } }
-  .exp-robot svg.robot-body { width: 140px; height: 172px; position: relative; z-index: 1; }
-  .exp-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-    background: rgba(255,255,255,.08); color: #EDF2F7; font-size: 15px; cursor: pointer; }
-  .exp-greet { display: flex; align-items: center; gap: 10px; }
-  .exp-greet .avatar-dot { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1);
-    border: 1px solid rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
-  .exp-greet .greet-bubble { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
-    border-radius: 18px; padding: 10px 14px; font-size: 14.5px; line-height: 1.5; }
-  .exp-composer { display: flex; align-items: center; gap: 8px; margin-top: auto; }
-  .exp-composer .plus-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2);
-    background: rgba(255,255,255,.08); color: #EDF2F7; font-size: 20px; cursor: pointer; flex-shrink: 0;
-    transition: transform .3s cubic-bezier(.22,1,.36,1); }
-  .exp-composer .plus-btn.open { transform: rotate(45deg); }
-  .exp-composer input { flex: 1; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.16);
-    border-radius: 999px; padding: 11px 16px; font-size: 14px; color: #EDF2F7; outline: none; font-family: inherit; }
-  .exp-composer input:focus { border-color: rgba(103,232,249,.5); }
-  .exp-composer .send-btn { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
-    background: linear-gradient(160deg, #f0d48a, #d4af6a); color: #231a05; font-size: 16px; font-weight: 700; cursor: pointer; border: none; }
-  .exp-attach { display: none; gap: 8px; flex-wrap: wrap; }
-  .exp-attach.open { display: flex; }
-  .exp-attach button { padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16);
-    background: rgba(255,255,255,.07); color: #EDF2F7; font-size: 12.5px; cursor: pointer; }
-  .reply-line { font-size: 13px; line-height: 1.6; color: #dbe2ec; max-height: 52px; overflow: hidden; }
+  /* --- fixed canvas: the window is 720x400, always. The pill and the
+     panel are drawn inside it; nothing here resizes the window. --- */
+  body.fixed-canvas .island{width:380px;height:60px}
+  body.fixed-canvas .island.open{width:720px;height:400px;border-radius:26px}
+  /* --- toast: brief alert expansion, overlaid on the canvas --- */
+  .i-toast{position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:50;
+    max-width:640px;padding:10px 18px;border-radius:16px;text-align:center;
+    background:rgba(11,20,48,.85);color:var(--ink);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 24px rgba(0,0,0,.35);
+    -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+    pointer-events:none;font-size:13px;line-height:1.7}
+  .i-toast b{display:block;font-size:13.5px;color:var(--gold-2)}
+  /* --- mic/camera in-use dots (hidden until the backend says they exist) --- */
+  .mdots{display:flex;align-items:center;gap:5px}
+  .mdot{width:8px;height:8px;border-radius:50%;background:#ff5f57;box-shadow:0 0 6px #ff5f57}
+  .mdot.mic{background:#ff9f0a;box-shadow:0 0 6px #ff9f0a}
+  /* --- panels button (expanded view only) --- */
+  .panels-btn{position:absolute;top:10px;inset-inline-end:10px;z-index:4;display:none}
+  .island.open .panels-btn{display:grid}
+  /* --- feature panels overlay --- */
+  .i-panels{position:absolute;inset:0;z-index:5;display:none;flex-direction:column;
+    background:rgba(11,20,48,.88);border-radius:inherit;overflow:hidden;
+    -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+  .island.panels .i-panels{display:flex}
+  .p-tabs{display:flex;align-items:center;gap:6px;padding:12px 12px 8px;
+    overflow-x:auto;flex:none;scrollbar-width:none}
+  .p-tabs::-webkit-scrollbar{display:none}
+  .p-tab{flex:none;border:0;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink);
+    padding:7px 12px;border-radius:99px;cursor:pointer;background:rgba(255,255,255,.1)}
+  .p-tab.sel{background:linear-gradient(160deg,var(--gold-2),var(--gold));color:#4a3300}
+  .p-close{flex:none;margin-inline-start:auto}
+  .p-body{flex:1;min-height:0;overflow-y:auto;padding:6px 18px 18px;font-size:13.5px;line-height:1.8}
+  .p-body h3{font-size:15px;margin:6px 0 10px}
+  .p-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .p-item{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:14px;
+    background:rgba(255,255,255,.08);margin-bottom:8px}
+  .p-item .grow{flex:1;min-width:0}
+  .p-item .sub{font-size:11.5px;color:var(--ink-2);line-height:1.5;word-break:break-word}
+  .p-btn{border:0;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink);
+    padding:7px 13px;border-radius:99px;cursor:pointer;background:rgba(255,255,255,.14)}
+  .p-btn.gold{background:linear-gradient(160deg,var(--gold-2),var(--gold));color:#4a3300}
+  .p-btn:disabled{opacity:.45;cursor:default}
+  .p-input{flex:1;min-width:0;background:rgba(10,16,44,.35);border:0;outline:0;color:var(--ink);
+    font:inherit;font-size:13.5px;padding:9px 12px;border-radius:14px}
+  .p-input::placeholder{color:var(--ink-3)}
+  .p-note{font-size:12px;color:var(--ink-2);margin:8px 0}
+  .p-big{font-size:44px;font-weight:600;font-variant-numeric:tabular-nums;
+    text-align:center;margin:10px 0 4px;letter-spacing:.02em}
+  .p-center{text-align:center}
+  .p-lyric{padding:3px 8px;border-radius:8px;color:var(--ink-2)}
+  .p-lyric.cur{color:var(--gold-2);font-weight:600;background:rgba(240,199,94,.12)}
+  .p-prog{height:10px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden;margin:8px 0}
+  .p-prog i{display:block;height:100%;border-radius:99px;
+    background:linear-gradient(90deg,var(--gold-2),var(--gold))}
+  .p-time{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-2)}
+  .p-time b{color:var(--gold-2)}
+  .done-x{text-decoration:line-through;opacity:.55}
 </style>
 </head>
-<body data-theme="night-glass">
-<!-- Collapsed island -->
-<div class="island" id="island">
-  <div class="robot-bubble robot-wrap" id="island-robot" title="لونا">
-    <span class="zzz">Z</span>
-    <span id="island-robot-svg"></span>
-    <span class="robot-bubble-say" id="island-say"></span>
-  </div>
-  <div class="texts">
-    <div class="agent-line"><span class="green-dot"></span><span id="island-name">LONA</span><span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;transform:rotate(90deg)"><use href="assets/lona-icons-sprite.svg#back"/></svg></span></div>
-    <div class="listen-line"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span class="listen-text" id="listen-text">Listening...</span></div>
-  </div>
-</div>
+<body class="island-page fixed-canvas">
+<div class="errbar" id="errbar" hidden><span id="errbarText"></span><button id="errbarClose" type="button">إخفاء</button></div>
+<div class="i-toast" id="islandToast" hidden><b id="toastTitle"></b><span id="toastBody"></span></div>
 
-<!-- Expanded island -->
-<div class="island-expanded" id="island-expanded">
-  <div class="exp-robot robot-wrap" id="exp-robot">
-    <span class="zzz">Z</span>
-    <span id="exp-robot-svg"></span>
-    <svg class="platform" width="150" height="40" viewBox="0 0 150 40" aria-hidden="true">
-      <ellipse cx="75" cy="20" rx="48" ry="10"></ellipse>
-      <ellipse cx="75" cy="20" rx="35" ry="7"></ellipse>
-      <ellipse cx="75" cy="20" rx="22" ry="4.5"></ellipse>
-    </svg>
-    <span class="robot-bubble-say" id="exp-say"></span>
+<section class="glass island" id="island" aria-label="لونا">
+  <div class="ib" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="i-mini" id="mini">
+    <div class="bubble"><img src="assets/mascot.webp" alt="لونا"></div>
+    <div><div class="i-title" id="pillName">لونا</div><div class="i-status"><span class="dot"></span><span id="miniStatus">Listening...</span></div></div>
+    <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <span class="mdots" id="mediaDots" hidden>
+      <i class="mdot mic" title="المايك شغال"></i><i class="mdot cam" title="الكاميرا شغالة"></i>
+    </span>
+    <button class="round" id="micBtn" aria-label="المايك" data-stop>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
   </div>
-  <div class="exp-side">
-    <div class="exp-clock" id="exp-clock">--:--</div>
-    <div class="exp-greet">
-      <div class="avatar-dot"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#avatar"/></svg></div>
-      <div class="greet-bubble" id="exp-greet">أهلاً يا محمد! أقدر أساعدك في إيه النهاردة؟</div>
-    </div>
-    <div class="reply-line" id="exp-reply"></div>
-    <div class="exp-composer">
-      <button class="plus-btn" id="exp-plus" type="button" title="إضافة">+</button>
-      <input id="exp-input" type="text" placeholder="Type a message..." virtualkeyboardpolicy="manual">
-      <button class="send-btn" id="exp-send" type="button" title="إرسال"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><use href="assets/lona-icons-sprite.svg#send"/></svg></button>
-    </div>
-    <div class="exp-attach" id="exp-attach">
-      <button type="button" data-kind="صور">صور</button>
-      <button type="button" data-kind="ملفات">ملفات</button>
-      <button type="button" data-kind="فيديو">فيديو</button>
-      <button type="button" data-kind="مستندات">مستندات</button>
+  <div class="i-full">
+    <div class="stand"><div class="platform"></div><img class="mascot" src="assets/mascot.webp" alt="لونا"></div>
+    <div class="chat-side">
+      <h2 id="greet">أهلًا، أقدر أساعدك في إيه؟</h2>
+      <p class="mood" id="moodLine" style="font-size:13px;color:var(--ink-2)"></p>
+      <div class="i-reply" id="replyBox"></div>
+      <div class="field">
+        <button class="round" id="attachBtn" aria-label="إرفاق" data-stop>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <input id="islInput" placeholder="اكتب هنا" data-stop autocomplete="off" virtualkeyboardpolicy="manual">
+        <button class="round gold" id="islSend" aria-label="إرسال" data-stop>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </div>
     </div>
   </div>
-</div>
+  <button class="round panels-btn" id="panelsBtn" aria-label="لوحات الجزيرة" data-stop>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+  </button>
+  <div class="i-panels" id="panels" data-stop>
+    <div class="p-tabs" id="panelTabs"></div>
+    <div class="p-body" id="panelBody"></div>
+  </div>
+</section>
 
+<script src="assets/bridge.js"></script>
 <script>
-  document.documentElement.style.backgroundColor = "transparent";
-  document.body.style.backgroundColor = "transparent";
-  const $ = id => document.getElementById(id);
-  const getApi = () => (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
-  let _uaLogged = false, _readyLogged = false;
-  function logEngine() { if (_uaLogged) return; const a = getApi(); if (!a || !a.log_js) return; _uaLogged = true; try { a.log_js("UA: " + navigator.userAgent); } catch (e) {} }
-  function logReady() { if (_readyLogged) return; const a = getApi(); if (!a || !a.log_js) return; _readyLogged = true; try { a.log_js("READY island"); } catch (e) {} }
-  logEngine(); logReady();
-  window.addEventListener("pywebviewready", logEngine);
-  window.addEventListener("pywebviewready", logReady);
+(function () {
+  'use strict';
+  var B = window.LonaBridge;
+  var isl = document.getElementById('island');
+  var miniStatus = document.getElementById('miniStatus');
+  var micBtn = document.getElementById('micBtn');
+  var input = document.getElementById('islInput');
+  var replyBox = document.getElementById('replyBox');
+  var moodLine = document.getElementById('moodLine');
+  var toast = document.getElementById('islandToast');
+  var toastTitle = document.getElementById('toastTitle');
+  var toastBody = document.getElementById('toastBody');
+  var panelsEl = document.getElementById('panels');
+  var panelTabs = document.getElementById('panelTabs');
+  var panelBody = document.getElementById('panelBody');
+  var micLive = false;
+  var busy = false;
+  var toastTimer = null;
+  var toastOpened = false;
+  var panelTimer = null;
+  var currentPanel = null;
+  var lastWaterNudge = 0;
+  /* v1.6.4 perf (c): NO timers run while the island is collapsed.
+     moodTimer (5 s mood poll) + reminderTimer (60 s due-task/water
+     check) start on expand and are cleared on collapse. The only
+     thing alive while collapsed is the native 90 ms cursor poll
+     (Python side). panelTimer (1 s music/timer refresh) is also
+     cleared on collapse (see setOpen). */
+  var moodTimer = null;
+  var reminderTimer = null;
+  var moodInFlight = false;
+  var reminderInFlight = false;
 
-  /* ROBOT SVG — white/off-white body #F8F4EC, stroke #D9C08A, dark face
-     screen #101318, gold #E9B558 headphones, GOLD glowing eyes/mouth —
-     NEVER white eyes/mouth. Head viewBox 0 0 120 84, body 140x172. */
-  function robotHeadSVG() {
-    return '<svg class="robot" width="42" height="42" viewBox="0 0 120 84" aria-label="LONA robot">'
-      + '<g><path d="M22 34 Q14 10 44 8" fill="none" stroke="#E9B558" stroke-width="5" stroke-linecap="round"/>'
-      + '<path d="M98 34 Q106 10 76 8" fill="none" stroke="#E9B558" stroke-width="5" stroke-linecap="round"/>'
-      + '<circle cx="20" cy="40" r="10" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
-      + '<circle cx="100" cy="40" r="10" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
-      + '<ellipse cx="60" cy="46" rx="40" ry="34" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
-      + '<ellipse cx="60" cy="46" rx="31" ry="25" fill="#101318"/>'
-      + '<g class="blink"><path class="eye" d="M40 44 Q46 36 52 44 Q46 49 40 44Z"/><path class="eye" d="M68 44 Q74 36 80 44 Q74 49 68 44Z"/></g>'
-      + '<path class="mouth" d="M52 58 Q60 64 68 58" fill="none" stroke="#FFCF5E" stroke-width="3.5" stroke-linecap="round"/></g></svg>';
-  }
-  function robotBodySVG() {
-    return '<svg class="robot robot-body" width="140" height="172" viewBox="0 0 140 172" aria-label="LONA robot full body">'
-      + '<g><path d="M30 42 Q22 12 58 10" fill="none" stroke="#E9B558" stroke-width="6" stroke-linecap="round"/>'
-      + '<path d="M110 42 Q118 12 82 10" fill="none" stroke="#E9B558" stroke-width="6" stroke-linecap="round"/>'
-      + '<circle cx="28" cy="48" r="12" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
-      + '<circle cx="112" cy="48" r="12" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
-      + '<ellipse cx="70" cy="52" rx="46" ry="38" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
-      + '<ellipse cx="70" cy="52" rx="36" ry="28" fill="#101318"/>'
-      + '<g class="blink"><path class="eye" d="M48 50 Q55 41 62 50 Q55 56 48 50Z"/><path class="eye" d="M78 50 Q85 41 92 50 Q85 56 78 50Z"/></g>'
-      + '<path class="mouth" d="M60 66 Q70 73 80 66" fill="none" stroke="#FFCF5E" stroke-width="4" stroke-linecap="round"/>'
-      + '<rect x="48" y="92" width="44" height="42" rx="16" fill="#F8F4EC" stroke="#D9C08A" stroke-width="2"/>'
-      + '<circle cx="70" cy="110" r="6" fill="#E9B558"/><circle cx="70" cy="110" r="9" fill="none" stroke="#FFCF5E" stroke-width="1.5" opacity=".7"/>'
-      + '<g class="arm-l"><path d="M48 100 Q30 112 34 128" fill="none" stroke="#F8F4EC" stroke-width="9" stroke-linecap="round"/><circle cx="34" cy="130" r="6" fill="#F8F4EC" stroke="#D9C08A" stroke-width="1.5"/></g>'
-      + '<g class="arm-r"><path d="M92 100 Q110 112 106 128" fill="none" stroke="#F8F4EC" stroke-width="9" stroke-linecap="round"/><circle cx="106" cy="130" r="6" fill="#F8F4EC" stroke="#D9C08A" stroke-width="1.5"/></g>'
-      + '<ellipse cx="70" cy="160" rx="34" ry="7" fill="none" stroke="#FFCF5E" stroke-width="1.5" opacity=".6"/></g></svg>';
-  }
-  $("island-robot-svg").innerHTML = robotHeadSVG();
-  $("exp-robot-svg").innerHTML = robotBodySVG();
-
-  /* 13 MOODS — automatic, NO mood buttons. setMood() syncs island +
-     expanded robot. Mood class names: mood-nayem, mood-sahee,
-     mood-fudooli, mood-bifakkar, mood-alqan, mood-dayekh, mood-murakkaz,
-     mood-fakhoor, mood-mabsoot, mood-bihtafel, mood-mutafaje, mood-saeed, mood-taaban. */
-  const MOODS = {
-    "نايم": "mood-nayem", "صاحي": "mood-sahee", "فضولي": "mood-fudooli", "بيفكر": "mood-bifakkar",
-    "قلقان": "mood-alqan", "دايخ": "mood-dayekh", "مركّز": "mood-murakkaz", "فخور": "mood-fakhoor",
-    "مبسوط وبيرقص": "mood-mabsoot", "بيحتفل": "mood-bihtafel", "متفاجئ": "mood-mutafaje",
-    "سعيد بيك": "mood-saeed", "تعبان": "mood-taaban"
-  };
-  const MOOD_CLASSES = Object.values(MOODS);
-  let currentMood = "صاحي";
-  function setMood(name) {
-    if (!MOODS[name]) return;
-    currentMood = name;
-    document.body.classList.remove(...MOOD_CLASSES);
-    document.body.classList.add(MOODS[name]);
-    const exp = $("island-expanded");
-    if (exp) { exp.classList.remove(...MOOD_CLASSES); exp.classList.add(MOODS[name]); }
-  }
-  window.setMood = setMood;
-  /* STATE-DRIVEN mood: poll the Python bridge get_mood() every 5s.
-     A timer cycle is a demo only — it runs ONLY as a fallback when
-     the bridge is absent. */
-  let moodTimer = null;
-  let moodPollTimer = null, moodPollInFlight = false, moodPollingStarted = false;
-  function startMoodPolling() {
-    // v1.6.2 (B13): get_mood is polled EXACTLY once per 5s — the old
-    // code called startMoodPolling() twice (load + pywebviewready)
-    // and never stored the first interval id. The started guard +
-    // stored id make a second call a no-op; the pywebviewready
-    // handler below only restarts when the bridge was absent at load.
-    if (moodPollingStarted) return;
-    moodPollingStarted = true;
-    const api = getApi();
-    if (api && api.get_mood) {
-      moodPollTimer = setInterval(async () => {
-        if (moodPollInFlight) return; // v1.6.2 (B12): never stack polls
-        moodPollInFlight = true;
-        try { const r = await api.get_mood(); if (r && r.mood) setMood(r.mood); } catch (e) {}
-        finally { moodPollInFlight = false; }
-      }, 5000);
-    } else {
-      const names = Object.keys(MOODS);
-      let i = names.indexOf(currentMood);
-      moodTimer = setInterval(() => { i = (i + 1) % names.length; setMood(names[i]); }, 8000);
-    }
-  }
-  startMoodPolling();
-  /* CUSTOMIZABLE AI NAME: the pill label shows the chosen name
-     (default LONA), read live from the bridge ai_name setting. */
-  async function loadAiName() {
-    let name = "LONA";
-    const api = getApi();
-    if (api && api.get_status) {
-      try { const st = await api.get_status(); if (st && st.settings && st.settings.ai_name) name = st.settings.ai_name; } catch (e) {}
-    } else if (api && api.get_ai_name) {
-      try { const r = await api.get_ai_name(); if (r && r.name) name = r.name; } catch (e) {}
-    }
-    const el = $("island-name");
-    if (el) el.textContent = name;
-  }
-  let aiNameTimer = null, aiNameInFlight = false;
-  async function loadAiNameGuarded() {
-    if (aiNameInFlight) return; // v1.6.2 (B12): never stack name reads
-    aiNameInFlight = true;
-    try { await loadAiName(); } finally { aiNameInFlight = false; }
-  }
-  loadAiNameGuarded();
-  aiNameTimer = setInterval(loadAiNameGuarded, 5000);
-  window.addEventListener("pywebviewready", loadAiNameGuarded);
-  window.addEventListener("pywebviewready", () => {
-    // The bridge was absent at load, so only the demo mood cycle runs:
-    // stop it and start the real get_mood() poll instead.
-    if (moodTimer) { clearInterval(moodTimer); moodTimer = null; moodPollingStarted = false; }
-    startMoodPolling();
+  document.getElementById('errbarClose').addEventListener('click', function () {
+    B.hideError();
   });
 
-  /* v1.6.2 (F4): the clock lives ONLY inside the expanded island
-     (#exp-clock, HH:MM, ticks every 15s) — never on the collapsed pill. */
-  function tickClock() {
-    const d = new Date();
-    const el = $("exp-clock");
-    if (el) el.textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-  }
-  tickClock(); setInterval(tickClock, 15000);
+  function fail(source, err) { B.reportFailure(source, err); }
+  function esc(s) { return B.escapeHtml(s == null ? '' : String(s)); }
+  function isOpen() { return isl.classList.contains('open'); }
 
-  /* Window sizing (Win32 region follows via island_resize).
-     v1.6.3 (F4): there is NO idle shrink anymore. v1.6.2 created the
-     window 380x60 but the JS still shrank to 190x52 seven seconds
-     after every greeting — while the pill CSS stays 380px wide, so
-     the pill was clipped to its central 190px most of the time.
-     IDLE == FULL now: the pill is 380x60 in every collapsed state;
-     only the expanded state is 720x400. curW/curH start at the real
-     window size (380x60), so the first goActive() is a no-op instead
-     of a shrink-then-grow squeeze. */
-  const IDLE_W = 380, IDLE_H = 60, FULL_W = 380, FULL_H = 60, EXPANDED_W = 720, EXPANDED_H = 400;
-  const ANIM_MS = 450;
-  let curW = IDLE_W, curH = IDLE_H, sizeRAF = null, lastResizeSent = 0, idleTimer = null;
-  function animateSize(toW, toH) {
-    const fromW = curW, fromH = curH;
-    if (fromW === toW && fromH === toH) return;
-    const t0 = performance.now();
-    if (sizeRAF) cancelAnimationFrame(sizeRAF);
-    function frame(now) {
-      const p = Math.min(1, (now - t0) / ANIM_MS);
-      const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-      const w = Math.round(fromW + (toW - fromW) * e);
-      const h = Math.round(fromH + (toH - fromH) * e);
-      const api = getApi();
-      if (api && api.island_resize && now - lastResizeSent > 33) { lastResizeSent = now; try { api.island_resize(w, h); } catch (e) {} }
-      curW = w; curH = h;
-      if (p < 1) sizeRAF = requestAnimationFrame(frame);
-      else { sizeRAF = null; curW = toW; curH = toH; }
+  /* --- expand / collapse: click anywhere on the island except buttons ---
+     Fixed canvas: the WINDOW never resizes. island_expand / island_collapse
+     only flip the Python-side state (WS_EX_TRANSPARENT); the visual
+     animation is the .open class in this fixed 720x400 canvas. */
+  function setOpen(opening, focusInput) {
+    isl.classList.toggle('open', opening);
+    if (!opening) {
+      /* Collapsing kills every JS timer at once: the mood poll, the
+         reminder check, and the 1 s panel refresh (a music panel left
+         open must not keep calling island_music every second while
+         collapsed). The panels overlay itself stays in the DOM and
+         re-opens with the island. */
+      stopExpandedTimers();
+      stopPanelRefresh();
     }
-    sizeRAF = requestAnimationFrame(frame);
-  }
-  function armIdleTimer() {
-    clearTimeout(idleTimer);
-    /* v1.6.3: window.__islandIdleMs is a test hook (same pattern as
-       window.__islandCapMs) — the 7s timer shortens under test. */
-    const idleMs = (typeof window !== "undefined" && window.__islandIdleMs) || 7000;
-    idleTimer = setTimeout(goIdle, idleMs);
-  }
-  function goActive() {
-    document.body.classList.remove("expanded");
-    animateSize(FULL_W, FULL_H); armIdleTimer();
-  }
-  function goIdle() {
-    /* v1.6.3: the idle timer is harmless now — it only clears the
-       expanded-reply text. It must NEVER resize the window: the pill
-       stays 380x60 in every collapsed state. */
-    document.body.classList.remove("expanded");
-    $("exp-reply").textContent = "";
-  }
-  function expandIsland() {
-    /* Clicking the island expands it: the full-body robot appears on
-       the side, with the greeting + composer beside it. The time
-       shows only here (inside the expanded island, never on the pill). */
-    document.body.classList.add("expanded");
-    clearTimeout(idleTimer);
-    animateSize(EXPANDED_W, EXPANDED_H);
-  }
-  function collapseIsland() { document.body.classList.remove("expanded"); goActive(); }
-  function expandWithReply(text) {
-    if (text) $("exp-reply").textContent = text;
-    expandIsland();
-  }
-  function showIslandText(text) { $("exp-greet").textContent = text; goActive(); }
-
-  /* Robot interaction: tapping the robot does NOT open/close the
-     island — it reacts (reactJump .72s + waving arm + gold bubble
-     1.5s) and flips the mood نايم إلى صاحي, anything else إلى مبسوط وبيرقص. */
-  const SAYINGS = ["أهلًا!", "أنا هنا!", "ازيك يا محمد!"];
-  let sayIdx = 0, sayTimer = null;
-  function robotReact(wrap, sayEl) {
-    wrap.classList.remove("react"); void wrap.offsetWidth; wrap.classList.add("react");
-    const say = sayEl || $("island-say");
-    say.textContent = SAYINGS[sayIdx % SAYINGS.length]; sayIdx++;
-    say.classList.add("show");
-    clearTimeout(sayTimer); sayTimer = setTimeout(() => say.classList.remove("show"), 1500);
-    const next = currentMood === "نايم" ? "صاحي" : "مبسوط وبيرقص";
-    setMood(next);
-    wrap.classList.add("wake"); setTimeout(() => wrap.classList.remove("wake"), 450);
-  }
-  $("island-robot").addEventListener("click", e => { e.stopPropagation(); robotReact($("island-robot"), $("island-say")); });
-  $("exp-robot").addEventListener("click", e => { e.stopPropagation(); robotReact($("exp-robot"), $("exp-say")); });
-
-  function logClick(msg) { try { const a = getApi(); if (a && a.log_js) a.log_js(msg); } catch (e) {} }
-  $("island").addEventListener("pointerdown", () => logClick("Island pill pointerdown"));
-  $("island").addEventListener("click", () => { logClick("Island pill clicked - expanding"); expandIsland(); });
-  $("island-expanded").addEventListener("click", e => {
-    // No window-control buttons on the island: tap the island itself
-    // to close it. Taps on controls (buttons, inputs, panels,
-    // composer) keep working and do NOT collapse it.
-    if (e.target.closest("button, input, .exp-composer, .exp-greet")) return;
-    collapseIsland();
-  });
-  $("exp-plus").addEventListener("click", () => {
-    const m = $("exp-attach"); m.classList.toggle("open"); $("exp-plus").classList.toggle("open", m.classList.contains("open"));
-  });
-  document.querySelectorAll("#exp-attach button").forEach(b => b.addEventListener("click", () => {
-    $("exp-greet").textContent = "اختار " + b.dataset.kind + " من جهازك — هبعتها للونا.";
-    $("exp-attach").classList.remove("open"); $("exp-plus").classList.remove("open");
-  }));
-  /* v1.6.2 (A7): one shared pending poll — the cap timer is stored
-     and cleared on success; at the 150s cap it resolves with a FAILURE
-     message that is WRITTEN into exp-reply (never {reply: ""} leaving
-     "بيفكّر..." forever). window.__islandCapMs is a test hook. */
-  function waitForIslandChatResult(chatId) {
-    const api = getApi();
-    return new Promise((resolve) => {
-      const timer = setInterval(async () => {
-        try { const r = await api.chat_result(chatId); if (r && r.done) { clearInterval(timer); clearTimeout(capTimer); resolve(r); } } catch (err) {}
-      }, 1200);
-      const capMs = (typeof window !== "undefined" && window.__islandCapMs) || 150000;
-      const capTimer = setTimeout(() => { clearInterval(timer); resolve({ reply: "الرد اتأخر أوي — المخ مش بيرد دلوقتي، جرّب تاني.", engine: "", timed_out: true }); }, capMs);
+    var w = opening ? 720 : 380;
+    var h = opening ? 400 : 60;
+    return B.call(opening ? 'island_expand' : 'island_collapse').then(function () {
+      return B.call('island_resize', w, h);
+    }).then(function () {
+      if (opening) {
+        startExpandedTimers();
+        if (focusInput) { input.focus(); }
+      }
+    }).catch(function (err) {
+      /* The bridge call failed and the caller reverts the .open
+         class - re-sync the timers to the class that actually ends
+         up showing, so a failed collapse never leaves the island
+         visually open with dead timers (or vice versa). */
+      if (isOpen()) { startExpandedTimers(); }
+      else { stopExpandedTimers(); stopPanelRefresh(); }
+      throw err;
     });
   }
-  async function sendIslandText() {
-    const input = $("exp-input"); const text = input.value.trim();
-    if (!text) return;
-    input.value = "";
-    const api = getApi();
-    if (!api) { $("exp-reply").textContent = "مش قادر أوصل لمحرك البرنامج — اقفل البرنامج وافتحه تاني"; return; }
-    $("exp-reply").textContent = "بيفكّر...";
-    try {
-      const res = await api.chat(text);
-      if (res && res.pending) {
-        const done = await waitForIslandChatResult(res.chat_id);
-        $("exp-reply").textContent = (done && done.reply) || "حصلت مشكلة، جرّب تاني.";
-      } else if (res && res.reply) $("exp-reply").textContent = res.reply;
-    } catch (e) { $("exp-reply").textContent = "حصلت مشكلة، جرّب تاني."; }
+
+  /* --- expanded-only timers (v1.6.4 perf (c)): start on expand,
+     clear on collapse. pollMood runs once immediately so the mood
+     line is fresh on open, then every 5 s; checkReminders runs
+     every 60 s. Both carry in-flight guards. --- */
+  function startExpandedTimers() {
+    if (!moodTimer) {
+      pollMood();
+      moodTimer = setInterval(pollMood, 5000);
+    }
+    if (!reminderTimer) {
+      reminderTimer = setInterval(checkReminders, 60000);
+    }
   }
-  $("exp-send").addEventListener("click", sendIslandText);
-  $("exp-input").addEventListener("keydown", e => { if (e.key === "Enter") sendIslandText(); });
-  // Start collapsed at the full pill size (380x60 — v1.6.3: this is a
-  // no-op by construction, since curW/curH already start at 380x60).
-  animateSize(IDLE_W, IDLE_H);
+
+  function stopExpandedTimers() {
+    if (moodTimer) { clearInterval(moodTimer); moodTimer = null; }
+    if (reminderTimer) { clearInterval(reminderTimer); reminderTimer = null; }
+  }
+
+  isl.addEventListener('click', function (e) {
+    if (e.target.closest('[data-stop]')) { return; }
+    var opening = !isOpen();
+    setOpen(opening, true).catch(function (err) {
+      isl.classList.toggle('open', !opening);
+      fail('island_resize', err);
+    });
+  });
+
+  /* --- hover-open: the passthrough loop calls this when the cursor is
+     over the pill while the window is click-through. --- */
+  window.openIslandFromHover = function () {
+    if (isOpen()) { return; }
+    setOpen(true, false).catch(function (err) { fail('island_hover_open', err); });
+  };
+
+  /* --- toast: brief island expansion for alerts (volume / battery /
+     Caps Lock / monitor alerts). Python calls this via evaluate_js;
+     it opens the island if collapsed and collapses again after a
+     few seconds — unless the user has clicked into the island. --- */
+  window.showIslandToast = function (title, body, autoMs) {
+    toastTitle.textContent = title || 'لونا';
+    toastBody.textContent = body || '';
+    toast.hidden = false;
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    if (!isOpen()) {
+      toastOpened = true;
+      setOpen(true, false).catch(function (err) { fail('island_toast_open', err); });
+    }
+    var ms = autoMs || 6000;
+    toastTimer = setTimeout(function () {
+      toast.hidden = true;
+      toastTimer = null;
+      if (toastOpened && isOpen() && !isl.classList.contains('panels')) {
+        toastOpened = false;
+        setOpen(false, false).catch(function (err) { fail('island_toast_close', err); });
+      }
+      toastOpened = false;
+    }, ms);
+  };
+
+  /* --- mic: local listening indicator only (no voice method in the v2 bridge) --- */
+  micBtn.addEventListener('click', function () {
+    micLive = !micLive;
+    isl.classList.toggle('mic-live', micLive);
+    miniStatus.textContent = micLive ? 'بسمعك…' : 'Listening...';
+  });
+
+  /* --- attach: not wired in the v2 bridge — say so honestly, fake nothing --- */
+  document.getElementById('attachBtn').addEventListener('click', function () {
+    replyBox.textContent = 'إرفاق الملفات من الجزيرة لسه مش متاح في النسخة دي — استخدم النافذة الرئيسية.';
+  });
+
+  function sendChat() {
+    var text = input.value.trim();
+    if (!text || busy) { return; }
+    busy = true;
+    input.value = '';
+    replyBox.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+    B.call('chat', text, {}).then(function (res) {
+      res = res || {};
+      if (res.pending && (res.id || res.chat_id)) {
+        var id = res.id || res.chat_id;
+        return B.pollUntil(id, function (cid) { return B.call('chat_result', cid); }, 120000, 800);
+      }
+      return { done: true, reply: res.reply || res.text || res.message || '' };
+    }).then(function (res) {
+      var txt = (res && (res.reply || res.text || res.message)) || '';
+      replyBox.textContent = txt || 'مفيش رد وصل — جرّب تاني.';
+    }).catch(function (err) {
+      replyBox.textContent = '';
+      fail('island_chat', err);
+    }).then(function () { busy = false; });
+  }
+  document.getElementById('islSend').addEventListener('click', sendChat);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { sendChat(); }
+  });
+
+  /* --- greeting name + mood (bridge only, no invented values) ---
+     window.setMood is the hook v1's Python calls (chat_result, via
+     evaluate_js) to restore the robot's mood the moment a reply lands.
+     The 5s poll below would do the same; this just skips the wait. */
+  window.setMood = function (name) {
+    if (name) { moodLine.textContent = name; }
+  };
+
+  /* v1.3.2 bridge-ready watchdog: log READY so the log proves the
+     island page's bridge came up. */
+  B.call('log_js', 'READY island').catch(function () {});
+
+  B.call('get_settings').then(function (s) {
+    s = s || {};
+    /* Pill title is the LIVE assistant name (ai_name, default لونا),
+       never a static label — renaming in Settings updates it here. */
+    var aiName = s.ai_name || s.name || 'لونا';
+    var pill = document.getElementById('pillName');
+    if (pill) { pill.textContent = aiName; }
+    document.getElementById('island').setAttribute('aria-label', aiName);
+    var name = s.user_name || s.user || '';
+    if (name) {
+      document.getElementById('greet').textContent = 'أهلًا ' + name + '، أقدر أساعدك في إيه؟';
+    }
+  }).catch(function (err) { fail('island_settings', err); });
+
+  function pollMood() {
+    if (moodInFlight) { return; }
+    moodInFlight = true;
+    B.call('get_mood').then(function (m) {
+      m = m || {};
+      var line = m.reason || m.mood || '';
+      if (line) { moodLine.textContent = line; }
+    }).catch(function (err) { fail('island_mood', err); })
+    .then(function () { moodInFlight = false; });
+  }
+  /* No mood poll at load: the island starts collapsed, and nothing
+     polls while collapsed (v1.6.4 perf (c)). The first poll happens
+     on the first expand (startExpandedTimers). */
+
+  /* --- mic/camera dots: only shown when the backend says they exist.
+     There is no public Windows API for this (see island_features.py),
+     so they stay hidden rather than faked. --- */
+  B.call('island_media_indicators').then(function (r) {
+    r = r || {};
+    if (r.available) {
+      var dots = document.getElementById('mediaDots');
+      dots.hidden = false;
+      dots.querySelector('.mic').style.display = r.mic_in_use ? '' : 'none';
+      dots.querySelector('.cam').style.display = r.camera_in_use ? '' : 'none';
+    }
+  }).catch(function () { /* unavailable — dots stay hidden */ });
+
+  /* ================= feature panels ================= */
+  var PANELS = [
+    { id: 'music', label: 'موسيقى' },
+    { id: 'timer', label: 'مؤقت' },
+    { id: 'tasks', label: 'مهام' },
+    { id: 'clipboard', label: 'الحافظة' },
+    { id: 'shelf', label: 'ملفات' },
+    { id: 'water', label: 'مياه' },
+    { id: 'prayer', label: 'صلاة' },
+    { id: 'notifs', label: 'إشعارات' }
+  ];
+  var prayerMethod = 'egypt';
+
+  function fmtClock(totalSec) {
+    totalSec = Math.max(0, Math.round(totalSec || 0));
+    var m = Math.floor(totalSec / 60);
+    var s = totalSec % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function stopPanelRefresh() {
+    if (panelTimer) { clearInterval(panelTimer); panelTimer = null; }
+  }
+
+  function openPanel(id) {
+    currentPanel = id;
+    isl.classList.add('panels');
+    panelTabs.innerHTML = PANELS.map(function (p) {
+      return '<button class="p-tab' + (p.id === id ? ' sel' : '') + '" data-panel="' + p.id + '">' + esc(p.label) + '</button>';
+    }).join('') + '<button class="p-btn p-close" id="panelClose">إغلاق</button>';
+    document.getElementById('panelClose').addEventListener('click', closePanels);
+    panelTabs.querySelectorAll('[data-panel]').forEach(function (btn) {
+      btn.addEventListener('click', function () { openPanel(btn.getAttribute('data-panel')); });
+    });
+    stopPanelRefresh();
+    renderPanel(id);
+    if (id === 'music' || id === 'timer') {
+      panelTimer = setInterval(function () { renderPanel(id); }, 1000);
+    }
+  }
+
+  function closePanels() {
+    currentPanel = null;
+    stopPanelRefresh();
+    isl.classList.remove('panels');
+  }
+
+  document.getElementById('panelsBtn').addEventListener('click', function () {
+    if (isl.classList.contains('panels')) { closePanels(); return; }
+    openPanel('music');
+  });
+
+  function renderPanel(id) {
+    if (id === 'music') { renderMusic(); }
+    else if (id === 'timer') { renderTimer(); }
+    else if (id === 'tasks') { renderTasks(); }
+    else if (id === 'clipboard') { renderClipboard(); }
+    else if (id === 'shelf') { renderShelf(); }
+    else if (id === 'water') { renderWater(); }
+    else if (id === 'prayer') { renderPrayer(); }
+    else if (id === 'notifs') { renderNotifs(); }
+  }
+
+  /* v1.6.4 perf (a): island_music / island_lyrics / island_notifi-
+     cations run OFF the bridge thread - they return {pending, id}
+     at once and the result is polled here via job_result, exactly
+     like chat / test_api_key. A direct await would freeze the whole
+     app for up to 5 s (SMTC) / 8 s (LRCLIB) per call. */
+  function fetchIslandJob(method, args, timeoutMs) {
+    return B.call.apply(B, [method].concat(args || [])).then(function (res) {
+      res = res || {};
+      if (res.pending && res.id) {
+        return B.pollUntil(res.id, function (cid) { return B.call('job_result', cid); }, timeoutMs || 30000, 500);
+      }
+      return res;
+    });
+  }
+
+  var musicInFlight = false;
+  var lastTrackKey = null;
+  var cachedLyricsHtml = '';
+
+  function renderMusic() {
+    /* The 1 s panel timer calls this every second: never overlap two
+       SMTC reads - a tick while one is in flight is skipped, and
+       lyrics are re-fetched only when the track actually changes
+       (the panel re-render re-injects the cached lyrics HTML). */
+    if (musicInFlight) { return; }
+    musicInFlight = true;
+    fetchIslandJob('island_music', []).then(function (r) {
+      r = r || {};
+      if (!r.available) {
+        panelBody.innerHTML = '<h3>الموسيقى</h3><p class="p-note">مفيش حاجة شغالة دلوقتي، أو الميزة دي مش متاحة على الجهاز ده.</p>';
+        lastTrackKey = null;
+        cachedLyricsHtml = '';
+        return;
+      }
+      var pos = Math.round(r.position_sec || 0);
+      var dur = Math.round(r.duration_sec || 0);
+      var key = (r.artist || '') + '|' + (r.title || '');
+      var pct = dur > 0 ? Math.min(100, Math.round(pos / dur * 100)) : 0;
+      var html = '<h3>' + esc(r.title || 'بدون عنوان') + '</h3>'
+        + '<p class="p-note">' + esc(r.artist || '') + (r.album ? ' — ' + esc(r.album) : '') + ' · ' + esc(r.status || '') + '</p>'
+        + '<div class="p-prog"><i style="width:' + pct + '%"></i></div>'
+        + '<div class="p-time"><span>' + fmtClock(pos) + '</span><span>' + fmtClock(dur) + '</span></div>'
+        + '<div id="lyricsBox"><p class="p-note">بيتم تحميل الكلمات…</p></div>';
+      panelBody.innerHTML = html;
+      var box = document.getElementById('lyricsBox');
+      if (key !== lastTrackKey) {
+        lastTrackKey = key;
+        fetchIslandJob('island_lyrics', [r.artist || '', r.title || '', r.album || '', dur]).then(function (lr) {
+          lr = lr || {};
+          if (!lr.found || !(lr.synced && lr.synced.length)) {
+            cachedLyricsHtml = '<p class="p-note">' + (lr.plain ? esc(lr.plain).replace(/\n/g, '<br>') : 'مفيش كلمات متزامنة للأغنية دي.') + '</p>';
+          } else {
+            cachedLyricsHtml = lr.synced.map(function (ln, i) {
+              return '<div class="p-lyric" data-t="' + ln.t + '" data-i="' + i + '">' + esc(ln.text) + '</div>';
+            }).join('');
+          }
+          var fresh = document.getElementById('lyricsBox');
+          if (fresh) { fresh.innerHTML = cachedLyricsHtml; }
+          highlightLyric(pos);
+        }).catch(function (err) {
+          var fresh = document.getElementById('lyricsBox');
+          if (fresh) { fresh.innerHTML = '<p class="p-note">الكلمات مش متاحة دلوقتي.</p>'; }
+          fail('island_lyrics', err);
+        });
+      } else {
+        if (box) { box.innerHTML = cachedLyricsHtml; }
+        highlightLyric(pos);
+      }
+    }).catch(function (err) {
+      panelBody.innerHTML = '<h3>الموسيقى</h3><p class="p-note">الميزة دي مش متاحة دلوقتي.</p>';
+      fail('island_music', err);
+    }).then(function () { musicInFlight = false; });
+  }
+
+  function highlightLyric(posSec) {
+    var rows = panelBody.querySelectorAll('.p-lyric');
+    var cur = null;
+    rows.forEach(function (row) {
+      var t = parseFloat(row.getAttribute('data-t') || '0');
+      if (t <= posSec) { cur = row; }
+      row.classList.remove('cur');
+    });
+    if (cur) {
+      cur.classList.add('cur');
+      cur.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function renderTimer() {
+    B.call('island_timer_state').then(function (r) {
+      r = r || {};
+      var big = r.mode === 'stopwatch' ? fmtClock(r.elapsed_sec) : fmtClock(r.remaining_sec);
+      var status = r.mode === 'idle' ? 'جاهز' : (r.running ? (r.mode === 'stopwatch' ? 'ستوب ووتش شغال' : 'مؤقت شغال') : 'متوقف مؤقتًا');
+      var html = '<h3>المؤقت وستوب ووتش</h3>'
+        + '<div class="p-big">' + big + '</div>'
+        + '<p class="p-center p-note">' + esc(status) + '</p>'
+        + '<div class="p-row p-center" style="justify-content:center">'
+        + (r.presets_min || [5, 10, 25]).map(function (m) {
+            return '<button class="p-btn" data-min="' + m + '">' + m + ' د</button>';
+          }).join('')
+        + '</div>'
+        + '<div class="p-row" style="justify-content:center;margin-top:10px">'
+        + '<button class="p-btn" id="tStopwatch">ستوب ووتش</button>'
+        + (r.running
+            ? '<button class="p-btn gold" id="tPause">إيقاف مؤقت</button>'
+            : '<button class="p-btn gold" id="tResume">استئناف</button>')
+        + '<button class="p-btn" id="tLap">لفة</button>'
+        + '<button class="p-btn" id="tReset">تصفير</button>'
+        + '</div>';
+      if (r.laps && r.laps.length) {
+        html += '<h3>اللفات</h3>' + r.laps.map(function (lap, i) {
+          return '<div class="p-item"><span>لفة ' + (i + 1) + '</span><span class="grow"></span><b>' + fmtClock(lap) + '</b></div>';
+        }).join('');
+      }
+      panelBody.innerHTML = html;
+      panelBody.querySelectorAll('[data-min]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('island_timer_start', parseInt(btn.getAttribute('data-min'), 10))
+            .then(function () { renderTimer(); })
+            .catch(function (err) { fail('island_timer_start', err); });
+        });
+      });
+      document.getElementById('tStopwatch').addEventListener('click', function () {
+        B.call('island_stopwatch_start').then(function () { renderTimer(); })
+          .catch(function (err) { fail('island_stopwatch_start', err); });
+      });
+      var pauseBtn = document.getElementById('tPause');
+      if (pauseBtn) {
+        pauseBtn.addEventListener('click', function () {
+          B.call('island_timer_pause').then(function () { renderTimer(); })
+            .catch(function (err) { fail('island_timer_pause', err); });
+        });
+      }
+      var resumeBtn = document.getElementById('tResume');
+      if (resumeBtn) {
+        resumeBtn.addEventListener('click', function () {
+          B.call('island_timer_resume').then(function () { renderTimer(); })
+            .catch(function (err) { fail('island_timer_resume', err); });
+        });
+      }
+      document.getElementById('tLap').addEventListener('click', function () {
+        B.call('island_timer_lap').then(function () { renderTimer(); })
+          .catch(function (err) { fail('island_timer_lap', err); });
+      });
+      document.getElementById('tReset').addEventListener('click', function () {
+        B.call('island_timer_reset').then(function () { renderTimer(); })
+          .catch(function (err) { fail('island_timer_reset', err); });
+      });
+      if (r.finished) {
+        window.showIslandToast('المؤقت', 'خلص الوقت.', 6000);
+      }
+    }).catch(function (err) {
+      panelBody.innerHTML = '<h3>المؤقت</h3><p class="p-note">الميزة دي مش متاحة دلوقتي.</p>';
+      fail('island_timer_state', err);
+    });
+  }
+
+  function renderTasks() {
+    panelBody.innerHTML = '<h3>المهام والتذكيرات</h3><p class="p-note">بيتم التحميل…</p>';
+    B.call('get_tasks').then(function (r) {
+      r = r || {};
+      var tasks = r.tasks || (Array.isArray(r) ? r : []);
+      var html = '<h3>المهام والتذكيرات</h3>'
+        + '<div class="p-row"><input class="p-input" id="taskText" placeholder="مهمة جديدة…" autocomplete="off" virtualkeyboardpolicy="manual">'
+        + '<input class="p-input" id="taskWhen" placeholder="تذكير: 2026-11-23 14:00" style="flex:.7" autocomplete="off" virtualkeyboardpolicy="manual">'
+        + '<button class="p-btn gold" id="taskAdd">إضافة</button></div>'
+        + '<p class="p-note">التذكير اختياري — اكتب التاريخ والوقت بالشكل ده: 2026-11-23 14:00.</p>';
+      if (!tasks.length) {
+        html += '<p class="p-note">مفيش مهام لسه.</p>';
+      } else {
+        html += tasks.map(function (t) {
+          var when = t.remind_at ? ' · تذكير ' + esc(t.remind_at) : (t.due ? ' · استحقاق ' + esc(t.due) : '');
+          return '<div class="p-item"><button class="p-btn" data-toggle="' + esc(t.id) + '">' + (t.done ? 'تم' : 'عمل') + '</button>'
+            + '<span class="grow' + (t.done ? ' done-x' : '') + '">' + esc(t.text)
+            + '<span class="sub">' + when + '</span></span></div>';
+        }).join('');
+      }
+      panelBody.innerHTML = html;
+      document.getElementById('taskAdd').addEventListener('click', function () {
+        var text = document.getElementById('taskText').value.trim();
+        var when = document.getElementById('taskWhen').value.trim();
+        if (!text) { return; }
+        B.call('island_task_add', text, null, when || null).then(function () { renderTasks(); })
+          .catch(function (err) { fail('island_task_add', err); });
+      });
+      panelBody.querySelectorAll('[data-toggle]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('toggle_task', btn.getAttribute('data-toggle')).then(function () { renderTasks(); })
+            .catch(function (err) { fail('island_task_toggle', err); });
+        });
+      });
+    }).catch(function (err) {
+      panelBody.innerHTML = '<h3>المهام</h3><p class="p-note">الميزة دي مش متاحة دلوقتي.</p>';
+      fail('island_tasks', err);
+    });
+  }
+
+  function renderClipboard() {
+    panelBody.innerHTML = '<h3>الحافظة</h3><p class="p-note">بيتم التحميل…</p>';
+    B.call('island_clipboard_list').then(function (r) {
+      r = r || {};
+      if (!r.available) {
+        panelBody.innerHTML = '<h3>الحافظة</h3><p class="p-note">سجل الحافظة متاح على ويندوز بس.</p>';
+        return;
+      }
+      var entries = r.entries || [];
+      var html = '<h3>الحافظة</h3>'
+        + '<div class="p-row"><button class="p-btn" id="clipClear">مسح الكل (ما عدا المثبت)</button></div>'
+        + '<p class="p-note">دوس على عنصر عشان يرجع للحافظة تاني.</p>';
+      if (!entries.length) {
+        html += '<p class="p-note">لسه مفيش حاجة متنسخة.</p>';
+      } else {
+        html += entries.map(function (e) {
+          return '<div class="p-item"><button class="p-btn" data-copy="' + esc(e.id) + '">نسخ</button>'
+            + '<span class="grow">' + esc(e.text || '') + '<span class="sub">' + esc(e.kind || '') + ' · ' + esc(e.at || '') + '</span></span>'
+            + '<button class="p-btn" data-pin="' + esc(e.id) + '" data-pinned="' + (e.pinned ? '0' : '1') + '">' + (e.pinned ? 'إلغاء التثبيت' : 'تثبيت') + '</button>'
+            + '<button class="p-btn" data-del="' + esc(e.id) + '">حذف</button></div>';
+        }).join('');
+      }
+      panelBody.innerHTML = html;
+      document.getElementById('clipClear').addEventListener('click', function () {
+        B.call('island_clipboard_clear').then(function () { renderClipboard(); })
+          .catch(function (err) { fail('island_clipboard_clear', err); });
+      });
+      panelBody.querySelectorAll('[data-copy]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('island_clipboard_copy', btn.getAttribute('data-copy'))
+            .catch(function (err) { fail('island_clipboard_copy', err); });
+        });
+      });
+      panelBody.querySelectorAll('[data-pin]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('island_clipboard_pin', btn.getAttribute('data-pin'), btn.getAttribute('data-pinned') === '1')
+            .then(function () { renderClipboard(); })
+            .catch(function (err) { fail('island_clipboard_pin', err); });
+        });
+      });
+      panelBody.querySelectorAll('[data-del]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('island_clipboard_delete', btn.getAttribute('data-del')).then(function () { renderClipboard(); })
+            .catch(function (err) { fail('island_clipboard_delete', err); });
+        });
+      });
+    }).catch(function (err) {
+      panelBody.innerHTML = '<h3>الحافظة</h3><p class="p-note">الميزة دي مش متاحة دلوقتي.</p>';
+      fail('island_clipboard', err);
+    });
+  }
+
+  function renderShelf() {
+    panelBody.innerHTML = '<h3>رف الملفات</h3><p class="p-note">بيتم التحميل…</p>';
+    B.call('island_shelf_list').then(function (r) {
+      r = r || {};
+      var files = r.files || [];
+      var html = '<h3>رف الملفات</h3>'
+        + '<div class="p-row"><button class="p-btn gold" id="shelfAdd">إضافة ملف…</button></div>'
+        + '<p class="p-note">السحب والإفلات مش متاح في الجزيرة — الإضافة من زر اختيار ملف، والدوس على ملف بيفتحه.</p>';
+      if (!files.length) {
+        html += '<p class="p-note">الرف فاضي لسه.</p>';
+      } else {
+        html += files.map(function (f) {
+          return '<div class="p-item"><button class="p-btn" data-open="' + esc(f.id) + '">فتح</button>'
+            + '<span class="grow">' + esc(f.name) + '<span class="sub">' + esc(f.path) + '</span></span>'
+            + '<button class="p-btn" data-remove="' + esc(f.id) + '">إزالة</button></div>';
+        }).join('');
+      }
+      panelBody.innerHTML = html;
+      document.getElementById('shelfAdd').addEventListener('click', function () {
+        B.call('island_shelf_add').then(function () { renderShelf(); })
+          .catch(function (err) { fail('island_shelf_add', err); });
+      });
+      panelBody.querySelectorAll('[data-open]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('island_shelf_open', btn.getAttribute('data-open'))
+            .catch(function (err) { fail('island_shelf_open', err); });
+        });
+      });
+      panelBody.querySelectorAll('[data-remove]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('island_shelf_remove', btn.getAttribute('data-remove')).then(function () { renderShelf(); })
+            .catch(function (err) { fail('island_shelf_remove', err); });
+        });
+      });
+    }).catch(function (err) {
+      panelBody.innerHTML = '<h3>رف الملفات</h3><p class="p-note">الميزة دي مش متاحة دلوقتي.</p>';
+      fail('island_shelf', err);
+    });
+  }
+
+  function renderWater() {
+    B.call('island_water_state').then(function (r) {
+      r = r || {};
+      var pct = r.goal_ml ? Math.min(100, Math.round((r.drank_ml || 0) / r.goal_ml * 100)) : 0;
+      var html = '<h3>تذكير المياه</h3>'
+        + '<div class="p-big">' + (r.drank_ml || 0) + ' <span style="font-size:18px">/ ' + (r.goal_ml || 2000) + ' مل</span></div>'
+        + '<div class="p-prog"><i style="width:' + pct + '%"></i></div>'
+        + '<p class="p-center p-note">المتبقي: ' + (r.remaining_ml || 0) + ' مل' + (r.last_drink_at ? ' · آخر مرة: ' + esc(r.last_drink_at) : '') + '</p>'
+        + '<div class="p-row" style="justify-content:center">'
+        + '<button class="p-btn" data-ml="250">+250 مل</button>'
+        + '<button class="p-btn" data-ml="500">+500 مل</button>'
+        + '<button class="p-btn" data-ml="330">+330 مل</button>'
+        + '</div>'
+        + '<div class="p-row" style="justify-content:center;margin-top:10px">'
+        + '<button class="p-btn" id="waterToggle">' + (r.enabled ? 'إيقاف التذكير' : 'تشغيل التذكير') + '</button>'
+        + '<span class="p-note">كل ' + (r.interval_min || 60) + ' دقيقة</span>'
+        + '</div>'
+        + '<div class="p-row" style="justify-content:center;margin-top:10px">'
+        + '<span class="p-note">الهدف اليومي:</span>'
+        + '<button class="p-btn" data-goal="1500">1500 مل</button>'
+        + '<button class="p-btn" data-goal="2000">2000 مل</button>'
+        + '<button class="p-btn" data-goal="3000">3000 مل</button>'
+        + '</div>';
+      panelBody.innerHTML = html;
+      panelBody.querySelectorAll('[data-ml]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('island_water_add', parseInt(btn.getAttribute('data-ml'), 10))
+            .then(function () { renderWater(); })
+            .catch(function (err) { fail('island_water_add', err); });
+        });
+      });
+      panelBody.querySelectorAll('[data-goal]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          B.call('island_water_goal', parseInt(btn.getAttribute('data-goal'), 10))
+            .then(function () { renderWater(); })
+            .catch(function (err) { fail('island_water_goal', err); });
+        });
+      });
+      document.getElementById('waterToggle').addEventListener('click', function () {
+        B.call('island_water_reminder', !r.enabled, r.interval_min || 60)
+          .then(function () { renderWater(); })
+          .catch(function (err) { fail('island_water_reminder', err); });
+      });
+    }).catch(function (err) {
+      panelBody.innerHTML = '<h3>المياه</h3><p class="p-note">الميزة دي مش متاحة دلوقتي.</p>';
+      fail('island_water', err);
+    });
+  }
+
+  function renderPrayer() {
+    panelBody.innerHTML = '<h3>مواقيت الصلاة — القاهرة</h3><p class="p-note">بيتم التحميل…</p>';
+    B.call('island_prayer', prayerMethod).then(function (r) {
+      r = r || {};
+      if (!r.ok) {
+        panelBody.innerHTML = '<h3>مواقيت الصلاة</h3><p class="p-note">المواقيت مش متاحة دلوقتي.</p>';
+        return;
+      }
+      var names = { fajr: 'الفجر', sunrise: 'الشروق', dhuhr: 'الظهر', asr: 'العصر', maghrib: 'المغرب', isha: 'العشاء' };
+      var order = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
+      var now = new Date();
+      var nowMin = now.getHours() * 60 + now.getMinutes();
+      var nextKey = null;
+      order.forEach(function (k) {
+        var parts = (r.times[k] || '00:00').split(':');
+        var mins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+        if (nextKey === null && mins > nowMin) { nextKey = k; }
+      });
+      var html = '<h3>مواقيت الصلاة — القاهرة</h3>'
+        + '<div class="p-row"><button class="p-btn' + (prayerMethod === 'egypt' ? ' gold' : '') + '" id="pmEgypt">مصر</button>'
+        + '<button class="p-btn' + (prayerMethod === 'makkah' ? ' gold' : '') + '" id="pmMakkah">مكة</button>'
+        + '<span class="p-note">' + esc(r.date || '') + '</span></div>'
+        + order.map(function (k) {
+            return '<div class="p-item"><span class="grow">' + names[k] + (k === nextKey ? ' <b style="color:var(--gold-2)">· التالية</b>' : '') + '</span><b>' + esc(r.times[k]) + '</b></div>';
+          }).join('')
+        + '<p class="p-note">حساب على الجهاز (طريقة ' + (prayerMethod === 'egypt' ? 'الهيئة المصرية' : 'أم القرى') + ') — بدون إنترنت.</p>';
+      panelBody.innerHTML = html;
+      document.getElementById('pmEgypt').addEventListener('click', function () {
+        prayerMethod = 'egypt'; renderPrayer();
+      });
+      document.getElementById('pmMakkah').addEventListener('click', function () {
+        prayerMethod = 'makkah'; renderPrayer();
+      });
+    }).catch(function (err) {
+      panelBody.innerHTML = '<h3>مواقيت الصلاة</h3><p class="p-note">المواقيت مش متاحة دلوقتي.</p>';
+      fail('island_prayer', err);
+    });
+  }
+
+  var notifInFlight = false;
+
+  function renderNotifs() {
+    if (notifInFlight) { return; }
+    notifInFlight = true;
+    panelBody.innerHTML = '<h3>إشعارات ويندوز</h3><p class="p-note">بيتم التحميل…</p>';
+    /* v1.6.4 perf (a): WinRT read runs off the bridge - poll
+       job_result instead of awaiting a direct result. */
+    fetchIslandJob('island_notifications', []).then(function (r) {
+      r = r || {};
+      if (!r.available) {
+        panelBody.innerHTML = '<h3>إشعارات ويندوز</h3><p class="p-note">إشعارات ويندوز متاحة على ويندوز بس، ولازم إذن الإشعارات يكون ممنوح.</p>';
+        return;
+      }
+      var items = r.notifications || [];
+      var html = '<h3>إشعارات ويندوز</h3>'
+        + '<div class="p-row"><button class="p-btn" id="notifRefresh">تحديث</button></div>';
+      if (!items.length) {
+        html += '<p class="p-note">مفيش إشعارات حالية.</p>';
+      } else {
+        html += items.map(function (n) {
+          return '<div class="p-item"><span class="grow"><b>' + esc(n.title || n.app || '') + '</b><span class="sub">' + esc(n.app || '') + ' — ' + esc(n.body || '') + '</span></span></div>';
+        }).join('');
+      }
+      panelBody.innerHTML = html;
+      document.getElementById('notifRefresh').addEventListener('click', function () { renderNotifs(); });
+    }).catch(function (err) {
+      panelBody.innerHTML = '<h3>إشعارات ويندوز</h3><p class="p-note">الميزة دي مش متاحة دلوقتي.</p>';
+      fail('island_notifications', err);
+    }).then(function () { notifInFlight = false; });
+  }
+
+  /* --- reminder checks (v1.6.4 perf (c)): due tasks + water, once
+     a minute, ONLY while the island is expanded. The timer itself
+     is started on expand and cleared on collapse
+     (startExpandedTimers / stopExpandedTimers) - collapsed, this
+     function never runs at all. In-flight guarded. --- */
+  function checkReminders() {
+    if (reminderInFlight) { return; }
+    reminderInFlight = true;
+    B.call('island_tasks_due').then(function (r) {
+      (r.tasks || []).forEach(function (t) {
+        window.showIslandToast('تذكير', t.text || '', 8000);
+        B.call('island_task_set_due', t.id, t.due || null, null).catch(function () {});
+      });
+    }).catch(function () {});
+    B.call('island_water_state').then(function (r) {
+      if (!r || !r.enabled || !r.last_drink_at) { return; }
+      var parts = String(r.last_drink_at).split(':');
+      var lastMin = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+      var now = new Date();
+      var nowMin = now.getHours() * 60 + now.getMinutes();
+      if (nowMin - lastMin >= (r.interval_min || 60) && Date.now() - lastWaterNudge > (r.interval_min || 60) * 60000) {
+        lastWaterNudge = Date.now();
+        window.showIslandToast('مياه', 'وقت تشرب مياه — بقالك أكتر من ' + (r.interval_min || 60) + ' دقيقة.', 6000);
+      }
+    }).catch(function () {}).then(function () { reminderInFlight = false; });
+  }
+})();
 </script>
 </body>
 </html>

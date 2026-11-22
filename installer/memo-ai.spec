@@ -111,6 +111,13 @@ hiddenimports = [
     # unless named explicitly.
     "pystray._win32",
     "pystray._base",
+    # v1.6.4 reskin: island modules are imported inside methods
+    # (main.py island_resize/_apply_window_regions/Api delegates) -
+    # name them explicitly so the frozen build never misses one.
+    "island_canvas",
+    "island_features",
+    "island_store",
+    "tasks",
 ]
 
 # Heavy binary deps: collect the whole package (modules + native libs).
@@ -157,7 +164,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(ROOT, "installer", "memo-ai.ico"),
+    icon=os.path.join(ROOT, "installer", "lona.ico"),
     version=os.path.join(ROOT, "installer", "file_version_info.txt"),
 )
 

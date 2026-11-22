@@ -182,11 +182,23 @@ class TestMainSlowCallLogging(unittest.TestCase):
         self.assertIn("def _fallback_monitor():", MAIN)
         self.assertIn("_FALLBACK_MONITOR", MAIN)
         self.assertIn("start_sampler()", MAIN)
-        for method in ("get_device_overview", "get_monitor_status"):
-            block = MAIN.split(f"def {method}")[1].split(
-                "    def ", 1)[0]
-            self.assertIn("_fallback_monitor()", block, method)
-            self.assertNotIn("SystemMonitor(", block, method)
+        # get_monitor_status still calls the fallback directly in main.py.
+        block = MAIN.split("def get_monitor_status")[1].split(
+            "    def ", 1)[0]
+        self.assertIn("_fallback_monitor()", block, "get_monitor_status")
+        self.assertNotIn("SystemMonitor(", block, "get_monitor_status")
+        # v1.6.4 reskin: get_device_overview delegates to
+        # bridge_v2.get_device_overview_v2, which must use the same
+        # cached fallback monitor (never construct SystemMonitor).
+        overview = MAIN.split("def get_device_overview")[1].split(
+            "    def ", 1)[0]
+        self.assertIn("bridge_v2.get_device_overview_v2", overview)
+        bridge = (ROOT / "app" / "bridge_v2.py").read_text(
+            encoding="utf-8")
+        fn = bridge.split("def get_device_overview_v2")[1].split(
+            "\ndef ", 1)[0]
+        self.assertIn("_fallback_monitor()", fn)
+        self.assertNotIn("SystemMonitor(", fn)
 
 
 class TestInviteHardening(unittest.TestCase):

@@ -415,24 +415,36 @@ class TestGeminiChatCall(unittest.TestCase):
 
 
 class TestApiKeysPage(unittest.TestCase):
-    """Settings shows TWO clearly separate Gemini fields."""
+    """Settings shows THREE clearly separate key fields (reskin).
+
+    v1.6.4 reskin: the API keys live in the Settings "api" section,
+    rendered by the Bsec.api builder in index.html — Gemini voice,
+    Gemini chat, AND Groq, each with save + test + eye.
+    """
 
     def test_two_fields_with_exact_labels(self):
         html = (UI_DIR / "index.html").read_text(encoding="utf-8")
-        self.assertIn("مفتاح Gemini للصوت", html)
-        self.assertIn("مفتاح Gemini للمحادثة (بديل Groq)", html)
-        self.assertIn('id="api-key-gemini-voice"', html)
-        self.assertIn('id="api-key-gemini-chat"', html)
-        self.assertIn('id="api-save-gemini-voice"', html)
-        self.assertIn('id="api-save-gemini-chat"', html)
-        self.assertIn('id="api-test-gemini-voice"', html)
-        self.assertIn('id="api-test-gemini-chat"', html)
-        self.assertNotIn('id="api-key-gemini"', html)
+        self.assertIn("[['gemini-voice', 'Gemini صوت'], "
+                      "['gemini-chat', 'Gemini شات'], ['groq', 'Groq']]",
+                      html)
+        self.assertIn("Gemini صوت", html)
+        self.assertIn("Gemini شات", html)
+        self.assertIn("Groq", html)
+        self.assertIn("data-ksave='", html)
+        self.assertIn("data-ktest='", html)
+        self.assertNotIn('data-key="gemini"', html)
 
     def test_js_wires_both_providers(self):
-        js = (UI_DIR / "app.js").read_text(encoding="utf-8")
-        self.assertIn('"gemini-voice", "gemini-chat", "groq"', js)
-        self.assertNotIn('["gemini", "groq"]', js)
+        html = (UI_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertIn("[['gemini-voice', 'Gemini صوت'], "
+                      "['gemini-chat', 'Gemini شات'], ['groq', 'Groq']]",
+                      html)
+        # The save/test/eye handlers take the provider from the row
+        # (data-ksave / data-ktest / data-key), never a hardcoded one.
+        self.assertIn("data-ksave", html)
+        self.assertIn("data-ktest", html)
+        self.assertIn("get_api_key_value", html)
+        self.assertNotIn('["gemini", "groq"]', html)
 
 
 if __name__ == "__main__":

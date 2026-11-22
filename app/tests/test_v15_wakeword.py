@@ -481,7 +481,7 @@ class TestSettingsAndWiring(unittest.TestCase):
 
     def test_main_wiring(self):
         src = _read("app/main.py")
-        self.assertIn('VERSION = "1.6.3"', src)
+        self.assertIn('VERSION = "1.6.4-rc.1"', src)
         self.assertIn("def get_wakeword_status(self)", src)
         self.assertIn("def set_wakeword_enabled(self, enabled)", src)
         self.assertIn("def start_wakeword(self)", src)
@@ -503,9 +503,13 @@ class TestSettingsAndWiring(unittest.TestCase):
         html = _read("app/ui/index.html")
         js = _read("app/ui/app.js")
         css = _read("app/ui/styles.css")
-        self.assertIn('id="set-wakeword"', html)
-        self.assertIn('id="wakeword-status"', html)
-        self.assertIn("v1.6.0", html)  # v1.6.0 UI
+        # v1.6.4 reskin: wake word lives in Settings as the listen
+        # toggle (tg('listen')) with the wake phrase shown in
+        # data-wake; the v1 set-wakeword / wakeword-status ids are gone.
+        self.assertIn("tg('listen'", html)
+        self.assertIn("data-t='", html)
+        self.assertIn("data-wake", html)
+        self.assertIn("LONA v", html)  # version line in the About block
         for name in ("onWakeWord", "wakeHeard", "wakeReply",
                      "wakeNoCommand", "refreshWakewordStatus"):
             self.assertIn(name, js)
@@ -528,9 +532,13 @@ class TestSettingsAndWiring(unittest.TestCase):
 
     def test_version_manifest(self):
         manifest = json.loads(_read("version.json"))
-        self.assertEqual(manifest["version"], "1.6.3")
-        self.assertTrue(any("لونا" in f.get("title", "")
-                            for f in manifest.get("features", [])))
+        self.assertEqual(manifest["version"], "1.6.4-rc.1")
+        # v1.6.4 reskin: the manifest names LONA in its notes (the
+        # feature titles are short labels without the name).
+        self.assertTrue(
+            "لونا" in manifest.get("notes", "") or any(
+                "لونا" in f.get("title", "")
+                for f in manifest.get("features", [])))
 
 
 class TestIdleCPU(unittest.TestCase):

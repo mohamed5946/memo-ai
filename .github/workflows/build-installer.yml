@@ -96,6 +96,22 @@ jobs:
           python scripts/security_check.py
           if ($LASTEXITCODE -ne 0) { throw "Security checklist failed" }
 
+      - name: Run test suite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Full suite must pass. The 4 deselected wakeword tests need
+          # the cached Whisper small model ("could not load cached small
+          # model") - the model is downloaded on first use and is not in
+          # the repo or the CI cache, so they cannot pass here; they are
+          # a pre-existing environment limitation, not a reskin failure.
+          python -m pytest app/tests -q -p no:cacheprovider `
+            --deselect app/tests/test_v15_wakeword.py::TestRealSpotterEndToEnd::test_negative_fixtures_do_not_wake `
+            --deselect app/tests/test_v15_wakeword.py::TestRealSpotterEndToEnd::test_positive_fixtures_wake `
+            --deselect app/tests/test_v15_wakeword.py::TestRealSpotterEndToEnd::test_silence_and_noise_do_not_wake `
+            --deselect app/tests/test_v15_wakeword.py::TestIdleCPU::test_idle_loop_with_real_model
+          if ($LASTEXITCODE -ne 0) { throw "pytest failed" }
+
       - name: Build exe with PyInstaller
         shell: pwsh
         run: |
@@ -106,6 +122,12 @@ jobs:
           if (-not (Test-Path "dist\LONA\_internal\app\ui\index.html")) { throw "Bundled UI is missing from dist (expected under _internal)" }
           if (-not (Test-Path "dist\LONA\_internal\webview\js\api.js")) { throw "webview/js/api.js missing from bundle — window.pywebview would never exist" }
           if (-not (Test-Path "dist\LONA\_internal\app\ui\assets\cat-run.png")) { throw "cat-run.png missing from bundle — the pet run animation would have no sprite" }
+          # v1.6.4 reskin: the new Liquid Glass UI assets must be in the
+          # bundle, or the ported UI loads with no CSS/bridge/fonts/mascot.
+          if (-not (Test-Path "dist\LONA\_internal\app\ui\assets\lona.css")) { throw "lona.css missing from bundle — the reskin UI would have no styling" }
+          if (-not (Test-Path "dist\LONA\_internal\app\ui\assets\bridge.js")) { throw "bridge.js missing from bundle — the reskin UI would have no bridge" }
+          if (-not (Test-Path "dist\LONA\_internal\app\ui\assets\mascot.webp")) { throw "mascot.webp missing from bundle — the reskin robot would have no image" }
+          if (-not (Test-Path "dist\LONA\_internal\app\ui\assets\fonts\fonts.css")) { throw "fonts.css missing from bundle — the reskin UI would have no bundled font" }
           # v1.4.0: the WhatsApp sidecar + bundled Node runtime must be in
           # the bundle, or linking silently does nothing on the user's PC.
           if (-not (Test-Path "dist\LONA\_internal\app\whatsapp_sidecar\sidecar.js")) { throw "whatsapp sidecar.js missing from bundle" }
@@ -120,6 +142,23 @@ jobs:
           if ($badColor) { throw "Chroma-key color #FF00FF found in: $($badColor.Path -join ', ') - it is deleted in v1.3.1" }
           $badApi = Select-String -Path app\*.py -Pattern "SetLayeredWindowAttributes\("
           if ($badApi) { throw "SetLayeredWindowAttributes call found in: $($badApi.Path -join ', ') - it is deleted in v1.3.1" }
+
+      # v1.6.4 reskin: the frozen app must at least stay alive. This
+      # cannot prove the bridge is live (that is what the static
+      # test_reskin_bridge.py test is for), but it catches a startup
+      # crash like the v2.0.0-rebuild.4 relative-import crash.
+      - name: Smoke test frozen app startup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $proc = Start-Process "dist\LONA\LONA.exe" -PassThru
+          try {
+            Start-Sleep -Seconds 15
+            if ($proc.HasExited) { throw "LONA.exe exited within 15s (exit code $($proc.ExitCode)) - frozen app does not stay alive" }
+            Write-Host "LONA.exe stayed alive for 15s"
+          } finally {
+            if (-not $proc.HasExited) { $proc.Kill() }
+          }
 
       - name: Build source zip
         shell: pwsh
@@ -140,6 +179,135 @@ jobs:
           & $iscc /DAppVersion=$env:MEMO_VERSION installer\memo-ai.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed" }
           if (-not (Test-Path "release\LONA-Setup-$env:MEMO_VERSION.exe")) { throw "setup.exe was not produced" }
+
+      # v1.6.4 reskin (performance gate, Mohamed's #1 criterion 17:04):
+      # the frozen app must not freeze or hog CPU/RAM at idle. The 15s
+      # smoke step only proves it stays alive; this step MEASURES it:
+      # install the RC silently, launch it, let it settle 10s, then
+      # sample CPU% + private working set every 5s for 30s, in two
+      # states - main window only (first launch on the invite gate) and
+      # island on (pre-seeded activation; island_enabled defaults True).
+      # The same measurement runs against the v1.6.3 release for the
+      # baseline. The step FAILS if the RC idles above 5% avg CPU or
+      # 1 GB private working set in either state. The comparison is
+      # reported in the log + run summary; a heavier RC must be trimmed
+      # before release, not waved through. The baseline is best-effort:
+      # if its download/install fails, the RC gate still applies and
+      # the comparison is skipped with a warning.
+      - name: Idle performance measurement (RC vs v1.6.3 baseline)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
+
+          function Measure-Idle {
+            param([string]$Exe, [string]$DataDir, [string]$Label, [bool]$Island)
+            if ($Island) {
+              New-Item -ItemType Directory -Force $DataDir | Out-Null
+              '{"activated": true, "at": "2026-11-22T00:00:00"}' | Out-File -FilePath (Join-Path $DataDir "activated.json") -Encoding utf8
+            }
+            Write-Host "--- $Label (island=$Island) ---"
+            $proc = Start-Process $Exe -PassThru
+            try {
+              Start-Sleep -Seconds 10
+              if ($proc.HasExited) { throw "$Label exited during settle (exit code $($proc.ExitCode))" }
+              $proc.Refresh()
+              $prevCpu = $proc.TotalProcessorTime.TotalSeconds
+              $prevTime = [DateTime]::UtcNow
+              $cpuSamples = @(); $wsSamples = @(); $privSamples = @()
+              for ($i = 0; $i -lt 6; $i++) {
+                Start-Sleep -Seconds 5
+                $proc.Refresh()
+                if ($proc.HasExited) { throw "$Label exited during measurement" }
+                $now = [DateTime]::UtcNow
+                $cpu = ($proc.TotalProcessorTime.TotalSeconds - $prevCpu) / ($now - $prevTime).TotalSeconds / $cores * 100
+                $prevCpu = $proc.TotalProcessorTime.TotalSeconds; $prevTime = $now
+                $ws = [math]::Round($proc.WorkingSet64 / 1MB, 1)
+                $priv = $null
+                try {
+                  $c = (Get-Counter '\Process(LONA)\Working Set - Private' -ErrorAction Stop).CounterSamples[0].CookedValue
+                  $priv = [math]::Round($c / 1MB, 1)
+                } catch { $priv = $ws }
+                $cpuSamples += [math]::Round($cpu, 2); $wsSamples += $ws; $privSamples += $priv
+                Write-Host ("  sample {0}: CPU {1}% | private WS {2} MB | working set {3} MB" -f ($i + 1), $cpuSamples[-1], $priv, $ws)
+              }
+              $avgCpu = [math]::Round(($cpuSamples | Measure-Object -Average).Average, 2)
+              $avgPriv = [math]::Round(($privSamples | Measure-Object -Average).Average, 1)
+              $peakWs = ($wsSamples | Measure-Object -Maximum).Maximum
+              Write-Host ("  => {0}: avg CPU {1}% | avg private WS {2} MB | peak WS {3} MB" -f $Label, $avgCpu, $avgPriv, $peakWs)
+              return @{ Label = $Label; AvgCpu = $avgCpu; AvgPrivMB = $avgPriv; PeakWsMB = $peakWs }
+            } finally {
+              if (-not $proc.HasExited) { $proc.Kill(); $proc.WaitForExit(5000) | Out-Null }
+              Start-Sleep -Seconds 2
+            }
+          }
+
+          function Install-App {
+            param([string]$Setup, [string]$Dir)
+            if (Test-Path $Dir) { Remove-Item $Dir -Recurse -Force }
+            & $Setup /VERYSILENT /SUPPRESSMSGBOXES /DIR="$Dir" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Silent install failed for $Setup (exit $LASTEXITCODE)" }
+            $exe = Join-Path $Dir "LONA.exe"
+            if (-not (Test-Path $exe)) { throw "LONA.exe not found after install in $Dir" }
+            return $exe
+          }
+
+          function Uninstall-App {
+            param([string]$Dir)
+            $un = Join-Path $Dir "unins000.exe"
+            if (Test-Path $un) { & $un /VERYSILENT /SUPPRESSMSGBOXES | Out-Null; Start-Sleep -Seconds 5 }
+            if (Test-Path $Dir) { Remove-Item $Dir -Recurse -Force -ErrorAction SilentlyContinue }
+          }
+
+          $setup = (Get-ChildItem release\LONA-Setup-*.exe | Select-Object -First 1).FullName
+          if (-not $setup) { throw "setup.exe missing" }
+          $rcDir = Join-Path $env:TEMP "LONA-RC"
+          $rcExe = Install-App -Setup $setup -Dir $rcDir
+          $rcData = Join-Path $rcDir "_internal\app\data"
+          $rcMain = Measure-Idle -Exe $rcExe -DataDir $rcData -Label "RC main-only" -Island $false
+          $rcIsland = Measure-Idle -Exe $rcExe -DataDir $rcData -Label "RC island-on" -Island $true
+          Uninstall-App -Dir $rcDir
+
+          $bMain = $null; $bIsland = $null
+          try {
+            $v163 = Join-Path $env:TEMP "LONA-Setup-1.6.3.exe"
+            Invoke-WebRequest "https://github.com/mohamed5946/memo-ai/releases/download/v1.6.3/LONA-Setup-1.6.3.exe" -OutFile $v163
+            $bDir = Join-Path $env:TEMP "LONA-163"
+            $bExe = Install-App -Setup $v163 -Dir $bDir
+            $bData = Join-Path $bDir "_internal\app\data"
+            $bMain = Measure-Idle -Exe $bExe -DataDir $bData -Label "v1.6.3 main-only" -Island $false
+            $bIsland = Measure-Idle -Exe $bExe -DataDir $bData -Label "v1.6.3 island-on" -Island $true
+            Uninstall-App -Dir $bDir
+          } catch {
+            Write-Host "WARNING: v1.6.3 baseline measurement failed: $_ - continuing with RC numbers only"
+          }
+
+          $lines = @("| Run | Avg CPU % | Avg private WS (MB) | Peak WS (MB) |")
+          $lines += "|---|---|---|---|"
+          $lines += "| RC main-only | $($rcMain.AvgCpu) | $($rcMain.AvgPrivMB) | $($rcMain.PeakWsMB) |"
+          $lines += "| RC island-on | $($rcIsland.AvgCpu) | $($rcIsland.AvgPrivMB) | $($rcIsland.PeakWsMB) |"
+          if ($bMain) {
+            $lines += "| v1.6.3 main-only | $($bMain.AvgCpu) | $($bMain.AvgPrivMB) | $($bMain.PeakWsMB) |"
+            $lines += "| v1.6.3 island-on | $($bIsland.AvgCpu) | $($bIsland.AvgPrivMB) | $($bIsland.PeakWsMB) |"
+            $cpuVerdict = if (($rcMain.AvgCpu -le $bMain.AvgCpu) -and ($rcIsland.AvgCpu -le $bIsland.AvgCpu)) { "lighter-or-equal on CPU" } else { "HEAVIER on CPU" }
+            $memVerdict = if (($rcMain.AvgPrivMB -le $bMain.AvgPrivMB) -and ($rcIsland.AvgPrivMB -le $bIsland.AvgPrivMB)) { "lighter-or-equal on RAM" } else { "HEAVIER on RAM" }
+            Write-Host "Comparison: RC is $cpuVerdict and $memVerdict vs v1.6.3"
+            $lines += ""
+            $lines += "Comparison: RC is **$cpuVerdict** and **$memVerdict** vs v1.6.3."
+          } else {
+            Write-Host "Comparison: no v1.6.3 baseline (see warning above)"
+            $lines += ""
+            $lines += "Comparison: no v1.6.3 baseline (download/install failed - see warning above)."
+          }
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+          $fail = @()
+          if ($rcMain.AvgCpu -gt 5) { $fail += "RC main-only avg CPU $($rcMain.AvgCpu)% > 5%" }
+          if ($rcIsland.AvgCpu -gt 5) { $fail += "RC island-on avg CPU $($rcIsland.AvgCpu)% > 5%" }
+          if ($rcMain.AvgPrivMB -gt 1024) { $fail += "RC main-only private WS $($rcMain.AvgPrivMB) MB > 1024 MB" }
+          if ($rcIsland.AvgPrivMB -gt 1024) { $fail += "RC island-on private WS $($rcIsland.AvgPrivMB) MB > 1024 MB" }
+          if ($fail) { throw ("Idle performance gate FAILED: " + ($fail -join "; ")) }
+          Write-Host "Idle performance gate PASSED"
 
       - name: Upload setup.exe artifact
         uses: actions/upload-artifact@v4
@@ -163,15 +331,17 @@ jobs:
             gh release upload $tag $setup $zip --clobber
             if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
           } else {
-            gh release create $tag $setup $zip --title "LONA $tag" --notes "LONA $tag — ثبّت من setup.exe زي أي برنامج ويندوز، أو استخدم ملف الـ zip زي قبل كده."
+            gh release create $tag $setup $zip --prerelease --title "LONA $tag" --notes "LONA $tag — ثبّت من setup.exe زي أي برنامج ويندوز، أو استخدم ملف الـ zip زي قبل كده."
             if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
           }
 
       # The manifest (raw version.json on main) must match the real release
       # files, so update it with the built files' URLs + hashes and push it
-      # back to main. Runs only for tag builds.
+      # back to main. Runs only for tag builds. RC tags are NEVER pushed
+      # to the manifest: an RC must not reach v1.6.3 users via the
+      # in-app updater (v1.6.4 reskin).
       - name: Update version.json manifest on main
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && !contains(github.ref_name, '-rc')
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

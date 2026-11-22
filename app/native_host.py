@@ -647,21 +647,44 @@ def _try_loopback_client(timeout: float = 3.0):
     return None
 
 
-def start_native_host_listener() -> NativeHostClient:
-    """Start (or attach to) the native-host bridge for the desktop app.
+def _hidden_popen_kwargs() -> dict:
+    """CREATE_NO_WINDOW on Windows, so spawning the standalone host
+    never flashes a console window (v1.6.4 console-flash audit).
+    Prefers hidden_spawn; falls back to the literal flag so this file
+    still runs standalone if copied somewhere without app/ on path."""
+    try:
+        import hidden_spawn
+        return hidden_spawn.popen_kwargs()
+    except Exception:
+        if sys.platform == "win32":
+            return {"creationflags": 0x08000000}
+        return {}
 
-    Prefers a Chrome-launched host (extension already connected);
-    otherwise spawns this file in --standalone mode, which validates
-    commands and answers ping but reports browser commands as
-    extension_not_connected until the extension connects."""
-    client = _try_loopback_client()
-    if client is not None:
-        return client
+
+# v1.6.4 (F-H): how many times start_native_host_listener() retries
+# a failed spawn + ping handshake before giving up.
+_LISTENER_START_ATTEMPTS = 3
+
+
+def _spawn_standalone_listener() -> NativeHostClient:
+    """One spawn + ping-handshake attempt for the standalone host.
+    Raises RuntimeError when the handshake fails (the spawned process
+    is closed first, so a retry never leaves a stray process)."""
     exe = sys.executable or sys.argv[0]
+    if getattr(sys, "frozen", False):
+        # Frozen: the exe IS the program — its entry point is main.py,
+        # which handles --standalone (hook added with this fix). The
+        # .py path does not exist on disk in a frozen bundle, so it
+        # must NOT be passed as an argument.
+        argv = [exe, "--standalone"]
+    else:
+        argv = [exe, str(Path(__file__).resolve()), "--standalone"]
     proc = subprocess.Popen(
-        [exe, str(Path(__file__).resolve()), "--standalone"],
+        argv,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL)
+        stderr=subprocess.DEVNULL,
+        # v1.6.4: no console window when spawning the host process.
+        **_hidden_popen_kwargs())
     router = _ReplyRouter(proc.stdout, proc.stdin, threading.Lock())
     router.start()
     client = NativeHostClient(router, extension_connected=False, proc=proc)
@@ -671,6 +694,43 @@ def start_native_host_listener() -> NativeHostClient:
         raise RuntimeError("native host failed to start: "
                            f"{reply.get('error')}")
     return client
+
+
+def start_native_host_listener() -> NativeHostClient:
+    """Start (or attach to) the native-host bridge for the desktop app.
+
+    Prefers a Chrome-launched host (extension already connected);
+    otherwise spawns this file in --standalone mode, which validates
+    commands and answers ping but reports browser commands as
+    extension_not_connected until the extension connects.
+
+    v1.6.4 (F-H): the spawn used to pass the .py path as an argument
+    ([exe, native_host.py, --standalone]), which the FROZEN exe does
+    not understand — its entry point is main.py, which only handles
+    --native-host, so the spawned exe opened the GUI instead of the
+    stdio loop and the listener could never start on a real install.
+    Frozen now spawns [exe, --standalone] (main.py gains a matching
+    --standalone hook); source runs keep the script path. The start
+    is retried (3 attempts, backoff) because a slow interpreter start
+    can fail the first ping even when the spawn itself worked."""
+    client = _try_loopback_client()
+    if client is not None:
+        return client
+    last_exc = None
+    for attempt in range(_LISTENER_START_ATTEMPTS):
+        try:
+            client = _spawn_standalone_listener()
+        except Exception as exc:
+            last_exc = exc
+            _log("warn", "native host start attempt "
+                         f"{attempt + 1}/{_LISTENER_START_ATTEMPTS} "
+                         f"failed: {exc}")
+            if attempt + 1 < _LISTENER_START_ATTEMPTS:
+                time.sleep(0.5 * (attempt + 1))
+            continue
+        return client
+    raise RuntimeError("native host failed to start: "
+                       f"{last_exc}")
 
 
 # ---------------------------------------------------------------------------

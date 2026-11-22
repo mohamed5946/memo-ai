@@ -350,28 +350,46 @@ class TestInstallNow(_UpdaterCase):
 
 class TestUpdateSlideUI(unittest.TestCase):
     def test_slide_markup_and_handlers(self):
-        js = _read("app/ui/app.js")
+        # v1.6.4 reskin: the Update section keeps the portable half of
+        # the v1.4.3 update UX — a check button, a hidden "install the
+        # downloaded update" button, a status note, and the
+        # check_updates / install_update bridge calls, with no
+        # confirm() flow anywhere. (The animated update SLIDE itself —
+        # update-slide container, renderUpdateSlide, feature cards,
+        # install-now/later choice — was not carried into the reskin
+        # UI; see the REAL GAP assertions at the end of this test.)
         html = _read("app/ui/index.html")
-        css = _read("app/ui/styles.css")
-        # The slide container lives in the Updates section.
+        self.assertIn("data-ucheck", html)
+        self.assertIn("data-uinst", html)
+        self.assertIn("data-uinst hidden", html)
+        self.assertIn("id='updNote'", html)
+        self.assertIn("check_updates", html)
+        self.assertIn("install_update", html)
+        self.assertNotIn("confirm(", html)
+        self.assertNotIn("confirm_install", html)
+        # REAL GAP (reskin): the update slide is missing from the
+        # reskin UI — no update-slide container, no renderUpdateSlide /
+        # parseFeaturesFromNotes / refreshDownloadedState /
+        # installDownloadedNow / installDownloadedLater, no
+        # download_update / dismiss_update_reminder /
+        # update_install_now / update_install_later calls, no
+        # .update-slide / .update-slide-in / .update-feature-card /
+        # updateSlideIn / updateCardIn styles, and no
+        # cubic-bezier(0.22, 1, 0.36, 1) entrance in lona.css.
+        # The assertions below are kept so the gap stays visible.
         self.assertIn('id="update-slide"', html)
         self.assertIn('id="install-downloaded-btn"', html)
-        # New flow: render + choice handlers, no old install button/flow.
-        self.assertIn("renderUpdateSlide", js)
-        self.assertIn("parseFeaturesFromNotes", js)
-        self.assertIn("refreshDownloadedState", js)
-        self.assertIn("installDownloadedNow", js)
-        self.assertIn("installDownloadedLater", js)
-        self.assertIn("download_update", js)
-        self.assertIn("dismiss_update_reminder", js)
-        self.assertIn("update_install_now", js)
-        self.assertIn("update_install_later", js)
-        self.assertIn("update-slide-progress-fill", js)
-        self.assertNotIn("install-update-btn", js)
-        self.assertNotIn("install-update-btn", html)
-        self.assertNotIn('confirm(t("confirm_install"))', js)
-        self.assertNotIn("confirm_install", js)
-        # Entrance animation + feature cards (Apple-style, no pop-in).
+        self.assertIn("renderUpdateSlide", html)
+        self.assertIn("parseFeaturesFromNotes", html)
+        self.assertIn("refreshDownloadedState", html)
+        self.assertIn("installDownloadedNow", html)
+        self.assertIn("installDownloadedLater", html)
+        self.assertIn("download_update", html)
+        self.assertIn("dismiss_update_reminder", html)
+        self.assertIn("update_install_now", html)
+        self.assertIn("update_install_later", html)
+        self.assertIn("update-slide-progress-fill", html)
+        css = _read("app/ui/assets/lona.css")
         self.assertIn(".update-slide", css)
         self.assertIn(".update-slide-in", css)
         self.assertIn(".update-feature-card", css)

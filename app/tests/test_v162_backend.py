@@ -9,7 +9,7 @@ What is proven here (one class per work item):
     chat_result() with the heard text; ONE WhisperModel is cached
     in hear.py (never rebuilt per call); Groq Whisper has a 30 s
     timeout.
-  * A2 check_updates returns {"checking": true} at once; the poll
+  * A2 check_updates returns {"pending": true, "id": ...} at once; the poll
     method returns the update dict when the thread finishes.
   * A3 analyze_image / understand_image return pending+id at once;
     the poll methods return the Gemini/tool result.
@@ -295,7 +295,8 @@ class TestCheckUpdatesAsync(_ApiCase):
             t0 = time.monotonic()
             res = self.api.check_updates()
             dt = time.monotonic() - t0
-        self.assertEqual(res, {"checking": True})
+        self.assertTrue(res.get("pending"))
+        self.assertTrue(res.get("id"))
         self.assertLess(dt, 0.5, "check_updates blocked the bridge")
         self.assertTrue(started.wait(timeout=2))
         final = _poll_until(
@@ -306,13 +307,15 @@ class TestCheckUpdatesAsync(_ApiCase):
         self.assertEqual(final["update"]["version"], "9.9.9")
         self.assertIsNone(final["error"])
 
-    def test_second_call_while_checking_returns_checking(self):
+    def test_second_call_while_checking_returns_same_pending_id(self):
         with mock.patch.object(
                 updater, "check_update",
                 side_effect=lambda: (time.sleep(1.0), {"status": "ok"})[1]):
-            self.api.check_updates()
+            first = self.api.check_updates()
             res = self.api.check_updates()
-        self.assertEqual(res, {"checking": True})
+        self.assertTrue(res.get("pending"))
+        self.assertTrue(first.get("id"))
+        self.assertEqual(res.get("id"), first.get("id"))
 
 
 # ---------------------------------------------------------------------------
@@ -462,8 +465,12 @@ class TestSelfViewSingleRead(_ApiCase):
         self.assertTrue(res.get("ok"))
         mon.get_device_overview.assert_called_once()
         # The overview is passed down as status -- selfview must
-        # NOT read the monitor a second time.
-        self.assertEqual(sv.call_args.kwargs.get("status"), overview)
+        # NOT read the monitor a second time. v1.6.4 reskin: the
+        # overview now comes through bridge_v2's v2 translation,
+        # which keeps every v1 key and adds the v2 temp alias.
+        expected = dict(overview)
+        expected["temp"] = {}
+        self.assertEqual(sv.call_args.kwargs.get("status"), expected)
 
 
 # ---------------------------------------------------------------------------

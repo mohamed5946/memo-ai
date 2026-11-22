@@ -167,9 +167,13 @@ class TestRemoveOldInstallBounded:
 
 
 class TestVersionManifest:
-    def test_version_bumped_with_v162_urls(self):
+    def test_version_is_rc_with_v163_urls(self):
+        # v1.6.4 reskin: the manifest version is the RC (1.6.4-rc.1)
+        # while its URLs INTENTIONALLY still point at the v1.6.3
+        # release — the RC tag is gated out of the in-app updater
+        # manifest. (Renamed from test_version_bumped_with_v162_urls.)
         m = _manifest()
-        assert m["version"] == "1.6.3"
+        assert m["version"] == "1.6.4-rc.1"
         assert m["url"] == (
             "https://github.com/mohamed5946/memo-ai/releases/download/"
             "v1.6.3/memo-ai-v1.6.3.zip")
@@ -194,17 +198,17 @@ class TestVersionManifest:
     def test_other_fields_preserved(self):
         m = _manifest()
         assert [f["title"] for f in m["features"]] == [
-            "تصميم LONA الجديد",
-            "الجزيرة والروبوت",
-            "كروت حية",
-            "نادي «يا لونا» فيرد عليك",
-            "إصلاح ذاتي آمن",
-            "تحكم في المتصفح",
+            "شكل Liquid Glass الجديد",
+            "الجزيرة",
+            "أزرار التحكم شغالة",
+            "قراية حرارة صح",
+            "من غير نوافذ سودا",
+            "واتساب أهدى",
         ]
-        # Notes now open with the v1.6.3 entry; the v1.6.2 text is
-        # kept verbatim as history, not rewritten.
-        assert m["notes"].startswith("v1.6.3:")
-        assert "v1.6.2: إصلاح تعليق المثبّت" in m["notes"]
+        # Notes now open with the لونا v1.6.4-rc.1 entry; the v1.6.2
+        # history text was NOT carried into the rewritten RC notes.
+        assert m["notes"].startswith("لونا v1.6.4-rc.1")
+        assert "v1.6.2: إصلاح تعليق المثبّت" not in m["notes"]
 
 
 if __name__ == "__main__":

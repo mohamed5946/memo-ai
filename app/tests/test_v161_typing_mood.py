@@ -312,7 +312,7 @@ class TestThinkingMoodBackendContract(unittest.TestCase):
         self.assertNotIn("note_user_message(", thinking_branch)
 
     def test_chat_notes_tone_and_pushes_thinking_to_island(self):
-        chat = _py_fn_source(MAIN, "def chat(self, text):")
+        chat = _py_fn_source(MAIN, "def _chat_raw(self, text):")
         self.assertIn("note_user_message(text)", chat)
         self.assertIn('setMood(\\"بيفكر\\")', chat)
 

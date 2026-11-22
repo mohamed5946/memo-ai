@@ -64,6 +64,10 @@ DEFAULTS = {
     # it. The pet stays OFF (still disabled by that decision).
     "pet_enabled": False,
     "island_enabled": True,
+    # v1.6.4 perf (d): background clipboard capture while the
+    # clipboard panel is closed. Default False - history is captured
+    # only once the panel has been opened, unless the user opts in.
+    "island_clipboard_enabled": False,
     # v1.6.1 one-time migration: existing installs saved
     # island_enabled=False, but no Settings toggle ever existed, so
     # nobody could have explicitly turned it off - the first v1.6.1
@@ -125,6 +129,11 @@ DEFAULTS = {
     # v1.6.0: themes (old theme is never deleted - it stays as "old"
     # beside the new ones; the UI applies the id, Python only persists it).
     "theme": "old",
+    # v1.6.4 reskin: header mute (v2 UI) + light-glass mode. Both are
+    # separate from voice_output (the Settings voice toggle) and from
+    # theme; the v2 UI persists them through save_settings.
+    "muted": False,
+    "lite": 0,
     # v1.6.0: Deep Think (Groq reasoning_effort="high" when on).
     "deep_think_enabled": False,
     # v1.6.2: model choice ("auto" = Groq -> Gemini -> Ollama chain,

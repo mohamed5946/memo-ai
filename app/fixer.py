@@ -150,6 +150,7 @@ def restore_deleted(entry: dict) -> dict:
     if sys.platform == "win32":
         try:
             import subprocess
+            import hidden_spawn
             ps = (
                 "$s=New-Object -ComObject Shell.Application;"
                 "$b=$s.Namespace(0xA);"
@@ -161,7 +162,8 @@ def restore_deleted(entry: dict) -> dict:
             )
             proc = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", ps],
-                capture_output=True, text=True, timeout=30)
+                capture_output=True, text=True, timeout=30,
+                **hidden_spawn.run_kwargs())
             if "restored" in (proc.stdout or ""):
                 _remove_undo_entry(entry)
                 info("fixer", f"Restored from Recycle Bin: {original}")

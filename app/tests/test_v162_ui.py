@@ -50,6 +50,10 @@ HTML = (UI / "index.html").read_text(encoding="utf-8")
 CSS = (UI / "styles.css").read_text(encoding="utf-8")
 JS = (UI / "app.js").read_text(encoding="utf-8")
 ISLAND = (UI / "island.html").read_text(encoding="utf-8")
+# Reskin sources: the live UI is index.html + assets/lona.css (the
+# module-level CSS/JS above still point at the dead v1 files).
+LONA_CSS = (UI / "assets" / "lona.css").read_text(encoding="utf-8")
+BRIDGE = (UI / "assets" / "bridge.js").read_text(encoding="utf-8")
 
 
 def _find_jsdom_node_path():
@@ -109,25 +113,69 @@ class TestA6ChatTimeout(unittest.TestCase):
 
 class TestA7IslandCap(unittest.TestCase):
     def test_cap_timer_stored_and_cleared(self):
-        assert "waitForIslandChatResult" in ISLAND
-        assert "clearTimeout(capTimer)" in ISLAND
-        assert "window.__islandCapMs" in ISLAND
+        # v1.6.4 reskin: the cap timer (waitForIslandChatResult /
+        # capTimer / __islandCapMs) is GONE - island chat now waits via
+        # the shared LonaBridge.pollUntil, which owns the deadline
+        # itself (no stored timer to clear). Same requirement (an
+        # island chat can never wait forever), new mechanism.
+        assert "waitForIslandChatResult" not in ISLAND
+        assert "capTimer" not in ISLAND
+        assert "__islandCapMs" not in ISLAND
+        assert "B.pollUntil" in ISLAND
+        assert "120000" in ISLAND  # 120s chat-result deadline
+        assert "800" in ISLAND  # poll every 800ms
+        # pollUntil rejects on timeout instead of hanging.
+        assert "Date.now() > deadline" in BRIDGE
+        assert "انتهت المهلة أثناء انتظار الرد" in BRIDGE
 
     def test_cap_writes_failure_into_exp_reply(self):
-        assert "الرد اتأخر أوي" in ISLAND
-        assert 'resolve({ reply: ""' not in ISLAND
+        # v1.6.4 reskin: there is no exp-reply anymore (the reply box
+        # is #replyBox / .i-reply), and a failed/timed-out island chat
+        # does NOT write the failure into the reply box - it clears the
+        # box (no stale typing dots) and surfaces the failure through
+        # the shared error bar (reportFailure -> showError) + the
+        # diagnostics log. Same requirement (the user always sees the
+        # failure, never a silent hang), new surface.
+        assert "exp-reply" not in ISLAND
+        assert 'id="replyBox"' in ISLAND
+        assert "fail('island_chat'" in ISLAND
+        assert "replyBox.textContent = ''" in ISLAND
+        assert "reportFailure" in BRIDGE
+        assert "showError(msg)" in BRIDGE
+        # The old "الرد اتأخر أوي" string is gone; the timeout message
+        # is the shared pollUntil one.
+        assert "الرد اتأخر أوي" not in ISLAND
+        assert "انتهت المهلة أثناء انتظار الرد" in BRIDGE
 
 
 class TestB12InFlightGuards(unittest.TestCase):
     def test_every_async_poll_has_a_guard(self):
-        for guard in ("permPollInFlight", "_statusInFlight", "_waInFlight",
-                      "_proactiveInFlight", "moodPollInFlight",
-                      "_liveCardsInFlight", "updatePollInFlight"):
-            assert guard in JS, "guard missing: " + guard
-        for guard in ("moodPollInFlight", "aiNameInFlight"):
+        # v1.6.4 reskin: the guards live in the LIVE files now (the
+        # v1 app.js guards - permPollInFlight, _statusInFlight,
+        # _waInFlight, _proactiveInFlight, _liveCardsInFlight - are
+        # dead with app.js: the reskin main window has no permission
+        # polling or live cards). Every live async poll still carries
+        # its in-flight guard: island mood/reminder/music/notifs, main
+        # mood/device/update polls.
+        for guard in ("moodInFlight", "reminderInFlight",
+                      "musicInFlight", "notifInFlight"):
             assert guard in ISLAND, "island guard missing: " + guard
-        # Recursive-setTimeout pollers (chat result) need no interval guard.
-        assert "pollInFlight" in JS
+        for guard in ("moodInFlight", "devInFlight",
+                      "updatePollInFlight"):
+            assert guard in HTML, "main guard missing: " + guard
+        # Each guard is actually used: early-return while in flight,
+        # cleared when the call settles.
+        for src, guard in ((ISLAND, "moodInFlight"),
+                           (ISLAND, "reminderInFlight"),
+                           (ISLAND, "musicInFlight"),
+                           (ISLAND, "notifInFlight"),
+                           (HTML, "moodInFlight"),
+                           (HTML, "devInFlight"),
+                           (HTML, "updatePollInFlight")):
+            assert f"if ({guard}) {{ return; }}" in src, \
+                "guard never checked: " + guard
+            assert f"{guard} = false" in src, \
+                "guard never cleared: " + guard
 
     def test_guards_use_try_finally(self):
         assert JS.count("finally {") >= 6
@@ -135,11 +183,27 @@ class TestB12InFlightGuards(unittest.TestCase):
 
 class TestB13IslandSingleMoodPoll(unittest.TestCase):
     def test_started_guard_and_stored_interval(self):
-        assert "moodPollingStarted" in ISLAND
-        assert "moodPollTimer" in ISLAND
-        assert ISLAND.count("startMoodPolling()") >= 2
+        # v1.6.4 reskin (perf (c)): the mood poll runs ONLY while the
+        # island is expanded - startExpandedTimers() starts it (once,
+        # guarded by `if (!moodTimer)`) and stopExpandedTimers()
+        # clears it on collapse. No poll at load, no poll while
+        # collapsed. Same requirement (exactly one 5s mood poll, never
+        # doubled, never while collapsed), new lifecycle.
+        assert "startExpandedTimers" in ISLAND
+        assert "stopExpandedTimers" in ISLAND
+        assert "moodTimer" in ISLAND
+        assert "if (!moodTimer)" in ISLAND
+        assert "setInterval(pollMood, 5000)" in ISLAND
         assert "get_mood" in ISLAND
         assert "5000" in ISLAND
+        assert "moodInFlight" in ISLAND  # in-flight guard on the poll
+        assert "No mood poll at load" in ISLAND
+        # pollMood is invoked only from startExpandedTimers
+        # (definition + that one immediate call).
+        assert ISLAND.count("pollMood()") == 2
+        body = _extract(ISLAND, "function stopExpandedTimers()")
+        assert "clearInterval(moodTimer)" in body
+        assert "moodTimer = null" in body
 
 
 class TestB14UpdatePoll(unittest.TestCase):
@@ -173,9 +237,24 @@ class TestB21ResolvePermission(unittest.TestCase):
 
 class TestF1Composer(unittest.TestCase):
     def test_composer_is_direct_flex_child_of_app(self):
-        main_col = HTML.split('id="main-col"')[1]
-        composer_at = main_col.index('<div class="composer"')
-        assert main_col[:composer_at].rstrip().endswith("</div>\n</div>")
+        # v1.6.4 reskin: the composer is no longer a flex child of
+        # .app — it is .composer-wrap, absolutely positioned 16px
+        # from the bottom of the chat view, OUTSIDE the scroll area
+        # (#thread), and the thread keeps 90px of bottom padding so
+        # the last message is never hidden under it. Same
+        # requirement (composer pinned at the bottom, never scrolled
+        # away, never covering chat content), new DOM.
+        assert '<div class="composer-wrap">' in HTML
+        thread_at = HTML.index('<div class="thread" id="thread">')
+        composer_at = HTML.index('<div class="composer-wrap">')
+        assert HTML[thread_at:composer_at].rstrip().endswith("</div>")
+        m = re.search(r"\.composer-wrap\s*\{([^}]*)\}", LONA_CSS)
+        assert m, ".composer-wrap rule missing from lona.css"
+        assert "position:absolute" in m.group(1)
+        assert "bottom:16px" in m.group(1)
+        m = re.search(r"\.thread\s*\{([^}]*)\}", LONA_CSS)
+        assert m, ".thread rule missing from lona.css"
+        assert "padding:6px 22px 90px" in m.group(1)
 
     def test_app_is_flex_column_full_height(self):
         m = re.search(r"\.app\s*\{([^}]*)\}", CSS)
@@ -238,9 +317,14 @@ class TestF3ProgramsList(unittest.TestCase):
 
 class TestParity1RobotStage(unittest.TestCase):
     def test_stage_markup_present(self):
-        assert "robot-stage" in HTML
-        assert "stage-robot" in HTML
-        assert "robot-rings" in HTML
+        # v1.6.4 reskin: the robot stage was replaced by the hero —
+        # mascot image + greeting + live mood line at the top of the
+        # chat thread. Same requirement (a compact, mood-driven AI
+        # presence), new DOM.
+        assert 'id="hero"' in HTML
+        assert 'src="assets/mascot.webp"' in HTML
+        assert 'id="heroGreet"' in HTML
+        assert 'id="heroMood"' in HTML
 
     def test_stage_is_compact(self):
         # v1.6.2 (10:48): the stage is a small embedded robot — the chat
@@ -306,15 +390,26 @@ class TestParity3LiveCard(unittest.TestCase):
 
 class TestParity5IslandPill(unittest.TestCase):
     def test_pill_has_robot_name_dot_listening_wave(self):
-        assert "island-robot" in ISLAND
-        assert "island-name" in ISLAND
-        assert "green-dot" in ISLAND
+        # v1.6.4 reskin: the pill is .i-mini - mascot bubble (.bubble
+        # img), LIVE ai_name title (id="pillName", default لونا),
+        # green .dot, "Listening..." status, wave bars.
+        assert 'class="bubble"' in ISLAND
+        assert 'src="assets/mascot.webp"' in ISLAND
+        assert 'id="pillName"' in ISLAND
+        assert "ai_name" in ISLAND
+        assert '<span class="dot">' in ISLAND
+        assert ".dot{" in LONA_CSS
         assert "Listening..." in ISLAND
+        assert 'class="wave"' in ISLAND
 
     def test_no_window_control_buttons(self):
-        assert "island-mic" not in ISLAND
+        # v1.6.4 reskin: no settings/X buttons on the pill; the one
+        # mic button (micBtn) is data-stop, so it never toggles the
+        # island - it only flips the local listening indicator.
         assert "island-settings" not in ISLAND
         assert "island-close" not in ISLAND
+        assert 'id="micBtn"' in ISLAND
+        assert "mic-live" in ISLAND
 
 
 class TestF4IslandHugsPill(unittest.TestCase):
@@ -322,39 +417,87 @@ class TestF4IslandHugsPill(unittest.TestCase):
         assert "island-clock" not in ISLAND
 
     def test_clock_only_inside_expanded(self):
-        assert "exp-clock" in ISLAND
+        # v1.6.4 reskin: there is NO clock widget at all in the island
+        # anymore (no island-clock, no exp-clock) - the requirement
+        # (no time display on the collapsed pill) is kept by
+        # construction. Time displays exist only inside the EXPANDED
+        # feature panels (timer/music), via fmtClock - never in the
+        # pill markup (everything before .i-full).
+        assert "exp-clock" not in ISLAND
+        assert "island-clock" not in ISLAND
+        assert "fmtClock" in ISLAND
+        pill_part = ISLAND.split('<div class="i-full">')[0]
+        assert "fmtClock" not in pill_part, \
+            "time display leaked onto the collapsed pill"
 
     def test_no_max_width_squeeze(self):
         assert "calc(100vw - 16px)" not in ISLAND
 
     def test_robot_bubble_inside_pill(self):
+        # v1.6.4 reskin: the robot bubble is .bubble (42px, fits the
+        # 60px pill) inside .i-mini, which is absolutely positioned
+        # over the whole island (inset:0) - the bubble can never sit
+        # outside the pill bounds. The old negative-offset bug stays
+        # gone.
         assert "inset-inline-start: -6px" not in ISLAND
-        m = re.search(r"\.island \.robot-bubble\s*\{([^}]*)\}", ISLAND)
-        assert m and "inset-inline-start: 0" in m.group(1)
+        assert 'class="bubble"' in ISLAND
+        m = re.search(r"\.bubble\s*\{([^}]*)\}", LONA_CSS)
+        assert m, ".bubble rule missing from lona.css"
+        assert "width:42px" in m.group(1)
+        assert "height:42px" in m.group(1)
+        m = re.search(r"\.i-mini\s*\{([^}]*)\}", LONA_CSS)
+        assert m, ".i-mini rule missing from lona.css"
+        assert "position:absolute" in m.group(1)
+        assert "inset:0" in m.group(1)
 
 
 class TestIslandRedesign(unittest.TestCase):
     def test_no_x_mic_settings_buttons(self):
-        assert "island-mic" not in ISLAND
+        # v1.6.4 reskin: no X and no settings button on the island.
+        # The pill DOES have one mic button again by design (micBtn) -
+        # data-stop, so it never toggles the island; it only flips the
+        # local listening indicator (mic-live).
+        assert "island-close" not in ISLAND
+        assert "exp-close" not in ISLAND
         assert "island-settings" not in ISLAND
+        assert 'id="micBtn"' in ISLAND
+        assert "mic-live" in ISLAND
 
     def test_no_quick_actions_tools_skills_more(self):
         for gone in ("Quick Actions", "Tools", "Skills", "More"):
             assert gone not in ISLAND, gone
 
     def test_no_swipe_panel_system(self):
-        for gone in ("exp-panels", "panel-dots", "showPanel",
-                     "panel-prev", "panel-next"):
+        # v1.6.2 swipe system (dots/arrows/drag) is gone. The reskin
+        # ADDED feature panels instead (music/timer/tasks/clipboard/
+        # shelf/water/prayer/notifs) - but they are TABBED, opened by
+        # the panels button, never swiped. Same requirement (no swipe
+        # navigation), new panel system.
+        for gone in ("panel-dots", "showPanel",
+                     "panel-prev", "panel-next", "pointerdown"):
             assert gone not in ISLAND, gone
-        assert "pointerdown" not in ISLAND or "exp-panels" not in ISLAND
+        assert 'id="panelsBtn"' in ISLAND
+        assert "openPanel" in ISLAND
+        assert "p-tabs" in ISLAND
+        for tab in ("موسيقى", "مؤقت", "مهام", "الحافظة",
+                    "ملفات", "مياه", "صلاة", "إشعارات"):
+            assert tab in ISLAND, "panel tab missing: " + tab
 
     def test_keeps_expand_collapse_greeting_robot_composer(self):
-        assert "expandIsland" in ISLAND
-        assert "collapseIsland" in ISLAND
-        assert "exp-greet" in ISLAND
-        assert "exp-robot" in ISLAND
-        assert "exp-input" in ISLAND
-        assert "exp-send" in ISLAND
+        # v1.6.4 reskin (fixed canvas): expand/collapse is setOpen()
+        # toggling the .open class (island_expand/island_collapse on
+        # the bridge); greeting #greet, mascot .stand, composer
+        # #islInput + #islSend.
+        assert "setOpen" in ISLAND
+        assert "island_expand" in ISLAND
+        assert "island_collapse" in ISLAND
+        assert "classList.toggle('open'" in ISLAND
+        assert 'id="greet"' in ISLAND
+        assert "أهلًا، أقدر أساعدك في إيه؟" in ISLAND
+        assert 'class="stand"' in ISLAND
+        assert 'class="mascot"' in ISLAND
+        assert 'id="islInput"' in ISLAND
+        assert 'id="islSend"' in ISLAND
 
 
 class TestKeyboardFreeze(unittest.TestCase):
@@ -371,9 +514,16 @@ class TestKeyboardFreeze(unittest.TestCase):
         assert 'virtualkeyboardpolicy="manual"' in ISLAND
 
     def test_api_key_fields_have_the_policy(self):
-        for field in ("api-key-gemini-voice", "api-key-gemini-chat",
-                      "api-key-groq"):
-            assert field in HTML
+        # v1.6.4 reskin: the three API key fields are rendered by
+        # the builder as data-key=<id> for the three provider ids in
+        # the KEYS array (with the eye toggle aria-label="إظهار").
+        for field in ("gemini-voice", "gemini-chat", "groq"):
+            assert ("'%s'" % field) in HTML
+        assert "data-key='" in HTML
+        # REAL GAP (reskin): virtualkeyboardpolicy="manual" appears
+        # ZERO times in the reskin UI — none of the API key fields
+        # (nor any other text input) carries it, so the keyboard
+        # freeze protection the v1.6.2 freeze fix relied on is gone.
         assert HTML.count('virtualkeyboardpolicy="manual"') >= 3
 
     def test_no_bridge_work_on_input_focus(self):
@@ -437,11 +587,22 @@ class TestBackendContracts(unittest.TestCase):
 
 class TestModelPicker(unittest.TestCase):
     def test_button_and_menu_in_composer(self):
-        assert 'id="model-btn"' in HTML
-        assert 'id="model-menu"' in HTML
-        composer = HTML.split('<div class="composer"')[1]
-        assert "model-btn" in composer.split("</div>", 1)[0] or \
-            composer.index("model-btn") < composer.index("text-input")
+        # v1.6.4 reskin: the model picker moved OUT of the composer
+        # by design — it is now a permanent pill in the header bar
+        # (modelPill) with its dropdown (modelMenu), shown before
+        # the chat view and never inside the composer. Same
+        # requirement (a picker button + menu, always reachable),
+        # new home.
+        assert 'id="modelPill"' in HTML
+        assert 'id="modelMenu"' in HTML
+        assert HTML.index('id="modelPill"') < HTML.index('id="thread"')
+        assert HTML.index('id="modelMenu"') < HTML.index('id="thread"')
+        # The picker buttons themselves live in the header bar, not
+        # in the composer (the inline script below only *references*
+        # them by getElementById, which is a different string).
+        composer_at = HTML.index('<div class="composer-wrap">')
+        assert HTML.index('id="modelPill"') < composer_at
+        assert HTML.index('id="modelMenu"') < composer_at
 
     def test_four_options_with_availability_and_reason(self):
         for opt in ("auto", "groq", "gemini", "local"):
@@ -482,12 +643,22 @@ class TestLayoutClarity(unittest.TestCase):
         assert "Escape" in JS
 
     def test_header_has_window_controls_and_drag_region(self):
-        assert 'id="win-min"' in HTML or "window_minimize" in JS
-        assert 'id="win-max"' in HTML or "window_toggle_maximize" in JS
-        assert 'id="win-close"' in HTML or "window_close" in JS
-        assert "window_move_to" in JS
-        assert "wireWindowControls" in JS
-        assert 'id="app-header"' in HTML
+        # v1.6.4 reskin: the frameless header (.bar) has the three
+        # traffic-light controls wired to the window_* bridge calls.
+        assert 'id="tlClose"' in HTML
+        assert 'id="tlMin"' in HTML
+        assert 'id="tlMax"' in HTML
+        assert "window_close" in HTML
+        assert "window_minimize" in HTML
+        assert "window_toggle_maximize" in HTML
+        assert 'class="bar"' in HTML
+        # REAL GAP (reskin): there is NO drag region — no
+        # -webkit-app-region, no mousedown handler, no window_move_to
+        # call in index.html, so the frameless window cannot be
+        # dragged by its header (the backend window_move_to at
+        # main.py:2380 exists but nothing in the UI calls it).
+        assert "window_move_to" in HTML
+        assert "-webkit-app-region" in HTML
 
     def test_deep_files_empty_state_has_request_button(self):
         assert "محتاجة إذن صريح" in JS or "محتاجة إذن صريح" in HTML
@@ -495,13 +666,26 @@ class TestLayoutClarity(unittest.TestCase):
         assert "request_deep_file_access" in JS
 
     def test_temp_empty_state_names_lhm(self):
-        assert "الحرارة مش متاحة على الجهاز ده" in JS or \
-            "الحرارة مش متاحة على الجهاز ده" in HTML
-        assert "LibreHardwareMonitor" in JS or "LibreHardwareMonitor" in HTML
+        # v1.6.4 reskin: the device view shows the CPU temp in
+        # #vTemp with a #vTempNote that, when the reading is
+        # unavailable, says "مش متاحة على الجهاز ده" and links to
+        # LibreHardwareMonitor for the install.
+        assert 'id="vTemp"' in HTML
+        assert 'id="vTempNote"' in HTML
+        assert "مش متاحة على الجهاز ده" in HTML
+        assert "LibreHardwareMonitor" in HTML
+        assert "github.com/LibreHardwareMonitor/LibreHardwareMonitor" \
+            in HTML
 
     def test_model_indicator_is_permanent(self):
-        assert 'id="model-indicator"' in HTML or "model-indicator" in HTML
-        assert "model-indicator" in CSS
+        # v1.6.4 reskin: the permanent model indicator is the
+        # modelPill in the header bar (.bar) — outside every
+        # switchable view, so it is visible on every view — styled
+        # by the .model rule in lona.css.
+        assert 'id="modelPill"' in HTML
+        assert HTML.index('id="modelPill"') < HTML.index(
+            '<div class="view" data-v="chat">')
+        assert ".model{" in LONA_CSS
 
 
 class TestV162DomHarness(unittest.TestCase):

@@ -321,23 +321,15 @@ class TestBlackBoxAndPet(unittest.TestCase):
 
 class TestCatFlyAndChat(unittest.TestCase):
     def test_fly_hooks_present(self):
-        js = _read("app/ui/app.js")
-        self.assertIn("flyHeroToHeader", js)
-        self.assertIn("heroFlown", js)
-        self.assertIn("--fly-dx", js)
-        self.assertIn("flown", js)
-        css = _read("app/ui/styles.css")
-        self.assertIn(".avatar-frame.flying", css)
-        self.assertIn(".avatar-wrap.flown", css)
-        self.assertIn("fly-land", css)
-        html = _read("app/ui/index.html")
-        self.assertIn('id="avatar-frame"', html)
-        self.assertIn('class="logo"', html)
+        # SKIPPED (reskin): the v2 UI has NO pet — the cat companion
+        # (fly-to-header hooks, avatar-frame, fly-land animation) does
+        # not exist in the reskin UI at all. The pet files are dead
+        # weight kept in the tree. The requirement does not apply.
+        self.skipTest("v2 UI has no pet: fly hooks do not exist")
 
     def test_fly_triggered_on_first_message(self):
-        js = _read("app/ui/app.js")
-        # sendText and voiceChat both fly the hero on the first message.
-        self.assertGreater(js.count("flyHeroToHeader()"), 1)
+        # SKIPPED (reskin): same as above — no pet, no fly trigger.
+        self.skipTest("v2 UI has no pet: fly hooks do not exist")
 
 
 class TestSelfTestAndInstaller(unittest.TestCase):
@@ -365,9 +357,24 @@ class TestSelfTestAndInstaller(unittest.TestCase):
 
     def test_version_consistency(self):
         import main
-        self.assertEqual(main.VERSION, "1.6.3")
-        self.assertIn("v1.6.3", _read("app/ui/index.html"))
-        self.assertIn("1, 6, 3, 0",
+        # v1.6.4 reskin: the version is 1.6.4-rc.1 everywhere it is
+        # stamped; version.json carries the RC version while its
+        # download URLs still point at the v1.6.3 release (the RC tag
+        # is gated out of the in-app updater manifest).
+        self.assertEqual(main.VERSION, "1.6.4-rc.1")
+        # index.html renders the version live ("LONA v" + VERSION) in
+        # the General section — no hardcoded version string in the UI.
+        self.assertIn("LONA v\" + B.escapeHtml(VERSION ||",
+                      _read("app/ui/index.html"))
+        # The binary version tuple must track the release too.
+        # REAL GAP (reskin, left failing on purpose): filevers /
+        # prodvers are still (1, 6, 3, 0) while FileVersion is
+        # '1.6.4.0' and ProductVersion is '1.6.4-rc.1' in the same file.
+        self.assertIn("filevers=(1, 6, 4, 0)",
+                      _read("installer/file_version_info.txt"))
+        self.assertIn("prodvers=(1, 6, 4, 0)",
+                      _read("installer/file_version_info.txt"))
+        self.assertIn("'1.6.4-rc.1'",
                       _read("installer/file_version_info.txt"))
         # version.json is updated BY THE CI after the tag build (it
         # carries the real release hashes) - and the post-release commit
@@ -375,6 +382,9 @@ class TestSelfTestAndInstaller(unittest.TestCase):
         # manifest must EQUAL the app version; checked after that commit.
         manifest = json.loads(_read("version.json"))
         self.assertEqual(manifest["version"], main.VERSION)
+        self.assertIn("v1.6.3", manifest["url"],
+                      "RC manifest URLs still point at the v1.6.3 release")
+        self.assertIn("v1.6.3", manifest["setup_url"])
 
 
 class TestLiveGroqToolCall(unittest.TestCase):

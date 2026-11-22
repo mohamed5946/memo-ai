@@ -1,5 +1,11 @@
 # Memo AI - Windows window shaping (v1.3.1).
 #
+# Attribution: the island method used here (fixed canvas, region applied
+# once at creation, click-through toggle) is inspired by WindyLand
+# (MIT License, Copyright (c) 2026 Shabab —
+# https://github.com/shabab239/WindyLand). See THIRD_PARTY.md.
+# No WindyLand code, palette, icons, or assets are used.
+#
 # REPLACES the v1.3.0 chroma-key transparency, which is DELETED (see
 # "WHY THE CHROMA-KEY FAILED" below). Do NOT bring the color key back:
 # it made the magenta box stay AND killed all clicks.
@@ -232,6 +238,24 @@ def apply_round_rect_region(hwnd: int, w: int, h: int, radius: int,
         return False
 
 
+def apply_rect_region(hwnd: int, x0: int, y0: int, x1: int, y1: int,
+                      label: str) -> bool:
+    """Clip an HWND to a plain rectangle, window-relative coords
+    (Nusa-style hit-test box: the region bounds which clicks reach
+    the window; the rounded shape itself is DRAWN, not cut).
+    Verified by read-back, like every region in this module."""
+    if not IS_WINDOWS or not hwnd:
+        return False
+    try:
+        gdi32 = ctypes.windll.gdi32
+        hrgn = gdi32.CreateRectRgn(int(x0), int(y0), int(x1), int(y1))
+        return _set_region(hwnd, hrgn, label,
+                           (int(x0), int(y0), int(x1), int(y1)))
+    except Exception as exc:
+        error("app", f"Rect region failed for {label}: {exc}")
+        return False
+
+
 def apply_rect_list_region(hwnd: int, rects, roundrects, label: str) -> bool:
     """Clip an HWND to a union of rects + roundrects (pet silhouette).
     The expected box is the union's bounding box."""
@@ -418,6 +442,106 @@ def watch_show_main_event(event_handle, on_signal, stop_flag,
                 pass
         elif res != _WAIT_TIMEOUT:
             return
+
+
+# --- island fixed canvas (v1.6.4, WindyLand method) -------------------------
+# The island window is created once at the expanded canvas size and
+# never resized; the region is applied once for the full canvas and
+# click-through is a WS_EX_TRANSPARENT toggle driven by a 90 ms
+# cursor poll (see island_canvas.py). All of these are no-ops off
+# Windows and never raise.
+_SWP_NOSIZE = 0x0001
+_SWP_NOMOVE = 0x0002
+_SWP_NOZORDER = 0x0004
+_SWP_NOACTIVATE = 0x0010
+
+
+class _POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+def get_dpi_for_window(hwnd: int):
+    """DPI for an HWND (GetDpiForWindow, Windows 10+). None when it
+    cannot be read (pre-10, or the call fails)."""
+    if not IS_WINDOWS or not hwnd:
+        return None
+    try:
+        return int(_user32().GetDpiForWindow(hwnd)) or None
+    except Exception:
+        return None
+
+
+def set_click_through(hwnd: int, on: bool) -> bool:
+    """Toggle WS_EX_TRANSPARENT on an HWND. Returns True when the flag
+    now matches `on`. When on, the window (and its WebView2 child)
+    receives no mouse input at all - clicks pass to the window below."""
+    if not IS_WINDOWS or not hwnd:
+        return False
+    try:
+        user32 = _user32()
+        ex = user32.GetWindowLongW(hwnd, _GWL_EXSTYLE)
+        new_ex = (ex | _WS_EX_TRANSPARENT) if on \
+            else (ex & ~_WS_EX_TRANSPARENT)
+        user32.SetWindowLongW(hwnd, _GWL_EXSTYLE, new_ex)
+        got = user32.GetWindowLongW(hwnd, _GWL_EXSTYLE)
+        return bool(got & _WS_EX_TRANSPARENT) == bool(on)
+    except Exception as exc:
+        error("app", f"Click-through toggle failed: {exc}")
+        return False
+
+
+def is_click_through(hwnd: int) -> bool:
+    """True when WS_EX_TRANSPARENT is set on an HWND."""
+    if not IS_WINDOWS or not hwnd:
+        return False
+    try:
+        ex = _user32().GetWindowLongW(hwnd, _GWL_EXSTYLE)
+        return bool(ex & _WS_EX_TRANSPARENT)
+    except Exception:
+        return False
+
+
+def get_cursor_pos():
+    """Current cursor position (x, y), or None."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        pt = _POINT()
+        if not _user32().GetCursorPos(ctypes.byref(pt)):
+            return None
+        return (pt.x, pt.y)
+    except Exception:
+        return None
+
+
+def is_foreground_maximized() -> bool:
+    """True when the foreground window is maximized (IsZoomed)."""
+    if not IS_WINDOWS:
+        return False
+    try:
+        user32 = _user32()
+        fg = user32.GetForegroundWindow()
+        if not fg:
+            return False
+        return bool(user32.IsZoomed(fg))
+    except Exception:
+        return False
+
+
+def reposition_window(hwnd: int, x: int, y: int, w: int, h: int) -> bool:
+    """Move + resize an HWND with SetWindowPos (no activate, no
+    z-order change). Used only for the island canvas DPI recovery -
+    never for the pill/panel animation, which is pure HTML/CSS."""
+    if not IS_WINDOWS or not hwnd:
+        return False
+    try:
+        ok = _user32().SetWindowPos(hwnd, None, int(x), int(y),
+                                    int(w), int(h),
+                                    _SWP_NOZORDER | _SWP_NOACTIVATE)
+        return bool(ok)
+    except Exception as exc:
+        error("app", f"Reposition window failed: {exc}")
+        return False
 
 
 # --- main-window MinimumSize (morph needs to go below it) -------------------
