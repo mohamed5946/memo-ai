@@ -2371,10 +2371,11 @@ class Api:
         webbrowser.open("https://github.com/mohamed5946")
         return {"ok": True}
 
-    # -- frameless main-window controls (v1.6.2 item 3) -------------------
-    # The main window is frameless (no native title bar); the in-app
-    # header owns these. The island is a separate window and is never
-    # touched by any of them.
+    # -- main-window controls -------------------------------------------
+    # rc.2: the main window has a NATIVE title bar now (was frameless
+    # since v1.6.2 item 3); these Api controls stay for the in-app
+    # header buttons and the tray/quit flows. The island is a separate
+    # window and is never touched by any of them.
     @_log_slow
     def window_minimize(self):
         """Minimize the main window to the taskbar."""
@@ -2441,7 +2442,7 @@ class Api:
     def window_close(self):
         """Close the program -- exactly the same path as the old
         quit_app() (background quit thread, tray stopped first)."""
-        info("app", "Close requested from the frameless header")
+        info("app", "Close requested from the header")
         threading.Thread(target=_APP.quit, daemon=True).start()
         return {"ok": True}
 
@@ -2888,7 +2889,7 @@ class MemoApp:
         self.api = Api()
         self.main_window = None
         self.island_window = None
-        # v1.6.2: frameless main window -- pywebview exposes no
+        # rc.2: native main window -- pywebview exposes no
         # "is maximized" query, so the toggle tracks it here. It can
         # desync if the user maximizes some other way (Win+Up); the
         # header button is the normal path, so this stays correct.
@@ -3087,6 +3088,16 @@ class MemoApp:
                         self.main_window.hide()
                     except Exception:
                         pass
+                else:
+                    # rc.2: the main window opens MAXIMIZED (native
+                    # frame) - the morph ends at full_rect, then the
+                    # window takes the real maximized state. Guarded:
+                    # a failed maximize leaves it at full_rect.
+                    try:
+                        self.main_window.maximize()
+                        self._main_maximized = True
+                    except Exception:
+                        pass
             finally:
                 self._morph_lock.release()
 
@@ -3245,6 +3256,64 @@ class MemoApp:
         except Exception as exc:
             error("ui", f"Could not park pet: {exc}")
 
+    def _temp_status_for_chat(self) -> dict | None:
+        """Reasoned CPU-temp status for the chat context (rc.2):
+        {"available", "celsius", "reason", "hint"} - the exact shape
+        monitor.read_temp_status() returns. Preferred source is the
+        monitor's cached overview (get_device_overview()["temp_status"],
+        no probe on the chat thread); the fallback derives the shape
+        from the legacy temp_c / temp_available / temp_hint fields, so
+        an older monitor still yields an honest line. None when there
+        is no monitor at all. Never raises, never invents a number."""
+        try:
+            monitor = self._monitor
+            if monitor is None:
+                return None
+            try:
+                overview = monitor.get_device_overview()
+            except Exception:
+                overview = None
+            if isinstance(overview, dict):
+                status = overview.get("temp_status")
+                if isinstance(status, dict) and status.get("reason"):
+                    return dict(status)
+                temp_c = overview.get("temp_c")
+                temp_available = bool(overview.get("temp_available"))
+                hint = ""
+                temp_hint = overview.get("temp_hint")
+                if isinstance(temp_hint, dict):
+                    hint = str(temp_hint.get("text") or "")
+                return {"available": temp_available,
+                        "celsius": (float(temp_c)
+                                    if temp_c is not None else None),
+                        "reason": "ok" if temp_available
+                                  else "not_installed",
+                        "hint": hint}
+        except Exception:
+            return None
+        return None
+
+    def _temp_context_line(self) -> str:
+        """One chat-context sentence about the CPU temperature, from
+        _temp_status_for_chat(). When the temperature is missing the
+        hint is injected VERBATIM, so the AI repeats the real cause
+        ("LibreHardwareMonitor متثبت بس مش شغال — افتحه وسيبه شغال")
+        instead of guessing "مفيش حساس". "" when there is no monitor
+        or nothing to say."""
+        status = self._temp_status_for_chat()
+        if not status:
+            return ""
+        if status.get("available") and status.get("celsius") is not None:
+            try:
+                return ("حرارة المعالج "
+                        f"{float(status['celsius']):.0f}°م.")
+            except Exception:
+                return ""
+        hint = str(status.get("hint") or "").strip()
+        if hint:
+            return f"حرارة المعالج: {hint}"
+        return "حرارة المعالج مش متاحة."
+
     def run_tool_chat(self, chat_id: str, text: str):
         """Background thread for an owner-mode (tool) chat. Never runs on
         the JS bridge thread: tools may wait on an Allow/Deny dialog that
@@ -3269,6 +3338,18 @@ class MemoApp:
                         settings=settings)
             except Exception:
                 self_view = ""
+            # rc.2: the temp REASON rides into the prompt (the self-view
+            # above only says "مش متاحة" when the sensor is silent).
+            # The hint is injected verbatim, so the AI repeats the real
+            # cause ("LHM متثبت بس مش شغال — افتحه") instead of
+            # guessing "مفيش حساس". Guarded - never blocks the chat.
+            try:
+                temp_line = self._temp_context_line()
+                if temp_line:
+                    self_view = (self_view + " " + temp_line) \
+                        if self_view else temp_line
+            except Exception:
+                pass
             result = brain.ask_with_tools(
                 text, self.settings.get("ai_name", "LONA"),
                 self.settings.get("user_name", "Mohamed"),
@@ -3555,7 +3636,7 @@ class MemoApp:
                     "bursts_checked": 0, "bursts_discarded_noise": 0}
         if self._wakeword is None:
             return {"enabled": bool(self.settings.get(
-                "wakeword_enabled", True)),
+                "wakeword_enabled", False)),
                 "state": "off", "detail": "",
                 "model_ready": False,
                 "phrase": wakeword_mod.WAKE_PHRASE,
@@ -3970,12 +4051,17 @@ class MemoApp:
             width=MAIN_W, height=MAIN_H,
             hidden=self.settings.get("island_enabled", False)
             and not not_activated,
-            # v1.6.2: frameless main window (item 3) -- no native
-            # title bar; the in-app header owns the window controls
-            # (window_minimize / window_toggle_maximize / window_close)
-            # and dragging (window_move_to). The island is a separate
-            # window and is untouched by this.
-            frameless=True, resizable=True,
+            # rc.2: NATIVE frame - a standard Windows title bar (was
+            # frameless since v1.6.2 item 3). The frameless window
+            # looked like a browser, maximize was broken and Win+Arrow
+            # snap did not work; a native frame gives working maximize,
+            # Win+Arrow snap, native minimize/maximize/close buttons,
+            # drag-to-move and double-click-to-maximize for free. The
+            # Liquid Glass look stays INSIDE the window. The window
+            # opens MAXIMIZED (_maximize_main_at_startup / show_main).
+            # The Api window controls still work (tray/quit flows use
+            # them). The island stays frameless.
+            resizable=True,
             min_size=(640, 520), js_api=self.api)
         if not self.settings.get("island_enabled", False) or not_activated:
             # The window starts visible: _main_visible must agree, or
@@ -4069,14 +4155,11 @@ class MemoApp:
         # v1.3.1: webview.start(func) runs func in a thread BEFORE any
         # window exists, so _apply_window_regions polls until the HWNDs
         # appear (up to 60s) and then shapes the windows with regions.
-        # v1.4.1: with no island/pet there is nothing to shape - plain
-        # webview.start() (the region thread only runs when at least
-        # one of them is enabled).
-        if self.settings.get("island_enabled", False) \
-                or self.settings.get("pet_enabled", False):
-            webview.start(self._apply_window_regions)
-        else:
-            webview.start()
+        # rc.2: the func is always _on_gui_start now - it first
+        # maximizes the main window (native frame, opens maximized),
+        # then applies the regions (no-op when neither island nor pet
+        # is enabled).
+        webview.start(self._on_gui_start)
         info("app", "LONA exited")
 
     def _start_island_clipboard(self) -> bool:
@@ -4116,6 +4199,48 @@ class MemoApp:
         bridge call never waits on it. Quit still stops it too via
         _island_stop."""
         self._island_clipboard_stop.set()
+
+    def _maximize_main_at_startup(self):
+        """Maximize the MAIN window once at startup (rc.2: native
+        frame, opens maximized). Polls for the main HWND (EnumWindows
+        only - never .native/.Handle, v1.3.2 hang fix) and calls
+        ShowWindow(SW_SHOWMAXIMIZED = 3) once. Runs on the
+        webview.start(func) thread, while the GUI loop starts.
+        Only when the main window starts VISIBLE (_main_visible):
+        with the island on it starts hidden behind the pill, and
+        ShowWindow would pop it open - the island path maximizes in
+        show_main() instead. Never raises; a missing HWND just logs."""
+        if sys.platform != "win32":
+            return
+        if not self._main_visible:
+            return
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if self._quitting:
+                return
+            hwnd = _find_main_hwnd()
+            if hwnd:
+                try:
+                    ctypes.windll.user32.ShowWindow(hwnd, 3)
+                    self._main_maximized = True
+                    info("app", "Main window maximized at startup "
+                                "(native frame)")
+                except Exception as exc:
+                    warn("app", "Main window maximize at startup "
+                                f"failed: {exc}")
+                return
+            time.sleep(0.25)
+        warn("app", "Main window HWND not found in 30s - not maximized "
+                    "at startup")
+
+    def _on_gui_start(self):
+        """webview.start(func) entry (rc.2): the main window opens
+        maximized, then the island/pet regions are applied (no-op
+        when neither is enabled). Runs in the thread webview.start
+        spawns, before the windows exist - both halves poll for
+        their HWNDs, neither blocks the GUI loop."""
+        self._maximize_main_at_startup()
+        self._apply_window_regions()
 
     def _apply_window_regions(self):
         """Apply the Win32 window regions (v1.3.1, app/winshape.py) to
