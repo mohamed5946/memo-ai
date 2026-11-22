@@ -195,6 +195,28 @@ def restore_deleted(entry: dict) -> dict:
                     info("fixer", f"Restored from Recycle Bin: {original}")
                     return {"ok": True, "reason": "restored"}
                 time.sleep(0.3)
+            # Still not found after retries: log what the Bin actually
+            # contains, so a real-machine failure is diagnosable from
+            # the log instead of a bare 'not_found' (e.g. is the COM
+            # enumeration empty, or is the item there under another
+            # spelling?). Failure path only - costs one extra call.
+            try:
+                diag_ps = (
+                    "$s=New-Object -ComObject Shell.Application;"
+                    "$b=$s.Namespace(0xA);$items=$b.Items();"
+                    "$n=($items | Where-Object { $_.Name -eq '"
+                    + Path(original).name.replace("'", "''") + "' }).Count;"
+                    "\"bin_items=$($items.Count) name_matches=$n\""
+                )
+                diag = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", diag_ps],
+                    capture_output=True, text=True, timeout=30,
+                    **hidden_spawn.run_kwargs())
+                error("fixer",
+                      f"Recycle Bin restore not found ({original}): "
+                      f"{(diag.stdout or '').strip()}")
+            except Exception:
+                pass
             return {"ok": False, "reason": "not_found",
                     "detail": ("الملف مش موجود في سلة المهملات — "
                                "يمكن اتمسح منها خلاص.")}
