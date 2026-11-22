@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LONA — كود الدعوة</title>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+<link rel="stylesheet" href="assets/lona.css">
+</head>
+<body>
+<div class="errbar" id="errbar" hidden><span id="errbarText"></span><button id="errbarClose" type="button">إخفاء</button></div>
+
+<main class="stage invite-wrap">
+  <section class="glass invite-card">
+    <img src="assets/mascot.webp" alt="لونا">
+    <h1>أهلًا بيك في LONA</h1>
+    <p>البرنامج بيشتغل بكود دعوة في أول تشغيل بس.<br>اكتب الكود المكوّن من 6 أرقام:</p>
+    <div class="pin-row" id="pinRow">
+      <input class="pin" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="1" aria-label="الرقم 1">
+      <input class="pin" type="text" inputmode="numeric" autocomplete="off" maxlength="1" aria-label="الرقم 2">
+      <input class="pin" type="text" inputmode="numeric" autocomplete="off" maxlength="1" aria-label="الرقم 3">
+      <input class="pin" type="text" inputmode="numeric" autocomplete="off" maxlength="1" aria-label="الرقم 4">
+      <input class="pin" type="text" inputmode="numeric" autocomplete="off" maxlength="1" aria-label="الرقم 5">
+      <input class="pin" type="text" inputmode="numeric" autocomplete="off" maxlength="1" aria-label="الرقم 6">
+    </div>
+    <div class="invite-msg" id="inviteMsg"></div>
+    <button class="act" id="checkBtn" type="button">تفعيل</button>
+    <p class="about" style="text-align:center">الكود بيتفحص على جهازك بس — مفيش حاجة بتتبعت برّه.</p>
+  </section>
+</main>
+
+<script src="assets/bridge.js"></script>
+<script>
+(function () {
+  'use strict';
+  var B = window.LonaBridge;
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.pin'));
+  var msg = document.getElementById('inviteMsg');
+  var checkBtn = document.getElementById('checkBtn');
+  var pinRow = document.getElementById('pinRow');
+  var handlingKey = false; /* re-entrancy guard for the Backspace handler */
+  var checking = false;
+  var locked = false;
+
+  document.getElementById('errbarClose').addEventListener('click', function () {
+    B.hideError();
+  });
+
+  function setMsg(text, kind) {
+    msg.textContent = text || '';
+    msg.className = 'invite-msg' + (kind ? ' ' + kind : '');
+  }
+  function clearErrorMarks() {
+    boxes.forEach(function (b) { b.classList.remove('err'); });
+  }
+  function codeString() {
+    /* The invite code is a STRING — leading zeros matter. */
+    return boxes.map(function (b) { return b.value; }).join('');
+  }
+  function setLocked(on) {
+    locked = on;
+    pinRow.classList.toggle('disabled', on);
+    checkBtn.disabled = on;
+    boxes.forEach(function (b) { b.disabled = on; });
+  }
+
+  boxes.forEach(function (box, i) {
+    /* Typing / auto-advance. Arabic-Indic digits are translated to ASCII. */
+    box.addEventListener('input', function () {
+      var v = B.toAsciiDigits(box.value).replace(/\D/g, '');
+      box.value = v.slice(0, 1);
+      clearErrorMarks();
+      setMsg('', '');
+      if (v && i < boxes.length - 1) { boxes[i + 1].focus(); }
+      if (codeString().length === 6) { submitCode(); }
+    });
+
+    /* Backspace MUST delete the current box and move focus to the
+       previous one without hanging. The handler owns deletion:
+       preventDefault + manual value clearing + manual focus move,
+       with a re-entrancy guard so a repeated key event can never
+       re-enter mid-update. */
+    box.addEventListener('keydown', function (e) {
+      if (e.key !== 'Backspace') { return; }
+      if (handlingKey) { e.preventDefault(); return; }
+      handlingKey = true;
+      try {
+        e.preventDefault();
+        if (box.value) {
+          box.value = '';
+        } else if (i > 0) {
+          boxes[i - 1].value = '';
+          boxes[i - 1].focus();
+        }
+        clearErrorMarks();
+        setMsg('', '');
+      } catch (err) {
+        B.reportFailure('invite_backspace', err);
+      } finally {
+        handlingKey = false;
+      }
+    });
+
+    /* Arrow-key navigation between boxes. */
+    box.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft' && i < boxes.length - 1) { boxes[i + 1].focus(); }
+      if (e.key === 'ArrowRight' && i > 0) { boxes[i - 1].focus(); }
+    });
+
+    /* Paste: distribute digits across the boxes starting here. */
+    box.addEventListener('paste', function (e) {
+      e.preventDefault();
+      var text = '';
+      try {
+        text = (e.clipboardData || window.clipboardData).getData('text') || '';
+      } catch (err) {
+        B.reportFailure('invite_paste', err);
+        return;
+      }
+      var digits = B.toAsciiDigits(text).replace(/\D/g, '').slice(0, boxes.length - i);
+      if (!digits) { return; }
+      for (var k = 0; k < digits.length; k++) {
+        boxes[i + k].value = digits[k];
+      }
+      clearErrorMarks();
+      setMsg('', '');
+      var next = Math.min(i + digits.length, boxes.length - 1);
+      boxes[next].focus();
+      if (codeString().length === 6) { submitCode(); }
+    });
+
+    /* Keep focus visible: tap selects the box content for overwrite. */
+    box.addEventListener('focus', function () { box.select(); });
+  });
+
+  function submitCode() {
+    if (checking || locked) { return; }
+    var code = codeString();
+    if (code.length !== 6) {
+      setMsg('اكتب الكود كامل — 6 أرقام.', 'bad');
+      return;
+    }
+    checking = true;
+    checkBtn.disabled = true;
+    setMsg('بيتم الفحص…', '');
+    B.withTimeout(B.call('check_invite', code), 10000, 'فحص الكود')
+      .then(function (res) {
+        res = res || {};
+        var result = res.result || (res.ok ? 'ok' : (res.activated ? 'ok' : 'invalid'));
+        if (result === 'ok') {
+          setMsg('تم التفعيل — أهلًا بيك في LONA.', 'ok');
+          setLocked(true);
+        } else if (result === 'format') {
+          setMsg('الكود لازم 6 أرقام — راجع اللي كتبته.', 'bad');
+          boxes.forEach(function (b) { b.classList.add('err'); });
+          boxes[0].focus();
+        } else if (result === 'locked') {
+          var detail = res.message || res.detail || '';
+          setMsg(detail || 'اتقفل مؤقتًا بعد محاولات كتير غلط — استنى شوية وجرّب تاني.', 'lock');
+          setLocked(true);
+          B.logError('invite', 'invite locked out: ' + (res.reason || 'too many attempts'));
+        } else {
+          var left = (typeof res.attempts_left === 'number')
+            ? ' — فاضل ' + res.attempts_left + ' محاولات.'
+            : '';
+          setMsg('الكود غلط — جرّب تاني.' + left, 'bad');
+          boxes.forEach(function (b) { b.classList.add('err'); b.value = ''; });
+          boxes[0].focus();
+        }
+      })
+      .catch(function (err) {
+        B.reportFailure('invite_check', err);
+        setMsg('الفحص ما كمّلش — جرّب تاني.', 'bad');
+      })
+      .then(function () {
+        checking = false;
+        if (!locked) { checkBtn.disabled = false; }
+      });
+  }
+
+  checkBtn.addEventListener('click', submitCode);
+  boxes[0].focus();
+})();
+</script>
+</body>
+</html>

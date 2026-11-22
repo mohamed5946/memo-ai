@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LONA</title>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+<link rel="stylesheet" href="assets/lona.css">
+</head>
+<body class="main-page">
+<div class="errbar" id="errbar" hidden><span id="errbarText"></span><button id="errbarClose" type="button">إخفاء</button></div>
+
+<main class="stage">
+  <section class="glass win">
+    <aside class="side glass" id="side">
+      <nav class="items" id="nav">
+        <button class="item th on" data-v="chat" style="--i:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg><span>الشات</span></button>
+        <button class="item th" data-v="device" style="--i:1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg><span>الجهاز</span></button>
+        <button class="item th" data-v="tasks" style="--i:2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg><span>المهام</span></button>
+        <button class="item th" data-v="themes" style="--i:3"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg><span>الثيمات</span></button>
+      </nav>
+      <div class="sep"></div>
+      <button class="item th" id="setBtn" data-v="settings" style="--i:4"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.18 10.21L21.90 10.61L21.90 13.39L19.18 13.79L18.34 15.81L19.99 18.02L18.02 19.99L15.81 18.34L13.79 19.18L13.39 21.90L10.61 21.90L10.21 19.18L8.19 18.34L5.98 19.99L4.01 18.02L5.66 15.81L4.82 13.79L2.10 13.39L2.10 10.61L4.82 10.21L5.66 8.19L4.01 5.98L5.98 4.01L8.19 5.66L10.21 4.82L10.61 2.10L13.39 2.10L13.79 4.82L15.81 5.66L18.02 4.01L19.99 5.98L18.34 8.19Z"/><circle cx="12" cy="12" r="3"/></svg><span>الإعدادات</span></button>
+      <button class="round" id="fold" aria-label="طي القايمة"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+    </aside>
+
+    <div class="main">
+      <div class="bar">
+        <div class="tl">
+          <button class="tl-btn" id="tlClose" aria-label="إغلاق" style="width:13px;height:13px;border-radius:50%;border:0;background:#ff5f57;cursor:pointer;padding:0"></button>
+          <button class="tl-btn" id="tlMin" aria-label="تصغير" style="width:13px;height:13px;border-radius:50%;border:0;background:#febc2e;cursor:pointer;padding:0"></button>
+          <button class="tl-btn" id="tlMax" aria-label="تكبير" style="width:13px;height:13px;border-radius:50%;border:0;background:#28c840;cursor:pointer;padding:0"></button>
+        </div>
+        <b class="brand">LONA</b>
+        <button class="model" id="modelPill" type="button">تلقائي · Groq</button>
+        <span class="clock" id="clock">--:--</span>
+        <button class="round" id="muteBtn" aria-label="كتم الصوت" aria-pressed="false"></button>
+      </div>
+      <div class="model-menu glass" id="modelMenu" hidden></div>
+
+      <div class="view" data-v="chat">
+        <div class="thread" id="thread">
+          <div class="hero" id="hero">
+            <img src="assets/mascot.webp" alt="لونا">
+            <h2 id="heroGreet">أهلًا، أقدر أساعدك في إيه؟</h2>
+            <p class="mood" id="heroMood"></p>
+            <p>اسألني عن جهازك، خلّيني أنضّف الرام، أتابع البطارية، أو أفتّكر لك حاجة — كل حاجة بتتقال هنا بتحصل على جهازك وبس.</p>
+            <div class="acts" style="justify-content:center">
+              <button class="act" id="briefBtn" type="button">نشرة الصباح</button>
+            </div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="field glass" style="border-radius:28px">
+            <button class="round" id="attachBtn" aria-label="إرفاق"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+            <input id="chatInput" placeholder="اكتب رسالتك" autocomplete="off">
+            <button class="round" id="deepBtn" aria-label="Deep Think" aria-pressed="false" title="Deep Think"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg></button>
+            <button class="round gold" id="sendBtn" aria-label="إرسال"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="view page" data-v="device" hidden>
+        <div class="cards">
+          <div class="stat th" style="--i:0"><span>الرام</span><b id="vRam">--</b><div class="barx"><i id="bRam"></i></div><small id="vRamSub" style="color:var(--ink-2)"></small></div>
+          <div class="stat th" style="--i:1"><span>المعالج</span><b id="vCpu">--</b><div class="barx"><i id="bCpu"></i></div></div>
+          <div class="stat th" style="--i:2"><span>البطارية</span><b id="vBat">--</b><div class="barx"><i id="bBat"></i></div><small id="vBatSub" style="color:var(--ink-2)"></small></div>
+          <div class="stat th" style="--i:3"><span>حرارة المعالج</span><b id="vTemp" style="font-size:16px">--</b><span id="vTempNote"></span></div>
+        </div>
+        <h3 class="sub th" style="--i:4">أكتر العمليات استهلاكًا</h3>
+        <div id="procList" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div class="row th" style="--i:5"><span>تنظيف الملفات المؤقتة</span>
+          <button class="act" id="cleanBtn" type="button">نضّف دلوقتي</button>
+          <button class="act" id="undoCleanBtn" type="button" hidden>تراجع عن التنظيف</button>
+          <em class="st" id="cleanSt"></em>
+        </div>
+      </div>
+
+      <div class="view page" data-v="tasks" hidden>
+        <div class="field th" style="--i:0"><input id="tIn" placeholder="مهمة جديدة" autocomplete="off"><button class="round gold" id="tAdd" aria-label="إضافة"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button></div>
+        <ul class="tlist" id="tList"></ul>
+      </div>
+
+      <div class="view page" data-v="settings" hidden>
+        <div id="setRoot"></div>
+      </div>
+
+      <div class="themes glass" id="themes" hidden>
+        <div class="th-grid" id="thGrid"></div>
+        <button class="tog th" id="liteBtn" style="--i:6" aria-pressed="false"><span>زجاج خفيف</span><span class="knob"></span></button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="assets/bridge.js"></script>
+
+<script>
+(function () {
+  'use strict';
+  var B = window.LonaBridge;
+
+  document.getElementById('errbarClose').addEventListener('click', function () {
+    B.hideError();
+  });
+  function fail(source, err) { B.reportFailure(source, err); }
+
+  /* ---------- clock ---------- */
+  function tick() {
+    var d = new Date();
+    document.getElementById('clock').textContent =
+      String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  tick();
+  setInterval(tick, 15000);
+
+  /* ---------- traffic lights (real window controls) ---------- */
+  document.getElementById('tlClose').addEventListener('click', function () {
+    B.call('window_close').catch(function (err) { fail('window_close', err); });
+  });
+  document.getElementById('tlMin').addEventListener('click', function () {
+    B.call('window_minimize').catch(function (err) { fail('window_minimize', err); });
+  });
+  document.getElementById('tlMax').addEventListener('click', function () {
+    B.call('window_toggle_maximize').catch(function (err) { fail('window_toggle_maximize', err); });
+  });
+
+  /* ---------- mute ---------- */
+  var mb = document.getElementById('muteBtn');
+  var SPK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/>';
+  function mute(on) {
+    mb.setAttribute('aria-pressed', on ? 'true' : 'false');
+    mb.innerHTML = SPK + (on ? '<path d="M17 9l4 6M21 9l-4 6"/>' : '<path d="M16.5 8.5a5 5 0 0 1 0 7"/>') + '</svg>';
+  }
+  mb.addEventListener('click', function () {
+    var on = mb.getAttribute('aria-pressed') !== 'true';
+    mute(on);
+    B.call('set_muted', on).catch(function (err) { fail('set_muted', err); });
+    B.call('save_settings', { muted: on }).catch(function (err) { fail('save_muted', err); });
+  });
+  mute(false);
+
+  /* ---------- settings state (bridge only) ---------- */
+  var S = {
+    name: 'لونا', user: '', lang: 'ar', greet: 1, voice: 1, auto: 0, island: 1,
+    listen: 0, priv: 0, owner: '', waNum: '', mon: 1,
+    r1: 500, r2: 92, r3: 10, r4: 10, r5: 85, r6: 85, r6m: 5, r7: 20, r8: 30,
+    inapp: 1, toast: 1, notif: 1, apps: '', kws: '', vc: 'm1', av: 'cat',
+    theme: 'lg', lite: 0, muted: false, keys: {}
+  };
+  var VERSION = '';
+  var STATUS = {};
+
+  function num01(v, dflt) {
+    var n = Number(v);
+    return (v === undefined || v === null || isNaN(n)) ? dflt : n;
+  }
+  function applyRemoteSettings(s) {
+    if (!s || typeof s !== 'object') { return; }
+    S.name = s.ai_name || s.name || S.name;
+    S.user = s.user_name || s.user || S.user;
+    S.lang = s.language || s.lang || S.lang;
+    S.greet = num01(s.greeting_enabled !== undefined ? s.greeting_enabled : s.greet, S.greet);
+    S.voice = num01(s.voice_output !== undefined ? s.voice_output : s.voice, S.voice);
+    S.auto = num01(s.autostart !== undefined ? s.autostart : s.auto, S.auto);
+    S.island = num01(s.island_enabled !== undefined ? s.island_enabled : s.island, S.island);
+    S.listen = num01(s.wakeword_enabled !== undefined ? s.wakeword_enabled : s.listen, S.listen);
+    S.priv = num01(s.privacy_mode !== undefined ? s.privacy_mode : s.priv, S.priv);
+    S.waNum = s.owner_number || s.waNum || S.waNum;
+    S.mon = num01(s.tempwatch_enabled !== undefined ? s.tempwatch_enabled : s.mon, S.mon);
+    ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r6m', 'r7', 'r8'].forEach(function (k) {
+      if (s[k] !== undefined) { S[k] = num01(s[k], S[k]); }
+    });
+    S.inapp = num01(s.inapp, S.inapp);
+    S.toast = num01(s.toast, S.toast);
+    S.notif = num01(s.notifications_enabled !== undefined ? s.notifications_enabled : s.notif, S.notif);
+    S.apps = s.apps || S.apps;
+    S.kws = s.kws || S.kws;
+    S.vc = s.vc || s.voice_choice || S.vc;
+    S.av = s.avatar || s.av || S.av;
+    S.theme = s.theme || S.theme;
+    S.lite = num01(s.lite, S.lite);
+    S.muted = !!s.muted;
+  }
+
+  /* ---------- themes (same 5 as the approved v4.2 preview) ---------- */
+  var TH = {
+    lg: { n: 'Liquid Glass', b1: '#3b5bff', b2: '#ff8a3d', b3: '#b04bff', base: '#0b1430', gold: '#F0C75E', g2: '#FFE9A8', ink: '#ffffff', tint: '#0e163c' },
+    night: { n: 'زجاج الليل', b1: '#1d4f80', b2: '#0f3556', b3: '#2a6a9a', base: '#0A1A2C', gold: '#F0C75E', g2: '#FFE9A8', ink: '#ffffff', tint: '#06121f' },
+    graphite: { n: 'لوحة القيادة', b1: '#42424f', b2: '#8a4f20', b3: '#34343f', base: '#22222C', gold: '#FF9A3D', g2: '#FFC58A', ink: '#ffffff', tint: '#15151c' },
+    calm: { n: 'المساحة الهادية', b1: '#bcd2ff', b2: '#ffd9b8', b3: '#d9c8ff', base: '#eef1f6', gold: '#C99A2E', g2: '#F3D98B', ink: '#1c2233', tint: '#ffffff' },
+    old: { n: 'الثيم القديم', b1: '#16202f', b2: '#3a3220', b3: '#101722', base: '#0a0e14', gold: '#e8c97a', g2: '#f4e2ac', ink: '#ffffff', tint: '#0a0e14' }
+  };
+  var root = document.documentElement;
+  var panel = document.getElementById('themes');
+  function applyTheme(k, persist) {
+    var o = TH[k];
+    if (!o) { return; }
+    var m = { '--b1': o.b1, '--b2': o.b2, '--b3': o.b3, '--base': o.base, '--gold': o.gold, '--gold-2': o.g2, '--ink': o.ink, '--tint': o.tint };
+    for (var p in m) { root.style.setProperty(p, m[p]); }
+    S.theme = k;
+    document.querySelectorAll('.card[data-k]').forEach(function (c) {
+      c.classList.toggle('sel', c.dataset.k === k);
+    });
+    if (persist) {
+      B.call('save_settings', { theme: k }).catch(function (err) { fail('save_theme', err); });
+    }
+  }
+  function buildThemeGrid(container) {
+    container.innerHTML = '';
+    Object.keys(TH).forEach(function (k, i) {
+      var o = TH[k];
+      var c = document.createElement('button');
+      c.className = 'card th' + (S.theme === k ? ' sel' : '');
+      c.dataset.k = k;
+      c.style.setProperty('--i', i);
+      c.innerHTML = '<i class="sw" style="background:radial-gradient(circle at 70% 30%,' + o.b1 + ',transparent 60%),radial-gradient(circle at 20% 80%,' + o.b2 + ',transparent 55%),' + o.base + ')"><u style="background:' + o.gold + '"></u></i><span>' + B.escapeHtml(o.n) + '</span>';
+      c.addEventListener('click', function () { applyTheme(k, true); });
+      container.appendChild(c);
+    });
+  }
+  buildThemeGrid(document.getElementById('thGrid'));
+  var lb = document.getElementById('liteBtn');
+  function lite(on, persist) {
+    root.classList.toggle('lite', !!on);
+    S.lite = on ? 1 : 0;
+    lb.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (persist) {
+      B.call('save_settings', { lite: S.lite }).catch(function (err) { fail('save_lite', err); });
+    }
+  }
+  lb.addEventListener('click', function () { lite(!root.classList.contains('lite'), true); });
+
+  /* ---------- model picker ---------- */
+  var modelPill = document.getElementById('modelPill');
+  var modelMenu = document.getElementById('modelMenu');
+  var modelChoice = 'auto';
+  var modelOptions = [];
+  function modelLabel(id) {
+    for (var i = 0; i < modelOptions.length; i++) {
+      if (modelOptions[i].id === id) { return modelOptions[i].label || id; }
+    }
+    return id === 'auto' ? 'تلقائي · Groq' : id;
+  }
+  function renderModelMenu() {
+    modelMenu.innerHTML = '';
+    modelOptions.forEach(function (opt) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.disabled = !opt.available;
+      b.className = opt.id === modelChoice ? 'sel' : '';
+      b.innerHTML = B.escapeHtml(opt.label || opt.id) +
+        (opt.available ? '' : '<small>' + B.escapeHtml(opt.reason || 'غير متاح') + '</small>');
+      b.addEventListener('click', function () {
+        B.call('set_model_choice', opt.id).then(function (res) {
+          res = res || {};
+          if (res.ok === false) {
+            fail('set_model_choice', new Error(res.message || 'تعذّر تغيير الموديل'));
+            return;
+          }
+          modelChoice = res.choice || opt.id;
+          modelPill.textContent = modelLabel(modelChoice);
+          renderModelMenu();
+          modelMenu.hidden = true;
+        }).catch(function (err) { fail('set_model_choice', err); });
+      });
+      modelMenu.appendChild(b);
+    });
+  }
+  modelPill.addEventListener('click', function () {
+    modelMenu.hidden = !modelMenu.hidden;
+    if (!modelMenu.hidden) { renderModelMenu(); }
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#modelMenu') && !e.target.closest('#modelPill')) {
+      modelMenu.hidden = true;
+    }
+  });
+
+  /* ---------- navigation ---------- */
+  var side = document.getElementById('side');
+  var win = document.querySelector('.win');
+  var cur = 'chat';
+  var devTimer = null;
+  function show(v) {
+    cur = v;
+    document.querySelectorAll('.view').forEach(function (x) { x.hidden = x.dataset.v !== v; });
+    document.querySelectorAll('#nav .item, #setBtn').forEach(function (x) {
+      x.classList.toggle('on', x.dataset.v === v);
+    });
+    if (v === 'settings') { renderMenu(); }
+    if (v === 'device') { startDev(); } else { stopDev(); }
+  }
+  document.getElementById('nav').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) { return; }
+    if (b.dataset.v === 'themes') {
+      panel.hidden = !panel.hidden;
+      document.querySelectorAll('#nav .item').forEach(function (x) {
+        x.classList.toggle('on', panel.hidden ? x.dataset.v === cur : x === b);
+      });
+    } else {
+      panel.hidden = true;
+      show(b.dataset.v);
+    }
+  });
+  document.getElementById('setBtn').addEventListener('click', function () {
+    panel.hidden = true;
+    show('settings');
+  });
+  var userFold = false;
+  document.getElementById('fold').addEventListener('click', function () {
+    userFold = side.classList.toggle('mini');
+  });
+  function fit() {
+    if (win.offsetWidth < 720) { side.classList.add('mini'); }
+    else if (!userFold) { side.classList.remove('mini'); }
+  }
+  if (window.ResizeObserver) { new ResizeObserver(fit).observe(win); }
+  else { window.addEventListener('resize', fit); }
+  fit();
+
+  /* ---------- chat ---------- */
+  var thread = document.getElementById('thread');
+  var hero = document.getElementById('hero');
+  var chatInput = document.getElementById('chatInput');
+  var deepBtn = document.getElementById('deepBtn');
+  var deepThink = false;
+  var chatBusy = false;
+  deepBtn.addEventListener('click', function () {
+    deepThink = !deepThink;
+    deepBtn.setAttribute('aria-pressed', deepThink ? 'true' : 'false');
+    deepBtn.classList.toggle('gold', deepThink);
+  });
+  function hideHero() { if (hero) { hero.style.display = 'none'; } }
+  function addMsg(kind, text, engine) {
+    hideHero();
+    var m = document.createElement('div');
+    m.className = 'msg ' + kind;
+    m.style.whiteSpace = 'pre-wrap';
+    m.textContent = text;
+    if (kind === 'ai') {
+      var act = document.createElement('button');
+      act.className = 'act';
+      act.type = 'button';
+      act.textContent = 'اعملها انت';
+      act.addEventListener('click', function () { sendChat('اعملها انت'); });
+      m.appendChild(document.createElement('br'));
+      m.appendChild(act);
+      if (engine) {
+        var sm = document.createElement('small');
+        sm.textContent = engine;
+        m.appendChild(sm);
+      }
+    }
+    thread.appendChild(m);
+    thread.scrollTop = thread.scrollHeight;
+    return m;
+  }
+  function addTyping() {
+    hideHero();
+    var m = document.createElement('div');
+    m.className = 'msg ai';
+    m.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+    thread.appendChild(m);
+    thread.scrollTop = thread.scrollHeight;
+    return m;
+  }
+  function sendChat(text) {
+    var t = (text !== undefined ? text : chatInput.value).trim();
+    if (!t || chatBusy) { return; }
+    chatBusy = true;
+    chatInput.value = '';
+    addMsg('me', t);
+    var typing = addTyping();
+    B.call('chat', t, { deep_think: deepThink }).then(function (res) {
+      res = res || {};
+      if (res.pending && (res.id || res.chat_id)) {
+        var id = res.id || res.chat_id;
+        return B.pollUntil(id, function (cid) { return B.call('chat_result', cid); }, 120000, 800);
+      }
+      return { done: true, reply: res.reply || res.text || res.message || '', engine: res.engine || '' };
+    }).then(function (res) {
+      typing.remove();
+      var txt = (res && (res.reply || res.text || res.message)) || '';
+      if (!txt) { txt = 'مفيش رد وصل — جرّب تاني.'; }
+      addMsg('ai', txt, res.engine || '');
+    }).catch(function (err) {
+      typing.remove();
+      fail('chat', err);
+    }).then(function () { chatBusy = false; });
+  }
+  document.getElementById('sendBtn').addEventListener('click', function () { sendChat(); });
+  chatInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { sendChat(); }
+  });
+  document.getElementById('attachBtn').addEventListener('click', function () {
+    addMsg('ai', 'إرفاق الملفات لسه مش متاح في النسخة دي — اكتب طلبك نصًا وأنا أتعامل معاه.');
+  });
+  document.getElementById('briefBtn').addEventListener('click', function () {
+    if (chatBusy) { return; }
+    chatBusy = true;
+    var typing = addTyping();
+    B.call('get_morning_brief').then(function (res) {
+      res = res || {};
+      var txt = res.brief || res.text || res.message || '';
+      if (Array.isArray(res.items)) { txt = res.items.join('\n'); }
+      typing.remove();
+      addMsg('ai', txt || 'مفيش نشرة متاحة دلوقتي.', 'نشرة الصباح');
+    }).catch(function (err) {
+      typing.remove();
+      fail('morning_brief', err);
+    }).then(function () { chatBusy = false; });
+  });
+
+  /* ---------- device view (real bridge data only) ---------- */
+  function setBar(el, pct) {
+    el.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  }
+  function renderOverview(ov) {
+    ov = ov || {};
+    var ram = ov.ram || {};
+    var cpu = ov.cpu || {};
+    var bat = ov.battery || {};
+    var temp = ov.temp || {};
+    var ramPct = (typeof ram.percent === 'number') ? ram.percent : 0;
+    document.getElementById('vRam').textContent =
+      (typeof ram.used_gb === 'number' ? ram.used_gb.toFixed(1) + ' GB' : '--');
+    document.getElementById('vRamSub').textContent =
+      (typeof ram.total_gb === 'number' ? 'من ' + ram.total_gb.toFixed(1) + ' GB' : '');
+    setBar(document.getElementById('bRam'), ramPct);
+    document.getElementById('vCpu').textContent =
+      (typeof cpu.percent === 'number' ? Math.round(cpu.percent) + '%' : '--');
+    setBar(document.getElementById('bCpu'), cpu.percent || 0);
+    document.getElementById('vBat').textContent =
+      (typeof bat.percent === 'number' ? Math.round(bat.percent) + '%' : '--');
+    document.getElementById('vBatSub').textContent = bat.charging ? 'بيشحن' : '';
+    setBar(document.getElementById('bBat'), bat.percent || 0);
+    var vTemp = document.getElementById('vTemp');
+    var vTempNote = document.getElementById('vTempNote');
+    if (typeof temp.value === 'number') {
+      vTemp.textContent = temp.value + '°C';
+      vTempNote.textContent = temp.label || temp.source || '';
+    } else {
+      vTemp.textContent = 'مش متاحة على الجهاز ده';
+      vTempNote.innerHTML = '<a class="act" href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor" target="_blank" rel="noopener">تثبيت LibreHardwareMonitor</a>';
+    }
+    var list = document.getElementById('procList');
+    list.innerHTML = '';
+    var procs = Array.isArray(ov.top_processes) ? ov.top_processes : [];
+    if (!procs.length) {
+      list.innerHTML = '<p class="about">مفيش بيانات عمليات متاحة دلوقتي.</p>';
+    }
+    procs.slice(0, 8).forEach(function (p, i) {
+      var row = document.createElement('div');
+      row.className = 'proc th';
+      row.style.setProperty('--i', i);
+      var nm = document.createElement('span');
+      nm.className = 'nm';
+      nm.textContent = p.name || '—';
+      var vl = document.createElement('span');
+      vl.className = 'vl';
+      vl.textContent = (typeof p.cpu === 'number' ? p.cpu.toFixed(1) + '% CPU' : '') +
+        (typeof p.mem_mb === 'number' ? ' · ' + Math.round(p.mem_mb) + ' MB' : '');
+      row.appendChild(nm);
+      row.appendChild(vl);
+      list.appendChild(row);
+    });
+  }
+  function refreshDevice() {
+    B.call('get_device_overview').then(function (res) {
+      res = res || {};
+      if (res.ok === false || !res.overview) {
+        fail('get_device_overview', new Error(res.message || 'تعذّر قراءة بيانات الجهاز'));
+        return;
+      }
+      renderOverview(res.overview);
+    }).catch(function (err) { fail('get_device_overview', err); });
+  }
+  function startDev() {
+    refreshDevice();
+    if (!devTimer) { devTimer = setInterval(refreshDevice, 5000); }
+  }
+  function stopDev() {
+    if (devTimer) { clearInterval(devTimer); devTimer = null; }
+  }
+  var cleanToken = null;
+  document.getElementById('cleanBtn').addEventListener('click', function () {
+    var st = document.getElementById('cleanSt');
+    st.textContent = 'بيتم التنظيف…';
+    B.call('clean_cache', 'temp').then(function (res) {
+      res = res || {};
+      if (res.ok === false) {
+        st.textContent = res.message || 'التنظيف فشل.';
+        return;
+      }
+      var freed = (typeof res.freed_mb === 'number') ? res.freed_mb :
+        (typeof res.freed === 'number' ? res.freed : null);
+      st.textContent = 'تم التنظيف' + (freed !== null ? ' — اتحرر ' + freed + ' MB' : '') + '.';
+      if (res.token) {
+        cleanToken = res.token;
+        document.getElementById('undoCleanBtn').hidden = false;
+      }
+      refreshDevice();
+    }).catch(function (err) {
+      st.textContent = '';
+      fail('clean_cache', err);
+    });
+  });
+  document.getElementById('undoCleanBtn').addEventListener('click', function () {
+    if (!cleanToken) { return; }
+    var st = document.getElementById('cleanSt');
+    B.call('undo_clean', cleanToken).then(function (res) {
+      res = res || {};
+      st.textContent = (res.ok === false) ? (res.message || 'التراجع فشل.') : 'تم التراجع عن التنظيف.';
+      cleanToken = null;
+      document.getElementById('undoCleanBtn').hidden = true;
+      refreshDevice();
+    }).catch(function (err) { fail('undo_clean', err); });
+  });
+
+  /* ---------- tasks ---------- */
+  var tl = document.getElementById('tList');
+  var tin = document.getElementById('tIn');
+  function taskListFrom(res) {
+    if (Array.isArray(res)) { return res; }
+    if (res && Array.isArray(res.tasks)) { return res.tasks; }
+    if (res && Array.isArray(res.items)) { return res.items; }
+    return [];
+  }
+  function renderTasks(tasks) {
+    tl.innerHTML = '';
+    tasks.forEach(function (k, i) {
+      var li = document.createElement('li');
+      li.className = 'th' + (k.done ? ' done' : '');
+      li.style.setProperty('--i', Math.min(i, 10));
+      var chk = document.createElement('button');
+      chk.className = 'round chk';
+      chk.setAttribute('aria-label', 'تم');
+      chk.innerHTML = k.done ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>' : '';
+      chk.addEventListener('click', function () {
+        B.call('toggle_task', k.id).then(function () { loadTasks(); })
+          .catch(function (err) { fail('toggle_task', err); });
+      });
+      var tx = document.createElement('span');
+      tx.className = 'tx';
+      tx.textContent = k.text || k.title || '';
+      var del = document.createElement('button');
+      del.className = 'round';
+      del.setAttribute('aria-label', 'حذف');
+      del.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      del.addEventListener('click', function () {
+        B.call('delete_task', k.id).then(function () { loadTasks(); })
+          .catch(function (err) { fail('delete_task', err); });
+      });
+      li.appendChild(chk);
+      li.appendChild(tx);
+      li.appendChild(del);
+      tl.appendChild(li);
+    });
+    if (!tasks.length) {
+      var empty = document.createElement('p');
+      empty.className = 'about';
+      empty.textContent = 'مفيش مهام — ضيف أول مهمة من فوق.';
+      tl.appendChild(empty);
+    }
+  }
+  function loadTasks() {
+    B.call('get_tasks').then(function (res) {
+      renderTasks(taskListFrom(res));
+    }).catch(function (err) { fail('get_tasks', err); });
+  }
+  function addTask() {
+    var v = tin.value.trim();
+    if (!v) { return; }
+    tin.value = '';
+    B.call('add_task', v).then(function () { loadTasks(); })
+      .catch(function (err) { fail('add_task', err); });
+  }
+  document.getElementById('tAdd').addEventListener('click', addTask);
+  tin.addEventListener('keydown', function (e) { if (e.key === 'Enter') { addTask(); } });
+  loadTasks();
+
+  /* ---------- settings (13 sections, exactly as the v4.2 preview) ---------- */
+  var ICON = {
+    general: "<path d='M4 7h10M18 7h2M4 17h2M10 17h10'/><circle cx='16' cy='7' r='2'/><circle cx='8' cy='17' r='2'/>",
+    wa: "<path d='M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z'/><path d='M9.5 9.5c.5 2.5 2.5 4.5 5 5l1-1.5-2-1-1 .8c-.8-.5-1.5-1.2-2-2l.8-1z'/>",
+    memory: "<path d='M12 4v16'/><path d='M12 7c-1-2-5-2-6 1-2 1-2 4 0 5 0 3 4 4 6 2M12 7c1-2 5-2 6 1 2 1 2 4 0 5 0 3-4 4-6 2'/>",
+    health: "<path d='M3 12h4l2-5 4 10 2-5h6'/>",
+    notif: "<path d='M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z'/><path d='M10 21h4'/>",
+    sound: "<path d='M4 9v6h4l5 4V5L8 9H4z'/><path d='M16.5 8.5a5 5 0 0 1 0 7'/>",
+    avatar: "<circle cx='12' cy='8' r='4'/><path d='M4 21a8 8 0 0 1 16 0'/>",
+    log: "<path d='M5 4h14v16H5z'/><path d='M9 9h6M9 13h6M9 17h3'/>",
+    update: "<path d='M12 4v10M8 10l4 4 4-4M5 20h14'/>",
+    themes: "<circle cx='12' cy='12' r='9'/><path d='M12 3a9 9 0 0 0 0 18z' fill='currentColor'/>",
+    api: "<circle cx='8' cy='15' r='4'/><path d='M11 12l9-9M16 7l3 3'/>",
+    self: "<path d='M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z'/><circle cx='12' cy='12' r='3'/>",
+    eye: "<path d='M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z'/><circle cx='12' cy='12' r='3'/>",
+    backup: "<path d='M12 16V4M7 9l5-5 5 5M5 20h14'/>",
+    quit: "<path d='M12 3v9M6.5 6.5a8 8 0 1 0 11 0'/>"
+  };
+  function ic(n) {
+    return "<svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>" + ICON[n] + "</svg>";
+  }
+  var SEC = [['general', 'عام'], ['wa', 'WhatsApp'], ['memory', 'الذاكرة'], ['health', 'صحة الجهاز'], ['notif', 'الإشعارات'], ['sound', 'الأصوات'], ['avatar', 'الأفاتار'], ['log', 'سجل التشخيص'], ['update', 'التحديثات'], ['themes', 'الثيمات'], ['api', 'مفاتيح API'], ['self', 'لونا شايفة نفسها'], ['backup', 'نسخة احتياطية']];
+  var MEM = [];
+  var LOGTEXT = '';
+  var WA_STATUS = null;
+  var API_STATUS = {};
+  var SELF_ROWS = [];
+  var curSec = '';
+
+  function tg(k, l) {
+    return "<button class='tog th' data-t='" + k + "' aria-pressed='" + (S[k] ? 'true' : 'false') + "'><span>" + l + "</span><span class='knob'></span></button>";
+  }
+  function inp(k, t, c) {
+    return "<input data-i='" + k + "' type='" + (t || 'text') + "' class='" + (c || '') + "' autocomplete='off'>";
+  }
+  function row(l, c) { return "<div class='row th'><span>" + l + "</span>" + c + "</div>"; }
+  function num(k) { return inp(k, 'number', 'n76'); }
+  function btn(t, a) { return "<button class='act' " + (a || '') + ">" + t + "</button>"; }
+  function saveBtn() { return "<button class='act th' data-save>حفظ</button>"; }
+  function kv(l, v) { return "<div class='row th'><span>" + l + "</span><b class='kv'>" + v + "</b></div>"; }
+  function flash(el, txt, ms) {
+    var o = el.dataset.o || el.textContent;
+    el.dataset.o = o;
+    el.textContent = txt;
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.textContent = o; }, ms || 1400);
+  }
+
+  var Bsec = {
+    general: function () {
+      return row('اسم المساعد', inp('name')) + row('اسمك', inp('user'))
+        + row('لغة الواجهة', "<select data-i='lang'><option value='ar'>العربية</option><option value='en'>English</option></select>")
+        + tg('greet', 'تحية الصباح مع الطقس') + tg('voice', 'الرد بالصوت') + tg('auto', 'التشغيل مع ويندوز') + tg('island', 'Dynamic Island (بعد إعادة التشغيل)')
+        + tg('listen', "الاستماع الدائم «<b data-wake></b>»")
+        + "<p class='warn th' id='lw' hidden>الاستماع المستمر بيشغّل المعالج طول الوقت وبيسخّن الجهاز. فعّله وقت ما تحتاجه بس.</p>"
+        + tg('priv', 'وضع الخصوصية')
+        + row('كود المالك', inp('owner', 'password') + btn('تفعيل وضع المالك', "data-own") + "<em class='st'></em>")
+        + "<p class='about th'>LONA v" + B.escapeHtml(VERSION || '—') + " — ENG/Mohamed El Sayed</p>" + saveBtn();
+    },
+    wa: function () {
+      var st = WA_STATUS || {};
+      var connected = !!st.connected;
+      var statusTxt = connected ? ('متصل' + (st.number ? ' — ' + B.escapeHtml(st.number) : '')) : 'غير متصل';
+      var qrHtml = '';
+      if (!connected) {
+        if (st.qr_data_url) {
+          qrHtml = "<div class='qr th'><img src='" + B.escapeHtml(st.qr_data_url) + "' alt='QR واتساب' style='width:100%;height:100%;object-fit:contain'></div><p class='about th'>افتح واتساب على موبايلك، ادخل على الأجهزة المرتبطة، وامسح الكود.</p>";
+        } else if (st.qr) {
+          qrHtml = "<div class='qr th'>" + B.escapeHtml(st.qr) + "</div><p class='about th'>افتح واتساب على موبايلك، ادخل على الأجهزة المرتبطة، وامسح الكود.</p>";
+        } else if (st.message) {
+          qrHtml = "<p class='about th'>" + B.escapeHtml(st.message) + "</p>";
+        }
+      }
+      return tg('wa', 'تفعيل واتساب') + row('رقم المالك', inp('waNum', 'tel'))
+        + row('الحالة', "<b id='waSt'>" + statusTxt + "</b>")
+        + qrHtml
+        + (connected || st.qr_data_url || st.qr
+          ? "<div class='acts th'>" + btn('إعادة الربط', 'data-relink') + btn('قطع الاتصال', 'data-wadis') + "<em class='st'></em></div>"
+          : "<div class='acts th'>" + btn('إعادة الربط', 'data-relink') + "<em class='st'></em></div>")
+        + saveBtn();
+    },
+    memory: function () {
+      var items = MEM.map(function (m) {
+        var txt = m.text || m.content || m.memory || '';
+        var kind = m.kind || m.type || '';
+        return "<li class='th'><span class='tx'>" + B.escapeHtml(txt) +
+          (kind ? "<small>" + B.escapeHtml(kind) + "</small>" : '') + "</span>" +
+          btn('حذف', "data-mdel='" + B.escapeHtml(String(m.id)) + "'") + "</li>";
+      }).join('');
+      return "<div class='stat th'><span>الذاكرة المحفوظة</span><b style='font-size:15px'>" +
+        (MEM.length ? MEM.length + ' عنصر محفوظ' : 'مفيش حاجة محفوظة لسه') + "</b></div>" +
+        "<ul class='tlist'>" + items + "</ul>" +
+        "<button class='act danger th' data-mclear>مسح كل الذاكرة</button>";
+    },
+    health: function () {
+      return tg('mon', 'مراقبة صحة الجهاز')
+        + [['r1', 'الرام الفاضي أقل من', 'MB'], ['r2', 'استخدام الرام أعلى من', '%'], ['r3', 'المساحة الفاضية أقل من', 'GB'], ['r4', 'المساحة الفاضية أقل من', '%'], ['r5', 'حرارة المعالج فوق', '°C'], ['r6', 'حمل المعالج المستمر فوق', '%'], ['r7', 'البطارية أقل من', '%'], ['r8', 'عدم تكرار نفس التنبيه قبل', 'دقيقة']]
+          .map(function (r) {
+            return row(r[1], num(r[0]) + "<em class='u'>" + r[2] + "</em>" + (r[0] === 'r6' ? "<em class='u'>لمدة</em>" + num('r6m') + "<em class='u'>دقايق</em>" : ''));
+          }).join('')
+        + tg('inapp', 'تنبيه جوّه البرنامج') + tg('toast', 'إشعار ويندوز') + saveBtn();
+    },
+    notif: function () {
+      return tg('notif', 'تفعيل الإشعارات') + "<div class='acts th'>" + btn('اطلب إذن الإشعارات', 'data-nreq') + "<em class='st'></em></div>"
+        + row('التطبيقات المهمة (واحد في كل سطر)', "<textarea data-i='apps' rows='4'></textarea>")
+        + row('الكلمات المهمة (واحدة في كل سطر)', "<textarea data-i='kws' rows='4'></textarea>") + saveBtn();
+    },
+    sound: function () {
+      return "<div class='opts'>" + [['m1', 'ولد 1', 'هادي ورزين'], ['m2', 'ولد 2', 'مرح وخفيف'], ['f1', 'بنت 1', 'دافية وودودة'], ['f2', 'بنت 2', 'عملية وسريعة']]
+        .map(function (v) {
+          return "<button class='opt th" + (S.vc === v[0] ? ' sel' : '') + "' data-vc='" + v[0] + "'><b>" + v[1] + "</b><small>" + v[2] + "</small></button>";
+        }).join('')
+        + "</div><p class='about th'>الأصوات أونلاين من Gemini، ومع قطع النت بيشتغل Piper.</p>";
+    },
+    avatar: function () {
+      return "<div class='opts'>" + [['cat', 'ق', 'قطة'], ['dog', 'ك', 'كلب'], ['boy', 'و', 'ولد'], ['girl', 'ب', 'بنت']]
+        .map(function (v) {
+          return "<button class='opt th" + (S.av === v[0] ? ' sel' : '') + "' data-av='" + v[0] + "'><i class='lt'>" + v[1] + "</i><b>" + v[2] + "</b></button>";
+        }).join('') + "</div>";
+    },
+    log: function () {
+      return "<div class='logbox th' id='logBox'>" + B.escapeHtml(LOGTEXT || 'مفيش سجل متاح.') + "</div><div class='acts th'>" + btn('تحديث', 'data-lref') + btn('نسخ', 'data-lcopy') + "<em class='st'></em></div>";
+    },
+    update: function () {
+      return row('الإصدار الحالي', '<b>' + B.escapeHtml(VERSION || '—') + '</b>') +
+        "<div class='acts th'>" + btn('التحقق من التحديثات', 'data-ucheck') + "<em class='st'></em></div>" +
+        "<button class='act th' data-uinst hidden>تثبيت التحديث المنزّل</button>" +
+        "<p class='about th' id='updNote'></p>";
+    },
+    themes: function () { return "<div class='th-grid' id='thGrid2'></div>"; },
+    api: function () {
+      return [['gemini-voice', 'Gemini صوت'], ['gemini-chat', 'Gemini شات'], ['groq', 'Groq']].map(function (k) {
+        var saved = !!API_STATUS[k[0]];
+        return "<div class='keybox th'><div class='row'><span>" + k[1] + "</span><input type='password' data-key='" + k[0] + "' placeholder='المفتاح' autocomplete='off'><button class='round' data-eye aria-label='إظهار'>" + ic('eye') + "</button></div><div class='acts'>" + btn('حفظ', "data-ksave='" + k[0] + "'") + btn('اختبار الاتصال', "data-ktest='" + k[0] + "'") + "<span class='badge'" + (saved ? '' : ' hidden') + ">محفوظ على الجهاز</span><em class='st'></em></div></div>";
+      }).join('');
+    },
+    self: function () {
+      var rows = SELF_ROWS.map(function (r) {
+        var label = '', value = '';
+        if (typeof r === 'string') { label = r; }
+        else if (Array.isArray(r)) { label = r[0]; value = r[1]; }
+        else if (r && typeof r === 'object') { label = r.label || r.name || r.key || ''; value = r.value || r.detail || r.text || ''; }
+        return kv(B.escapeHtml(label), B.escapeHtml(value));
+      }).join('');
+      return kv('الاتصال', STATUS.online ? 'متصل' : 'أوفلاين') +
+        kv('الموديل', B.escapeHtml(modelLabel(modelChoice))) +
+        rows +
+        kv('الملفات العميقة', "<span id='dfSt'>اطلب الإذن لمسار معيّن</span><input type='text' id='dfPath' placeholder='مسار المجلد (اختياري)' style='flex:1;min-width:140px'>" + btn('اطلب الإذن', 'data-dfreq'));
+    },
+    backup: function () {
+      return "<h3 class='sub th'>تصدير</h3>" + row('الباسورد', "<input type='password' id='bx1' autocomplete='off'>") + row('تأكيد الباسورد', "<input type='password' id='bx2' autocomplete='off'>")
+        + "<div class='acts th'>" + btn('تصدير', 'data-bexp') + "<em class='st'></em></div><h3 class='sub th'>استيراد</h3>"
+        + row('مسار ملف النسخة', "<input type='text' id='bmPath' placeholder='مثال: C:\\Users\\Mohamed\\lona-backup.lona' autocomplete='off'>")
+        + row('الباسورد', "<input type='password' id='bm1' autocomplete='off'>")
+        + "<div class='acts th'>" + btn('استيراد', 'data-bimp') + "<em class='st'></em></div>";
+    }
+  };
+
+  var sr = document.getElementById('setRoot');
+  function stg() {
+    sr.querySelectorAll('.th').forEach(function (el, i) {
+      el.style.setProperty('--i', Math.min(i, 10));
+    });
+  }
+  function fill() {
+    sr.querySelectorAll('[data-i]').forEach(function (el) { el.value = S[el.dataset.i]; });
+    sr.querySelectorAll('[data-wake]').forEach(function (el) {
+      el.textContent = 'يا ' + (String(S.name).trim() || 'لونا');
+    });
+    var lw = document.getElementById('lw');
+    if (lw) { lw.hidden = !S.listen; }
+  }
+  var CH_L = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M15 6l-6 6 6 6'/></svg>";
+  var CH_R = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M9 6l6 6-6 6'/></svg>";
+  function renderMenu() {
+    curSec = '';
+    sr.innerHTML = SEC.map(function (s) {
+      return "<button class='menu th' data-sec='" + s[0] + "'>" + ic(s[0]) + "<span>" + s[1] + "</span>" + CH_L + "</button>";
+    }).join('')
+      + "<button class='menu danger th' data-quit>" + ic('quit') + "<span>إغلاق البرنامج</span></button>";
+    stg();
+  }
+  function renderSec(id) {
+    curSec = id;
+    var t = '';
+    SEC.forEach(function (s) { if (s[0] === id) { t = s[1]; } });
+    var load = Promise.resolve();
+    if (id === 'wa') {
+      load = B.call('get_whatsapp_status').then(function (res) { WA_STATUS = res || {}; })
+        .catch(function (err) { fail('get_whatsapp_status', err); WA_STATUS = {}; });
+    } else if (id === 'memory') {
+      load = B.call('get_memories').then(function (res) {
+        MEM = Array.isArray(res) ? res : (res.memories || res.items || []);
+      }).catch(function (err) { fail('get_memories', err); MEM = []; });
+    } else if (id === 'log') {
+      load = B.call('get_log').then(function (res) {
+        if (typeof res === 'string') { LOGTEXT = res; }
+        else if (res) {
+          LOGTEXT = res.log || res.text || (Array.isArray(res.entries) ? res.entries.join('\n') : '') ||
+            (Array.isArray(res.lines) ? res.lines.join('\n') : '');
+        }
+      }).catch(function (err) { fail('get_log', err); LOGTEXT = ''; });
+    } else if (id === 'self') {
+      load = B.call('get_self_view').then(function (res) {
+        SELF_ROWS = (res && (res.rows || res.items)) || [];
+      }).catch(function (err) { fail('get_self_view', err); SELF_ROWS = []; });
+    } else if (id === 'api') {
+      load = B.call('get_api_keys_status').then(function (res) { API_STATUS = res || {}; })
+        .catch(function (err) { fail('get_api_keys_status', err); API_STATUS = {}; });
+    }
+    load.then(function () {
+      sr.innerHTML = "<div class='shead th'><button class='back' data-back>" + CH_R + "رجوع</button><h2>" + B.escapeHtml(t) + "</h2></div>" + Bsec[id]();
+      fill();
+      stg();
+      if (id === 'themes') { buildThemeGrid(document.getElementById('thGrid2')); }
+    });
+  }
+  sr.addEventListener('input', function (e) {
+    var k = e.target.dataset.i;
+    if (!k) { return; }
+    S[k] = e.target.value;
+    if (k === 'name') {
+      sr.querySelectorAll('[data-wake]').forEach(function (el) {
+        el.textContent = 'يا ' + (String(S.name).trim() || 'لونا');
+      });
+    }
+  });
+  function sectionPatch(id) {
+    if (id === 'general') {
+      return {
+        ai_name: S.name, name: S.name, user_name: S.user, user: S.user,
+        language: S.lang, lang: S.lang, greeting_enabled: S.greet, greet: S.greet,
+        voice_output: S.voice, voice: S.voice, autostart: S.auto, auto: S.auto,
+        island_enabled: S.island, island: S.island, wakeword_enabled: S.listen, listen: S.listen,
+        privacy_mode: S.priv, priv: S.priv
+      };
+    }
+    if (id === 'wa') {
+      return { owner_number: S.waNum, waNum: S.waNum };
+    }
+    if (id === 'health') {
+      var p = { tempwatch_enabled: S.mon, mon: S.mon, inapp: S.inapp, toast: S.toast };
+      ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r6m', 'r7', 'r8'].forEach(function (k) { p[k] = S[k]; });
+      return p;
+    }
+    if (id === 'notif') {
+      return { notifications_enabled: S.notif, notif: S.notif, apps: S.apps, kws: S.kws };
+    }
+    return {};
+  }
+  sr.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b || !sr.contains(b)) { return; }
+    var d = b.dataset;
+    var stEl = b.parentNode ? b.parentNode.querySelector('.st') : null;
+    function say(t) { if (stEl) { stEl.textContent = t; } }
+    if (d.sec) { renderSec(d.sec); return; }
+    if ('back' in d) { renderMenu(); return; }
+    if (d.t) {
+      S[d.t] = S[d.t] ? 0 : 1;
+      b.setAttribute('aria-pressed', S[d.t] ? 'true' : 'false');
+      if (d.t === 'listen') {
+        var lw = document.getElementById('lw');
+        if (lw) { lw.hidden = !S.listen; }
+      }
+      if (d.t === 'wa') { renderSec('wa'); }
+      return;
+    }
+    if ('save' in d) {
+      B.call('save_settings', sectionPatch(curSec)).then(function (res) {
+        res = res || {};
+        if (res.ok === false) { fail('save_settings', new Error(res.message || 'الحفظ فشل')); flash(b, 'الحفظ فشل'); return; }
+        flash(b, 'تم الحفظ');
+        if (curSec === 'general') { applyGreeting(); }
+      }).catch(function (err) { fail('save_settings', err); flash(b, 'الحفظ فشل'); });
+      return;
+    }
+    if (d.vc) {
+      S.vc = d.vc;
+      sr.querySelectorAll('[data-vc]').forEach(function (x) { x.classList.toggle('sel', x === b); });
+      B.call('save_settings', { voice: d.vc, vc: d.vc }).catch(function (err) { fail('save_voice', err); });
+      return;
+    }
+    if (d.av) {
+      S.av = d.av;
+      sr.querySelectorAll('[data-av]').forEach(function (x) { x.classList.toggle('sel', x === b); });
+      B.call('save_settings', { avatar: d.av, av: d.av }).catch(function (err) { fail('save_avatar', err); });
+      return;
+    }
+    if ('eye' in d) {
+      var box = b.closest('.keybox');
+      var ki = box.querySelector('[data-key]');
+      var prov = ki.dataset.key;
+      B.call('get_api_key_value', prov).then(function (res) {
+        res = res || {};
+        var val = res.value || res.key || '';
+        if (!val) { say('مفيش مفتاح محفوظ'); return; }
+        ki.value = val;
+        ki.type = 'text';
+        ki.focus();
+      }).catch(function (err) { fail('get_api_key_value', err); });
+      return;
+    }
+    if ('own' in d) {
+      var code = String(S.owner || '').trim();
+      if (!/^[0-9]{6}$/.test(code)) { say('الكود لازم 6 أرقام'); return; }
+      B.call('check_owner_code', code).then(function (res) {
+        res = res || {};
+        say(res.ok ? 'وضع المالك اتفعّل' : (res.message || 'الكود غلط'));
+        if (!res.ok) { B.logError('owner_code', 'owner code check failed'); }
+      }).catch(function (err) { fail('check_owner_code', err); });
+      return;
+    }
+    if ('relink' in d) {
+      B.call('whatsapp_relink').then(function (res) {
+        res = res || {};
+        say(res.message || 'اتولّد طلب ربط جديد — استنى الـ QR.');
+        renderSec('wa');
+      }).catch(function (err) { fail('whatsapp_relink', err); });
+      return;
+    }
+    if ('wadis' in d) {
+      B.call('whatsapp_disconnect').then(function () { renderSec('wa'); })
+        .catch(function (err) { fail('whatsapp_disconnect', err); });
+      return;
+    }
+    if (d.mdel) {
+      B.call('delete_memory', d.mdel).then(function () { renderSec('memory'); })
+        .catch(function (err) { fail('delete_memory', err); });
+      return;
+    }
+    if ('mclear' in d) {
+      if (b.dataset.arm) {
+        B.call('clear_memories').then(function () { renderSec('memory'); })
+          .catch(function (err) { fail('clear_memories', err); });
+      } else {
+        b.dataset.arm = 1;
+        b.textContent = 'متأكد؟ دوس تاني للمسح';
+        setTimeout(function () {
+          if (b.isConnected) { delete b.dataset.arm; b.textContent = 'مسح كل الذاكرة'; }
+        }, 3000);
+      }
+      return;
+    }
+    if ('nreq' in d) {
+      if (typeof Notification === 'undefined') { say('مش متاح في المتصفح ده'); return; }
+      try {
+        Notification.requestPermission().then(function (p) {
+          say(p === 'granted' ? 'الإذن متفعّل' : 'الإذن مش متاح');
+        }).catch(function (err) { say('الإذن مش متاح'); B.logError('notif_permission', String(err)); });
+      } catch (err) { say('مش متاح هنا'); B.logError('notif_permission', String(err)); }
+      return;
+    }
+    if ('lref' in d) {
+      B.call('get_log').then(function (res) {
+        if (typeof res === 'string') { LOGTEXT = res; }
+        else if (res) {
+          LOGTEXT = res.log || res.text || (Array.isArray(res.entries) ? res.entries.join('\n') : '') ||
+            (Array.isArray(res.lines) ? res.lines.join('\n') : '');
+        }
+        var lb2 = document.getElementById('logBox');
+        if (lb2) { lb2.textContent = LOGTEXT || 'مفيش سجل متاح.'; lb2.scrollTop = lb2.scrollHeight; }
+      }).catch(function (err) { fail('get_log', err); });
+      return;
+    }
+    if ('lcopy' in d) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(LOGTEXT).then(function () { say('اتنسخ'); },
+          function (err) { say('النسخ مش متاح هنا'); B.logError('log_copy', String(err)); });
+      } else { say('النسخ مش متاح هنا'); }
+      return;
+    }
+    if ('ucheck' in d) {
+      say('بيتم الفحص…');
+      B.call('check_updates').then(function (res) {
+        res = res || {};
+        if (res.pending && (res.id || res.chat_id)) {
+          var id = res.id || res.chat_id;
+          return B.pollUntil(id, function (cid) { return B.call('get_update_status', cid); }, 120000, 1000);
+        }
+        return res;
+      }).then(function (res) {
+        res = res || {};
+        var inst = sr.querySelector('[data-uinst]');
+        var note = document.getElementById('updNote');
+        if (res.available === true) {
+          say('في تحديث جديد: ' + (res.version || res.latest || ''));
+          if (note) { note.textContent = res.message || res.notes || ''; }
+          if (inst) { inst.hidden = false; }
+        } else if (res.available === false) {
+          say(res.message || 'أنت على آخر إصدار');
+          if (inst) { inst.hidden = true; }
+        } else {
+          say(res.message || 'الفحص خلص — مفيش تفاصيل من السيرفر.');
+        }
+      }).catch(function (err) { fail('check_updates', err); });
+      return;
+    }
+    if ('uinst' in d) {
+      say('بيتم التثبيت…');
+      B.call('install_update').then(function (res) {
+        res = res || {};
+        if (res.pending && (res.id || res.chat_id)) {
+          var id = res.id || res.chat_id;
+          return B.pollUntil(id, function (cid) { return B.call('get_update_status', cid); }, 300000, 1000);
+        }
+        return res;
+      }).then(function (res) {
+        res = res || {};
+        say(res.message || (res.ok === false ? 'التثبيت فشل.' : 'تم التثبيت — هيتم إعادة التشغيل.'));
+      }).catch(function (err) { fail('install_update', err); });
+      return;
+    }
+    if (d.ksave || d.ktest) {
+      var kbox = b.closest('.keybox');
+      var kIn = kbox.querySelector('[data-key]');
+      var bd = kbox.querySelector('.badge');
+      var s2 = kbox.querySelector('.st');
+      var kk = d.ksave || d.ktest;
+      if (d.ksave) {
+        if (!kIn.value.trim()) { s2.textContent = 'اكتب المفتاح الأول'; return; }
+        B.call('save_api_key', kk, kIn.value.trim()).then(function (res) {
+          res = res || {};
+          if (res.ok === false) { s2.textContent = res.message || 'الحفظ فشل'; return; }
+          bd.hidden = false;
+          kIn.value = '';
+          kIn.type = 'password';
+          s2.textContent = 'تم الحفظ';
+        }).catch(function (err) { fail('save_api_key', err); });
+        return;
+      }
+      s2.textContent = 'بيتم الاختبار…';
+      B.call('test_api_key', kk).then(function (res) {
+        res = res || {};
+        if (res.pending) {
+          // Poll the real test job — a saved-key status check would say
+          // "accepted" even when the server rejected the key.
+          return B.pollUntil(res.id, function (cid) { return B.call('job_result', cid); }, 30000, 800)
+            .then(function (r) {
+              s2.textContent = (r && r.error) ? r.error : (r && r.reply ? r.reply : 'المفتاح اتقبل');
+            });
+        }
+        s2.textContent = (res.ok === false) ? (res.message || 'المفتاح مرفوض') : 'المفتاح اتقبل';
+      }).catch(function (err) { fail('test_api_key', err); });
+      return;
+    }
+    if ('dfreq' in d) {
+      var path = (document.getElementById('dfPath') || {}).value || '';
+      B.call('request_deep_file_access', path).then(function (res) {
+        res = res || {};
+        var el = document.getElementById('dfSt');
+        if (el) { el.textContent = res.message || (res.ok === false ? 'الطلب فشل.' : 'الطلب اتبعت — منتظر موافقتك'); }
+      }).catch(function (err) { fail('request_deep_file_access', err); });
+      return;
+    }
+    if ('bexp' in d) {
+      var p1 = document.getElementById('bx1').value;
+      var p2 = document.getElementById('bx2').value;
+      if (p1.length < 6) { say('الباسورد لازم 6 حروف على الأقل'); return; }
+      if (p1 !== p2) { say('الباسورد مش متطابق'); return; }
+      B.call('export_backup', p1).then(function (res) {
+        res = res || {};
+        say(res.ok === false ? (res.message || 'التصدير فشل.') : ('تم التصدير' + (res.path ? ' — ' + res.path : '') + ''));
+      }).catch(function (err) { fail('export_backup', err); });
+      return;
+    }
+    if ('bimp' in d) {
+      var bp = document.getElementById('bmPath').value.trim();
+      var bm = document.getElementById('bm1').value;
+      if (!bp) { say('اكتب مسار ملف النسخة الأول'); return; }
+      if (!bm) { say('اكتب الباسورد الأول'); return; }
+      B.call('import_backup', bp, bm).then(function (res) {
+        res = res || {};
+        say(res.ok === false ? (res.message || 'الاستيراد فشل.') : 'تم الاستيراد');
+      }).catch(function (err) { fail('import_backup', err); });
+      return;
+    }
+    if ('quit' in d) {
+      var sp = b.querySelector('span');
+      if (b.dataset.arm) {
+        clearTimeout(b._t);
+        delete b.dataset.arm;
+        sp.textContent = 'جارٍ الإغلاق…';
+        B.call('quit_app').catch(function (err) {
+          fail('quit_app', err);
+          sp.textContent = 'إغلاق البرنامج';
+        });
+      } else {
+        b.dataset.arm = 1;
+        sp.textContent = 'متأكد؟';
+        b._t = setTimeout(function () {
+          delete b.dataset.arm;
+          sp.textContent = 'إغلاق البرنامج';
+        }, 3000);
+      }
+      return;
+    }
+  });
+
+  /* ---------- greeting + mood ---------- */
+  function applyGreeting() {
+    var name = String(S.user || '').trim();
+    document.getElementById('heroGreet').textContent =
+      name ? ('أهلًا ' + name + '، أقدر أساعدك في إيه؟') : 'أهلًا، أقدر أساعدك في إيه؟';
+  }
+  function pollMood() {
+    B.call('get_mood').then(function (m) {
+      m = m || {};
+      var line = m.reason || m.mood || '';
+      var el = document.getElementById('heroMood');
+      if (el && line) { el.textContent = line; }
+    }).catch(function (err) { fail('get_mood', err); });
+  }
+
+  /* ---------- init ---------- */
+  B.call('get_status').then(function (res) {
+    STATUS = res || {};
+    if (STATUS.version) { VERSION = String(STATUS.version); }
+    if (STATUS.settings) { applyRemoteSettings(STATUS.settings); }
+  }).catch(function (err) { fail('get_status', err); })
+    .then(function () { return B.call('get_settings'); })
+    .then(function (s) { applyRemoteSettings(s); })
+    .catch(function (err) { fail('get_settings', err); })
+    .then(function () {
+      applyTheme(S.theme || 'lg', false);
+      lite(!!S.lite, false);
+      mute(!!S.muted);
+      applyGreeting();
+    });
+  B.call('get_model_options').then(function (res) {
+    res = res || {};
+    modelChoice = res.choice || 'auto';
+    modelOptions = Array.isArray(res.options) ? res.options : [];
+    modelPill.textContent = modelLabel(modelChoice);
+  }).catch(function (err) { fail('get_model_options', err); });
+  pollMood();
+  setInterval(pollMood, 5000);
+})();
+</script>
+</body>
+</html>

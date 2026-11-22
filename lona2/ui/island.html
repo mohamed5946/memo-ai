@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LONA Island</title>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+<link rel="stylesheet" href="assets/lona.css">
+</head>
+<body class="island-page">
+<div class="errbar" id="errbar" hidden><span id="errbarText"></span><button id="errbarClose" type="button">إخفاء</button></div>
+
+<section class="glass island" id="island" aria-label="لونا">
+  <div class="ib" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="i-mini" id="mini">
+    <div class="bubble"><img src="assets/mascot.webp" alt="لونا"></div>
+    <div><div class="i-title">AI Agent</div><div class="i-status"><span class="dot"></span><span id="miniStatus">Listening...</span></div></div>
+    <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <button class="round" id="micBtn" aria-label="المايك" data-stop>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+  </div>
+  <div class="i-full">
+    <div class="stand"><div class="platform"></div><img class="mascot" src="assets/mascot.webp" alt="لونا"></div>
+    <div class="chat-side">
+      <h2 id="greet">أهلًا، أقدر أساعدك في إيه؟</h2>
+      <p class="mood" id="moodLine" style="font-size:13px;color:var(--ink-2)"></p>
+      <div class="i-reply" id="replyBox"></div>
+      <div class="field">
+        <button class="round" id="attachBtn" aria-label="إرفاق" data-stop>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <input id="islInput" placeholder="اكتب هنا" data-stop autocomplete="off">
+        <button class="round gold" id="islSend" aria-label="إرسال" data-stop>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="assets/bridge.js"></script>
+<script>
+(function () {
+  'use strict';
+  var B = window.LonaBridge;
+  var isl = document.getElementById('island');
+  var miniStatus = document.getElementById('miniStatus');
+  var micBtn = document.getElementById('micBtn');
+  var input = document.getElementById('islInput');
+  var replyBox = document.getElementById('replyBox');
+  var moodLine = document.getElementById('moodLine');
+  var micLive = false;
+  var busy = false;
+
+  document.getElementById('errbarClose').addEventListener('click', function () {
+    B.hideError();
+  });
+
+  function fail(source, err) { B.reportFailure(source, err); }
+
+  /* --- expand / collapse: click anywhere on the island except buttons --- */
+  isl.addEventListener('click', function (e) {
+    if (e.target.closest('[data-stop]')) { return; }
+    var opening = !isl.classList.contains('open');
+    isl.classList.toggle('open', opening);
+    var w = opening ? 720 : 380;
+    var h = opening ? 400 : 60;
+    B.call(opening ? 'island_expand' : 'island_collapse').then(function () {
+      return B.call('island_resize', w, h);
+    }).then(function () {
+      if (opening) { input.focus(); }
+    }).catch(function (err) {
+      isl.classList.toggle('open', !opening);
+      fail('island_resize', err);
+    });
+  });
+
+  /* --- mic: local listening indicator only (no voice method in the v2 bridge) --- */
+  micBtn.addEventListener('click', function () {
+    micLive = !micLive;
+    isl.classList.toggle('mic-live', micLive);
+    miniStatus.textContent = micLive ? 'بسمعك…' : 'Listening...';
+  });
+
+  /* --- attach: not wired in the v2 bridge — say so honestly, fake nothing --- */
+  document.getElementById('attachBtn').addEventListener('click', function () {
+    replyBox.textContent = 'إرفاق الملفات من الجزيرة لسه مش متاح في النسخة دي — استخدم النافذة الرئيسية.';
+  });
+
+  function sendChat() {
+    var text = input.value.trim();
+    if (!text || busy) { return; }
+    busy = true;
+    input.value = '';
+    replyBox.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+    B.call('chat', text, {}).then(function (res) {
+      res = res || {};
+      if (res.pending && (res.id || res.chat_id)) {
+        var id = res.id || res.chat_id;
+        return B.pollUntil(id, function (cid) { return B.call('chat_result', cid); }, 120000, 800);
+      }
+      return { done: true, reply: res.reply || res.text || res.message || '' };
+    }).then(function (res) {
+      var txt = (res && (res.reply || res.text || res.message)) || '';
+      replyBox.textContent = txt || 'مفيش رد وصل — جرّب تاني.';
+    }).catch(function (err) {
+      replyBox.textContent = '';
+      fail('island_chat', err);
+    }).then(function () { busy = false; });
+  }
+  document.getElementById('islSend').addEventListener('click', sendChat);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { sendChat(); }
+  });
+
+  /* --- greeting name + mood (bridge only, no invented values) --- */
+  B.call('get_settings').then(function (s) {
+    s = s || {};
+    var name = s.user_name || s.user || '';
+    if (name) {
+      document.getElementById('greet').textContent = 'أهلًا ' + name + '، أقدر أساعدك في إيه؟';
+    }
+  }).catch(function (err) { fail('island_settings', err); });
+
+  function pollMood() {
+    B.call('get_mood').then(function (m) {
+      m = m || {};
+      var line = m.reason || m.mood || '';
+      if (line) { moodLine.textContent = line; }
+    }).catch(function (err) { fail('island_mood', err); });
+  }
+  pollMood();
+  setInterval(pollMood, 5000);
+})();
+</script>
+</body>
+</html>
