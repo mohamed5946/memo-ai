@@ -56,7 +56,141 @@ DEFAULT_MONITOR_SETTINGS = {
     "monitor_battery_critical_percent": 10,
     "monitor_cooldown_min": 30,        # min gap between repeat alerts
                                         # of the same kind (see _should_fire)
+    # rc.3 (d): token-limit-near rule -- warn when the measured
+    # remaining tokens for an engine (Groq 8000/min window) fall to
+    # this, critical at the lower threshold. Fires on the MEASURED
+    # remaining from brain.get_token_usage(), never a guess; an engine
+    # with no measured remaining (Gemini has no per-minute limit in
+    # the tracker) never fires.
+    "monitor_token_warn_remaining": 1000,
+    "monitor_token_critical_remaining": 200,
+    # rc.3 (d): slow-reply rule -- warn when one finished reply took
+    # longer than this (measured wall seconds). 30 s sits well under
+    # the 180 s chat deadline in brain.py, so it warns long before
+    # the deadline kills the reply; a normal reply takes seconds.
+    "monitor_slow_reply_sec": 30,
 }
+
+# ---------------------------------------------------------------------------
+# rc.3 (d): named alert rules with severity.
+#
+# Every rule the monitor can fire, with a stable machine name, an
+# Arabic label, a base severity ("warning" or "critical") and the
+# threshold it fires on, built from the LIVE settings values -- so
+# this list and the Settings health section (which renders it) can
+# never drift apart. Rules that escalate carry critical_when: the
+# condition that lifts them from warning to critical; "" when the
+# rule never escalates. Grouped rules name their members in
+# grouped_from. list_alert_rules() is the single source of truth
+# for the rule list; it is pure (no I/O) so tests and the UI can
+# read it without a monitor instance.
+# ---------------------------------------------------------------------------
+
+# Group kinds -> their member kinds (see _fire_group/_clear_group).
+_GROUP_MEMBERS = {
+    "cpu_temp": ("cpu_high", "temp_high"),
+    "ram_disk": ("ram_low", "disk_low"),
+}
+
+
+def list_alert_rules(settings=None):
+    """All alert rules as [{"name", "name_ar", "severity",
+    "severity_ar", "threshold", "threshold_ar", "critical_when",
+    "grouped_from"}]. `severity` is the BASE severity ("warning" or
+    "critical"); `critical_when` names the escalation ("" when the
+    rule never escalates). Every rule fires on a measured value --
+    there is no rule here that cannot fire."""
+    s = dict(DEFAULT_MONITOR_SETTINGS)
+    if settings:
+        s.update({k: v for k, v in settings.items()
+                  if k in DEFAULT_MONITOR_SETTINGS})
+    return [
+        {"name": "ram-low", "name_ar": "الرام شبه ممتلئة",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": (f"free RAM < {s['monitor_ram_free_mb']} MB or "
+                       f"used > {s['monitor_ram_percent']}%"),
+         "threshold_ar": (f"الرام الفاضي أقل من "
+                          f"{s['monitor_ram_free_mb']} ميجا أو الاستخدام "
+                          f"أعلى من {s['monitor_ram_percent']}%"),
+         "critical_when": "الفاضي أقل من 200 ميجا أو الاستخدام 97% أو أكتر",
+         "grouped_from": []},
+        {"name": "disk-low", "name_ar": "مساحة القرص قربت تخلص",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": (f"free disk < {s['monitor_disk_free_gb']} GB or "
+                       f"free < {s['monitor_disk_percent_free']}%"),
+         "threshold_ar": (f"المساحة الفاضية أقل من "
+                          f"{s['monitor_disk_free_gb']} جيجا أو أقل من "
+                          f"{s['monitor_disk_percent_free']}%"),
+         "critical_when": "الفاضي أقل من 2 جيجا أو أقل من 5%",
+         "grouped_from": []},
+        {"name": "temp-high", "name_ar": "حرارة المعالج عالية",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": f"CPU temp >= {s['monitor_temp_warn_c']} C",
+         "threshold_ar": (f"حرارة المعالج {s['monitor_temp_warn_c']}°م "
+                          "أو أكتر"),
+         "critical_when": (f"الحرارة {s['monitor_temp_critical_c']}°م "
+                           "أو أكتر"),
+         "grouped_from": []},
+        {"name": "cpu-high", "name_ar": "حمل المعالج المستمر",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": (f"avg CPU > {s['monitor_cpu_sustained_percent']}% "
+                       f"over {s['monitor_cpu_sustained_minutes']} min"),
+         "threshold_ar": (f"المعالج فوق "
+                          f"{s['monitor_cpu_sustained_percent']}% في "
+                          f"المتوسط لمدة "
+                          f"{s['monitor_cpu_sustained_minutes']} دقايق"),
+         "critical_when": "",
+         "grouped_from": []},
+        {"name": "battery-low", "name_ar": "البطارية قربت تخلص",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": (f"battery < {s['monitor_battery_warn_percent']}% "
+                       "while discharging"),
+         "threshold_ar": (f"البطارية أقل من "
+                          f"{s['monitor_battery_warn_percent']}% والشاحن "
+                          "مش متوصل"),
+         "critical_when": (f"البطارية أقل من "
+                           f"{s['monitor_battery_critical_percent']}%"),
+         "grouped_from": []},
+        {"name": "cpu-temp", "name_ar": "المعالج سخن وشغال على آخره",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": "cpu-high AND temp-high at the same time",
+         "threshold_ar": (f"حمل مستمر فوق "
+                          f"{s['monitor_cpu_sustained_percent']}% لمدة "
+                          f"{s['monitor_cpu_sustained_minutes']} دقايق "
+                          f"+ حرارة {s['monitor_temp_warn_c']}°م أو أكتر "
+                          "في نفس الوقت"),
+         "critical_when": (f"الحرارة {s['monitor_temp_critical_c']}°م "
+                           "أو أكتر"),
+         "grouped_from": ["cpu-high", "temp-high"]},
+        {"name": "ram-disk", "name_ar": "موارد الجهاز شبه مستنفدة",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": "ram-low AND disk-low at the same time",
+         "threshold_ar": (f"الرام الفاضي أقل من "
+                          f"{s['monitor_ram_free_mb']} ميجا والقرص "
+                          f"الفاضي أقل من {s['monitor_disk_free_gb']} "
+                          "جيجا في نفس الوقت"),
+         "critical_when": "",
+         "grouped_from": ["ram-low", "disk-low"]},
+        {"name": "token-limit-near", "name_ar": "توكنات المحرك قربت تخلص",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": (f"measured remaining tokens <= "
+                       f"{s['monitor_token_warn_remaining']}"),
+         "threshold_ar": (f"المتبقي من حد الدقيقة "
+                          f"{s['monitor_token_warn_remaining']} توكن أو "
+                          "أقل (Groq؛ Gemini لما يبقى ليها حد مقاس)"),
+         "critical_when": (f"المتبقي "
+                           f"{s['monitor_token_critical_remaining']} "
+                           "توكن أو أقل"),
+         "grouped_from": []},
+        {"name": "slow-reply", "name_ar": "الرد بطيء",
+         "severity": "warning", "severity_ar": "تحذير",
+         "threshold": (f"one reply took > "
+                       f"{s['monitor_slow_reply_sec']} s (measured)"),
+         "threshold_ar": (f"الرد أخد أكتر من "
+                          f"{s['monitor_slow_reply_sec']} ثانية"),
+         "critical_when": "",
+         "grouped_from": []},
+    ]
 
 # Temperature is probed at most this often (a WMI/PowerShell probe costs
 # a subprocess spawn; there is no point doing it every 60 s).
@@ -1075,10 +1209,15 @@ class SystemMonitor:
         Defaults to the real machine; tests inject fake readings.
     clock: () -> float seconds (default time.time); tests inject a fake
         clock via check_once(..., now=...) instead.
+    token_fn: () -> brain.get_token_usage() dict, or None. When set,
+        check_once() also evaluates the token-limit-near rule on the
+        MEASURED remaining (rc.3 d). The parent passes
+        brain.get_token_usage here -- the monitor never imports brain
+        itself, so this module stays decoupled from it.
     """
 
     def __init__(self, settings=None, on_alert=None, sample_fn=None,
-                 clock=None):
+                 clock=None, token_fn=None):
         merged = dict(DEFAULT_MONITOR_SETTINGS)
         if settings:
             merged.update({k: v for k, v in settings.items()
@@ -1086,6 +1225,7 @@ class SystemMonitor:
         self.settings = merged
         self.on_alert = on_alert
         self.sample_fn = sample_fn or self._sample_real
+        self.token_fn = token_fn
         self._clock = clock or time.time
         self._cpu_history = []      # [(timestamp, cpu_percent)]
         self._active = set()        # alert kinds whose condition is true
@@ -1640,31 +1780,195 @@ class SystemMonitor:
                 warn("monitor", f"on_alert callback failed: {exc}")
         return alert
 
+    # -- rc.3 (b): grouping + resolved notices ---------------------------
+    # Alertmanager-style, LONA-sized: related conditions that fire
+    # together send ONE alert naming the likely root cause (labelled
+    # as likely -- never a fabricated certainty), and when a condition
+    # clears, ONE short "resolved" notice goes out through the same
+    # on_alert channel (in-app + toast via alert_to_toast). Grouping
+    # never resets or bypasses the 30-min cooldown: a grouped firing
+    # stamps _last_fired for the group AND for every member, so a
+    # member cannot re-fire individually inside the cooldown; a
+    # resolved notice fires at most once per active -> clear
+    # transition, and never touches _last_fired (it is not a firing).
+
+    def _fire_group(self, kind: str, members, level: str,
+                    title_ar: str, message_ar: str, now: float) -> dict:
+        """One alert for several related conditions at once. The
+        members are marked active with the same timestamp, so they
+        cannot also fire individually while the group holds."""
+        alert = {"kind": kind, "level": level, "title_ar": title_ar,
+                 "message_ar": message_ar, "at": _now_iso(),
+                 "grouped_from": list(members)}
+        self._active.add(kind)
+        self._last_fired[kind] = now
+        for member in members:
+            self._active.add(member)
+            self._last_fired[member] = now
+        info("monitor", f"Grouped alert fired: {kind} ({level}) "
+                        f"from {','.join(members)}")
+        if self.on_alert is not None:
+            try:
+                self.on_alert(alert)
+            except Exception as exc:
+                warn("monitor", f"on_alert callback failed: {exc}")
+        return alert
+
+    def _fire_resolved(self, kind: str, title_ar: str,
+                       message_ar: str) -> dict | None:
+        """One short "resolved" notice for a kind that had fired and
+        whose condition just cleared. Delivered through on_alert (so
+        it reaches the in-app list AND the toast via alert_to_toast),
+        but NOT added to _active/_last_fired and NOT returned by
+        check_once -- the check_once return list keeps its existing
+        meaning (new problem alerts only). Returns the notice, or
+        None when there is no callback to deliver it to."""
+        alert = {"kind": kind, "level": "info", "resolved": True,
+                 "title_ar": title_ar, "message_ar": message_ar,
+                 "at": _now_iso()}
+        info("monitor", f"Alert resolved: {kind}")
+        if self.on_alert is not None:
+            try:
+                self.on_alert(alert)
+            except Exception as exc:
+                warn("monitor", f"on_alert callback failed: {exc}")
+            return alert
+        return None
+
+    def _clear_kind(self, kind: str, title_ar: str,
+                    message_ar: str) -> None:
+        """A single kind's condition just cleared: if it had fired
+        (it is in _active), drop it and send its resolved notice
+        exactly once. A kind that never fired sends nothing."""
+        if kind in self._active:
+            self._active.discard(kind)
+            self._fire_resolved(kind, title_ar, message_ar)
+
+    def _clear_group(self, kind: str, title_ar: str,
+                     message_ar: str) -> None:
+        """A group's condition just cleared: if the group had fired,
+        send ONE resolved notice for the group and drop the members
+        silently -- they were only ever announced as part of the
+        group, so they get no individual resolved notice."""
+        if kind in self._active:
+            self._active.discard(kind)
+            for member in _GROUP_MEMBERS.get(kind, ()):
+                self._active.discard(member)
+            self._fire_resolved(kind, title_ar, message_ar)
+
+    # -- rc.3 (d): event-driven rules (token limit, slow reply) ----------
+
+    def list_rules(self) -> list:
+        """This monitor's alert rules (see list_alert_rules), with
+        the live settings values baked into the thresholds."""
+        return list_alert_rules(self.settings)
+
+    def check_token_usage(self, usage, now: float | None = None) -> list:
+        """token-limit-near rule (rc.3 d): `usage` is the
+        brain.get_token_usage() shape -- {engine: {"remaining",
+        "has_data", ...}}. Fires token_low_<engine> (warn, critical
+        at the lower threshold) when the MEASURED remaining falls to
+        the threshold, and a resolved notice when it recovers. An
+        engine with no measured remaining (has_data False, or
+        remaining None -- Gemini has no per-minute limit in the
+        tracker, so this is its normal state) never fires and never
+        resolves: no data means no alert, never a guessed one.
+        Returns the problem alerts that fired (resolved notices go
+        through on_alert only, like check_once)."""
+        now = self._clock() if now is None else now
+        fired = []
+        if not isinstance(usage, dict):
+            return fired
+        for engine in ("groq", "gemini"):
+            state = usage.get(engine)
+            kind = f"token_low_{engine}"
+            if not isinstance(state, dict) or not state.get("has_data"):
+                self._active.discard(kind)
+                continue
+            remaining = state.get("remaining")
+            if remaining is None:
+                self._active.discard(kind)
+                continue
+            try:
+                remaining = float(remaining)
+            except (TypeError, ValueError):
+                continue
+            warn_at = float(self.settings["monitor_token_warn_remaining"])
+            crit_at = float(
+                self.settings["monitor_token_critical_remaining"])
+            if remaining <= warn_at:
+                level = "critical" if remaining <= crit_at else "warn"
+                if self._should_fire(kind, now):
+                    fired.append(self._fire(
+                        kind, level, f"توكنات {engine} قربت تخلص",
+                        f"المتبقي من حد الدقيقة لـ {engine} "
+                        f"{int(remaining)} توكن بس — الردود الجاية ممكن "
+                        "تتأخر أو تقف لحد ما الحد يتجدد.",
+                        now))
+            else:
+                self._clear_kind(
+                    kind, f"توكنات {engine} رجعت كافية",
+                    f"المتبقي من حد الدقيقة لـ {engine} رجع فوق الحد — "
+                    "تنبيه التوكنات اتحل.")
+        return fired
+
+    def check_reply_time(self, elapsed_sec, now: float | None = None) -> list:
+        """slow-reply rule (rc.3 d): `elapsed_sec` is the MEASURED
+        wall time of one finished reply, in seconds (the caller
+        times brain.ask_with_tools -- see the integration point in
+        the rc.3 report). Fires slow_reply (warn) when a reply took
+        longer than monitor_slow_reply_sec, and a resolved notice
+        when a later reply comes back inside the threshold. A reply
+        is either slow or it is not -- there is no guessing here.
+        Returns the problem alert that fired, if any (resolved
+        notices go through on_alert only, like check_once)."""
+        now = self._clock() if now is None else now
+        try:
+            elapsed = float(elapsed_sec)
+        except (TypeError, ValueError):
+            return []
+        threshold = float(self.settings["monitor_slow_reply_sec"])
+        if elapsed > threshold:
+            if self._should_fire("slow_reply", now):
+                return [self._fire(
+                    "slow_reply", "warn", "الرد أخد وقت أطول من المعتاد",
+                    f"الرد أخد {elapsed:.0f} ثانية (الحد {threshold:.0f} "
+                    "ثانية) — ممكن يكون النت بطيء أو المحرك مضغوط، "
+                    "جرّب تاني لو اتأخر أكتر.",
+                    now)]
+            return []
+        self._clear_kind(
+            "slow_reply", "سرعة الرد رجعت طبيعي",
+            "الرد الأخير جه في الوقت المعتاد — تنبيه الرد البطيء اتحل.")
+        return []
+
     def _evaluate(self, reading: dict, now: float) -> list:
-        """Check one reading against every threshold. Returns the list of
-        alerts that fired. Kinds whose condition is false are removed
-        from _active, so they can fire again when they re-appear."""
+        """Check one reading against every threshold. Returns the list
+        of problem alerts that fired (resolved notices go through
+        on_alert only, never in this list -- see _fire_resolved).
+        Kinds whose condition is false are removed from _active, so
+        they can fire again when they re-appear (after the cooldown).
+
+        rc.3 (b): related conditions are measured FIRST, then grouped
+        before any individual firing -- CPU+temp together and
+        RAM+disk together each send ONE alert instead of two, and a
+        member never fires individually while its group holds (its
+        _last_fired is stamped by the group firing, so the cooldown
+        cannot be bypassed through the member kind either)."""
         fired = []
         s = self.settings
         ram = reading.get("ram") or {}
         disk = reading.get("disk") or {}
 
+        # -- measure every condition (no firing yet) ----------------------
         # RAM: free < 500 MB OR used > 92% (his machine idles at 84-86%,
         # so the threshold must sit well above idle or it spams him).
         free_mb = ram.get("free_mb")
         pct = ram.get("percent")
         ram_bad = ((free_mb is not None and free_mb < s["monitor_ram_free_mb"])
                    or (pct is not None and pct > s["monitor_ram_percent"]))
-        if ram_bad:
-            level = ("critical" if (free_mb is not None and free_mb < 200)
+        ram_level = ("critical" if (free_mb is not None and free_mb < 200)
                      or (pct is not None and pct >= 97) else "warn")
-            if self._should_fire("ram_low", now):
-                fired.append(self._fire(
-                    "ram_low", level, "الذاكرة (RAM) شبه ممتلئة",
-                    f"الرام المستخدمة {pct}% والفاضي {free_mb} ميجا بس - "
-                    "اقفل برامج تقيلة أو اعمل ريستارت للجهاز.", now))
-        else:
-            self._active.discard("ram_low")
 
         # Disk: free < 10 GB OR free < 10%.
         free_gb = disk.get("free_gb")
@@ -1673,42 +1977,138 @@ class SystemMonitor:
                      and free_gb < s["monitor_disk_free_gb"])
                     or (pct_free is not None
                         and pct_free < s["monitor_disk_percent_free"]))
-        if disk_bad:
-            level = ("critical" if (free_gb is not None and free_gb < 2)
-                     or (pct_free is not None and pct_free < 5) else "warn")
-            if self._should_fire("disk_low", now):
-                fired.append(self._fire(
-                    "disk_low", level, "مساحة القرص قربت تخلص",
-                    f"الفاضي في القرص {free_gb} جيجا بس "
-                    f"({pct_free}% من القرص) - امسح ملفات مش محتاجها.",
-                    now))
-        else:
-            self._active.discard("disk_low")
+        disk_level = ("critical" if (free_gb is not None and free_gb < 2)
+                      or (pct_free is not None and pct_free < 5) else "warn")
 
         # CPU temperature: only when a real sensor answered.
         temp_c = reading.get("temp_c")
+        temp_level = None
         if temp_c is not None and reading.get("temp_available"):
             if temp_c >= s["monitor_temp_critical_c"]:
-                if self._should_fire("temp_high", now):
-                    fired.append(self._fire(
-                        "temp_high", "critical", "حرارة المعالج عالية جداً",
-                        f"حرارة المعالج {temp_c:.0f}°م - سيّب الجهاز يبرد "
-                        "واقفل البرامج التقيلة فوراً.", now))
+                temp_level = "critical"
             elif temp_c >= s["monitor_temp_warn_c"]:
-                if self._should_fire("temp_high", now):
-                    fired.append(self._fire(
-                        "temp_high", "warn", "حرارة المعالج عالية",
-                        f"حرارة المعالج {temp_c:.0f}°م - خفّف الشغل على "
-                        "الجهاز شوية.", now))
-            else:
-                self._active.discard("temp_high")
-        else:
-            # No sensor: never invent a temperature, never alert on it.
-            self._active.discard("temp_high")
+                temp_level = "warn"
 
         # Sustained CPU load (rolling window, see _sustained_high).
-        if self._sustained_high():
-            if self._should_fire("cpu_high", now):
+        cpu_bad = self._sustained_high()
+
+        # Battery: only while discharging.
+        battery = reading.get("battery")
+        battery_bad = False
+        battery_level = "warn"
+        bpct = None
+        if battery and not battery.get("charging"):
+            bpct = battery.get("percent")
+            if bpct is not None and bpct < s["monitor_battery_warn_percent"]:
+                battery_bad = True
+                battery_level = ("critical" if bpct < s["monitor_battery_critical_percent"]
+                                 else "warn")
+
+        # -- groups (rc.3 b): one alert for related conditions -----------
+        # CPU + temp together: sustained load heating the CPU. The
+        # cause is labelled as likely ("الغالب") -- it is the most
+        # plausible reading of two simultaneous measurements, not a
+        # proven fact.
+        cpu_temp_group = cpu_bad and temp_level is not None
+        if cpu_temp_group:
+            if self._should_fire("cpu_temp", now):
+                fired.append(self._fire_group(
+                    "cpu_temp", _GROUP_MEMBERS["cpu_temp"],
+                    "critical" if temp_level == "critical" else "warn",
+                    "المعالج سخن وشغال على آخره",
+                    f"المعالج شغال فوق "
+                    f"{s['monitor_cpu_sustained_percent']}% في المتوسط "
+                    f"بقاله {s['monitor_cpu_sustained_minutes']} دقايق "
+                    f"وحرارته {temp_c:.0f}°م في نفس الوقت — الغالب إن "
+                    "الحمل المستمر هو اللي مسخّن الجهاز، فخفّف الشغل "
+                    "عليه الأول.",
+                    now))
+        else:
+            self._clear_group(
+                "cpu_temp", "المعالج والحرارة رجعوا طبيعي",
+                "الحمل على المعالج والحرارة رجعوا طبيعي — تنبيه "
+                "المعالج السخن اتحل.")
+
+        # RAM + disk together: the machine is out of headroom on both
+        # fronts at once -- one resource-pressure alert, not two.
+        # (No single cause is claimed here: the two shortages are
+        # stated as what they are.)
+        ram_disk_group = ram_bad and disk_bad
+        if ram_disk_group:
+            if self._should_fire("ram_disk", now):
+                fired.append(self._fire_group(
+                    "ram_disk", _GROUP_MEMBERS["ram_disk"],
+                    "critical" if (ram_level == "critical"
+                                   and disk_level == "critical")
+                    else "warn",
+                    "موارد الجهاز شبه مستنفدة",
+                    f"الرام الفاضي {free_mb} ميجا والقرص الفاضي "
+                    f"{free_gb} جيجا في نفس الوقت — الجهاز مضغوط من "
+                    "ناحيتين، فاقفل برامج تقيلة وامسح ملفات مش "
+                    "محتاجها.",
+                    now))
+        else:
+            self._clear_group(
+                "ram_disk", "موارد الجهاز رجعت كافية",
+                "الرام والقرص رجعوا فوق الحد — تنبيه الموارد اتحل.")
+
+        # -- individuals (skipped while their group holds) ---------------
+        if ram_bad:
+            if not ram_disk_group and self._should_fire("ram_low", now):
+                fired.append(self._fire(
+                    "ram_low", ram_level, "الذاكرة (RAM) شبه ممتلئة",
+                    f"الرام المستخدمة {pct}% والفاضي {free_mb} ميجا بس - "
+                    "اقفل برامج تقيلة أو اعمل ريستارت للجهاز.", now))
+        elif free_mb is not None or pct is not None:
+            # Measured and healthy -> genuinely resolved. A MISSING
+            # RAM reading is not a clear: it drops the state silently
+            # below instead, never claiming "back to normal".
+            self._clear_kind(
+                "ram_low", "الرام رجعت طبيعي",
+                "الذاكرة الفاضية رجعت فوق الحد — تنبيه الرام اتحل.")
+        else:
+            self._active.discard("ram_low")
+
+        if disk_bad:
+            if not ram_disk_group and self._should_fire("disk_low", now):
+                fired.append(self._fire(
+                    "disk_low", disk_level, "مساحة القرص قربت تخلص",
+                    f"الفاضي في القرص {free_gb} جيجا بس "
+                    f"({pct_free}% من القرص) - امسح ملفات مش محتاجها.",
+                    now))
+        elif free_gb is not None or pct_free is not None:
+            self._clear_kind(
+                "disk_low", "مساحة القرص رجعت كافية",
+                "المساحة الفاضية في القرص رجعت فوق الحد — تنبيه القرص "
+                "اتحل.")
+        else:
+            self._active.discard("disk_low")
+
+        if temp_level is not None:
+            if not cpu_temp_group and self._should_fire("temp_high", now):
+                fired.append(self._fire(
+                    "temp_high", temp_level,
+                    "حرارة المعالج عالية جداً" if temp_level == "critical"
+                    else "حرارة المعالج عالية",
+                    f"حرارة المعالج {temp_c:.0f}°م - سيّب الجهاز يبرد "
+                    "واقفل البرامج التقيلة فوراً."
+                    if temp_level == "critical" else
+                    f"حرارة المعالج {temp_c:.0f}°م - خفّف الشغل على "
+                    "الجهاز شوية.",
+                    now))
+        elif temp_c is not None and reading.get("temp_available"):
+            # A real reading back under the warn line -> resolved.
+            self._clear_kind(
+                "temp_high", "حرارة المعالج رجعت طبيعي",
+                "حرارة المعالج رجعت تحت الحد — تنبيه الحرارة اتحل.")
+        else:
+            # No sensor: never invent a temperature, never alert on
+            # it -- and never claim it "resolved" either. The state
+            # just drops silently.
+            self._active.discard("temp_high")
+
+        if cpu_bad:
+            if not cpu_temp_group and self._should_fire("cpu_high", now):
                 fired.append(self._fire(
                     "cpu_high", "warn", "المعالج شغال على آخره من فترة",
                     f"المعالج شغال فوق "
@@ -1716,22 +2116,25 @@ class SystemMonitor:
                     f"بقاله {s['monitor_cpu_sustained_minutes']} دقايق - "
                     "شوف إيه البرنامج اللي ساحب كل ده.", now))
         else:
-            self._active.discard("cpu_high")
+            self._clear_kind(
+                "cpu_high", "حمل المعالج رجع طبيعي",
+                "حمل المعالج المستمر رجع تحت الحد — تنبيه المعالج "
+                "اتحل.")
 
-        # Battery: only while discharging.
-        battery = reading.get("battery")
-        if battery and not battery.get("charging"):
-            bpct = battery.get("percent")
-            if bpct is not None and bpct < s["monitor_battery_warn_percent"]:
-                level = ("critical" if bpct < s["monitor_battery_critical_percent"]
-                         else "warn")
-                if self._should_fire("battery_low", now):
-                    fired.append(self._fire(
-                        "battery_low", level, "البطارية قربت تخلص",
-                        f"البطارية {bpct}% والشاحن مش متوصل - "
-                        "وصّل الشاحن.", now))
-            else:
-                self._active.discard("battery_low")
+        if battery_bad:
+            if self._should_fire("battery_low", now):
+                fired.append(self._fire(
+                    "battery_low", battery_level, "البطارية قربت تخلص",
+                    f"البطارية {bpct}% والشاحن مش متوصل - "
+                    "وصّل الشاحن.", now))
+        elif battery is not None:
+            # Measured and healthy (charging, or back above the warn
+            # line) -> genuinely resolved. A missing battery reading
+            # drops the state silently, never as a "resolved".
+            self._clear_kind(
+                "battery_low", "البطارية رجعت فوق الحد",
+                "البطارية رجعت فوق الحد أو الشاحن اتوصل — تنبيه "
+                "البطارية اتحل.")
         else:
             self._active.discard("battery_low")
 
@@ -1740,8 +2143,12 @@ class SystemMonitor:
     def check_once(self, reading: dict | None = None,
                    now: float | None = None) -> list:
         """One poll: sample (or use the given reading), evaluate, fire.
-        Returns the list of alerts that fired (usually []). `now` is an
-        injectable timestamp for tests; production passes nothing."""
+        Returns the list of problem alerts that fired (usually []).
+        Resolved notices go through on_alert only, never in this
+        list (see _fire_resolved). `now` is an injectable timestamp
+        for tests; production passes nothing. When a token_fn was
+        passed to the constructor, the token-limit-near rule is also
+        evaluated here on the measured remaining (rc.3 d)."""
         now = self._clock() if now is None else now
         if reading is None:
             try:
@@ -1753,7 +2160,13 @@ class SystemMonitor:
                 warn("monitor", f"Sampling failed: {exc}")
                 return []
         self._record_cpu(reading.get("cpu_percent") or 0.0, now=now)
-        return self._evaluate(reading, now)
+        fired = self._evaluate(reading, now)
+        if self.token_fn is not None:
+            try:
+                fired += self.check_token_usage(self.token_fn(), now=now)
+            except Exception as exc:
+                warn("monitor", f"Token usage check failed: {exc}")
+        return fired
 
     # -- background thread -----------------------------------------------------
 

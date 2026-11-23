@@ -72,6 +72,12 @@ MONITOR_MAP = {
     "r6m": "monitor_cpu_sustained_minutes",
     "r7": "monitor_battery_warn_percent",
     "r8": "monitor_cooldown_min",
+    # rc.3 (d): token-limit-near + slow-reply thresholds. Displayed
+    # in the health section's rules list (index.html); the bridge
+    # translates them both ways like r1..r8.
+    "r9": "monitor_token_warn_remaining",
+    "r10": "monitor_token_critical_remaining",
+    "r11": "monitor_slow_reply_sec",
 }
 MONITOR_REVERSE = {v: k for k, v in MONITOR_MAP.items()}
 

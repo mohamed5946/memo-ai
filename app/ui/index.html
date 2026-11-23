@@ -185,6 +185,7 @@
     name: 'لونا', user: '', lang: 'ar', greet: 1, voice: 1, auto: 0, island: 1,
     listen: 0, priv: 0, owner: '', waNum: '', mon: 1,
     r1: 500, r2: 92, r3: 10, r4: 10, r5: 85, r6: 85, r6m: 5, r7: 20, r8: 30,
+    r9: 1000, r10: 200, r11: 30,
     inapp: 1, toast: 1, notif: 1, apps: '', kws: '', vc: 'm1', av: 'cat',
     theme: 'lg', lite: 0, muted: false, keys: {},
     /* v1.6.4-rc.3: modes + habits */
@@ -210,7 +211,7 @@
     S.priv = num01(s.privacy_mode !== undefined ? s.privacy_mode : s.priv, S.priv);
     S.waNum = s.owner_number || s.waNum || S.waNum;
     S.mon = num01(s.monitor_enabled !== undefined ? s.monitor_enabled : s.mon, S.mon);
-    ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r6m', 'r7', 'r8'].forEach(function (k) {
+    ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r6m', 'r7', 'r8', 'r9', 'r10', 'r11'].forEach(function (k) {
       if (s[k] !== undefined) { S[k] = num01(s[k], S[k]); }
     });
     S.inapp = num01(s.inapp, S.inapp);
@@ -1180,6 +1181,26 @@
   function btn(t, a) { return "<button class='act' " + (a || '') + ">" + t + "</button>"; }
   function saveBtn() { return "<button class='act th' data-save>حفظ</button>"; }
   function kv(l, v) { return "<div class='row th'><span>" + l + "</span><b class='kv'>" + v + "</b></div>"; }
+  function rulesHtml() {
+    /* rc.3 (d): the monitor's named alert rules, with severity and
+       threshold -- the same rules and thresholds as monitor.py
+       list_alert_rules(); the numbers come from S (live settings),
+       so the list and the real thresholds can never drift apart. */
+    var rules = [
+      ['الرام شبه ممتلئة', 'تحذير', 'الفاضي أقل من ' + S.r1 + ' ميجا أو الاستخدام أعلى من ' + S.r2 + '% — حرج لو الفاضي أقل من 200 ميجا أو الاستخدام 97% أو أكتر'],
+      ['مساحة القرص قربت تخلص', 'تحذير', 'الفاضي أقل من ' + S.r3 + ' جيجا أو أقل من ' + S.r4 + '% — حرج لو الفاضي أقل من 2 جيجا أو أقل من 5%'],
+      ['حرارة المعالج عالية', 'تحذير', 'الحرارة ' + S.r5 + '°م أو أكتر — حرج من 90°م'],
+      ['حمل المعالج المستمر', 'تحذير', 'المعالج فوق ' + S.r6 + '% في المتوسط لمدة ' + S.r6m + ' دقايق'],
+      ['البطارية قربت تخلص', 'تحذير', 'البطارية أقل من ' + S.r7 + '% والشاحن مش متوصل — حرج أقل من 10%'],
+      ['المعالج سخن وشغال على آخره', 'تحذير', 'حمل مستمر + حرارة عالية في نفس الوقت — تنبيه واحد مجمّع بدل تنبيهين — حرج لو الحرارة 90°م أو أكتر'],
+      ['موارد الجهاز شبه مستنفدة', 'تحذير', 'الرام والقرص منخفضين في نفس الوقت — تنبيه واحد مجمّع بدل تنبيهين'],
+      ['توكنات المحرك قربت تخلص', 'تحذير', 'المتبقي ' + S.r9 + ' توكن أو أقل — حرج لو المتبقي ' + S.r10 + ' توكن أو أقل'],
+      ['الرد بطيء', 'تحذير', 'الرد أخد أكتر من ' + S.r11 + ' ثانية']
+    ];
+    return rules.map(function (r) {
+      return row(r[0], "<b class='kv'>" + r[1] + "</b> — " + r[2]);
+    }).join('');
+  }
   function flash(el, txt, ms) {
     var o = el.dataset.o || el.textContent;
     el.dataset.o = o;
@@ -1265,7 +1286,10 @@
           .map(function (r) {
             return row(r[1], num(r[0]) + "<em class='u'>" + r[2] + "</em>" + (r[0] === 'r6' ? "<em class='u'>لمدة</em>" + num('r6m') + "<em class='u'>دقايق</em>" : ''));
           }).join('')
-        + tg('inapp', 'تنبيه جوّه البرنامج') + tg('toast', 'إشعار ويندوز') + saveBtn();
+        + tg('inapp', 'تنبيه جوّه البرنامج') + tg('toast', 'إشعار ويندوز')
+        + "<h3 class='sub th'>قواعد التنبيه</h3>"
+        + "<p class='about th'>كل قاعدة ليها اسم وشدّة وحدّ — التنبيه بيطلع مرة واحدة بس لكل مشكلة، والقواعد المجمّعة بتبعت تنبيه واحد بدل تنبيهين، وبييجي إشعار قصير لما المشكلة تتحل.</p>"
+        + rulesHtml() + saveBtn();
     },
     notif: function () {
       return tg('notif', 'تفعيل الإشعارات') + "<div class='acts th'>" + btn('اطلب إذن الإشعارات', 'data-nreq') + "<em class='st'></em></div>"
