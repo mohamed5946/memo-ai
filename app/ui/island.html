@@ -43,6 +43,11 @@
   .i-toast b{display:block;font-size:13.5px;color:var(--gold-2)}
   /* --- mic/camera in-use dots (hidden until the backend says they exist) --- */
   .mdots{display:flex;align-items:center;gap:5px}
+  /* [hidden] must win over the display:flex above: without this rule the
+     UA's [hidden]{display:none} loses to .mdots and the dots render even
+     when nothing uses the mic/camera (rc.3). The show path removes the
+     hidden attribute, so the flex layout comes back intact. */
+  .mdots[hidden]{display:none}
   .mdot{width:8px;height:8px;border-radius:50%;background:#ff5f57;box-shadow:0 0 6px #ff5f57}
   .mdot.mic{background:#ff9f0a;box-shadow:0 0 6px #ff9f0a}
   /* --- panels button (expanded view only) --- */
