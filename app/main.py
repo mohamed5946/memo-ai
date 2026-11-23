@@ -917,6 +917,10 @@ class Api:
         with _chats_lock:
             _chats[chat_id] = {"done": False, "reply": "", "engine": "groq",
                                "tools_used": 0, "images": [],
+                               # rc.3: cost-line values, filled by
+                               # run_tool_chat when the reply lands
+                               # (None until then - the UI shows "—").
+                               "tokens_used": None, "elapsed_sec": None,
                                "created": time.time()}
             if len(_chats) > 50:  # prune oldest finished entries
                 for old_id in sorted(
@@ -982,6 +986,10 @@ class Api:
                 "engine": entry.get("engine", "groq"),
                 "tools_used": entry.get("tools_used", 0),
                 "images": entry.get("images", []),
+                # rc.3: measured cost line (tokens_used None = the
+                # engine reported no usage field - UI shows "—").
+                "tokens_used": entry.get("tokens_used"),
+                "elapsed_sec": entry.get("elapsed_sec"),
                 # v1.6.2 (A1): voice turns carry what was heard.
                 "heard": entry.get("heard", "")}
 
@@ -998,6 +1006,8 @@ class Api:
         with _chats_lock:
             _chats[chat_id] = {"done": False, "reply": "", "engine": "groq",
                                "tools_used": 0, "images": [], "heard": "",
+                               # rc.3: cost-line values (see run_tool_chat).
+                               "tokens_used": None, "elapsed_sec": None,
                                "created": time.time()}
             if len(_chats) > 50:  # prune oldest finished entries
                 for old_id in sorted(
@@ -1033,6 +1043,7 @@ class Api:
             inner = self.chat(heard["text"])
             inner_id = inner.get("chat_id")
             reply, engine, tools_used, images = "", "groq", 0, []
+            tokens_used, elapsed_sec = None, None
             if inner_id:
                 deadline = time.time() + 300
                 while time.time() < deadline:
@@ -1049,6 +1060,10 @@ class Api:
                 engine = inner_entry.get("engine", "groq")
                 tools_used = inner_entry.get("tools_used", 0)
                 images = inner_entry.get("images", [])
+                # rc.3: carry the measured cost line over from the
+                # inner text turn (None = unknown, UI shows "—").
+                tokens_used = inner_entry.get("tokens_used")
+                elapsed_sec = inner_entry.get("elapsed_sec")
             else:
                 # chat() answered synchronously (rule hit / owner code).
                 reply = inner.get("reply", "")
@@ -1060,6 +1075,8 @@ class Api:
                                   "engine": engine,
                                   "tools_used": tools_used,
                                   "images": images,
+                                  "tokens_used": tokens_used,
+                                  "elapsed_sec": elapsed_sec,
                                   "heard": heard["text"]})
 
         threading.Thread(target=_run, daemon=True).start()
@@ -3400,7 +3417,8 @@ class MemoApp:
         except Exception as exc:
             error("brain", f"Tool chat failed: {exc}")
             result = {"reply": "حصلت مشكلة وأنا بنفذ، جرّب تاني.",
-                      "engine": "", "tools_used": 0}
+                      "engine": "", "tools_used": 0,
+                      "tokens_used": None, "elapsed_sec": None}
         # v1.4.3: [[IMAGE:...]] is a machine token, not text - strip it
         # from the spoken/shown reply and attach the files as `images`
         # instead, so the UI renders them as real pictures. The tracker
@@ -3418,6 +3436,10 @@ class MemoApp:
                 entry.update({"done": True, "reply": clean_reply,
                               "engine": result["engine"],
                               "tools_used": result.get("tools_used", 0),
+                              # rc.3: measured cost line from the brain
+                              # result (None = unknown, UI shows "—").
+                              "tokens_used": result.get("tokens_used"),
+                              "elapsed_sec": result.get("elapsed_sec"),
                               "images": images})
         self.speak_async(clean_reply)
 

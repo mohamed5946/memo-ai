@@ -6,16 +6,22 @@
 # Routing: online -> Groq gpt-oss-120b (free tier, rate limits only).
 #          Groq down -> Gemini 2.5 Flash (CHAT key only, item 23).
 #          offline / all online down -> local Ollama qwen2.5:3b.
+#          rc.3: a TRIVIAL turn in auto mode (greeting, the time, a
+#          short factual ask) tries local Ollama FIRST (15 s cap) -
+#          zero cloud tokens; any local failure falls through to
+#          the chain above, silently.
 #          Groq HTTP 429 -> read the REAL limit from the response
 #          (body names it, headers carry retry-after); the failure
 #          note names the limit kind.
 
+import functools
 import json
 import re
 import shutil
 import socket
 import threading
 import time
+from datetime import datetime
 
 import requests
 from logger import error, info, warn
@@ -37,6 +43,11 @@ _CHAT_DEADLINE_SEC = 180
 _DEEP_THINK_TIMEOUT_SEC = 150
 _GROQ_TIMEOUT_SEC = 60
 _OLLAMA_TIMEOUT_SEC = 60
+# rc.3 (local-first): the cap for a local-first attempt on a trivial
+# turn. The 3B model is slow on this laptop (no GPU), so a local
+# attempt that drags must give way to the cloud quickly - never
+# leave the user waiting on a slow local call.
+_LOCAL_FIRST_TIMEOUT_SEC = 15
 # v1.6.2 (B10): at most 5 tool calls executed per round.
 _MAX_TOOL_CALLS_PER_ROUND = 5
 
@@ -1032,6 +1043,72 @@ def _is_simple_chat(text: str, deep_think: bool = False) -> bool:
     return True
 
 
+# rc.3 (local-first): the trivial subset of simple chat that the
+# on-device 3B model can answer - greetings, the time, a short
+# factual ask. Anything needing an explanation ("اشرح", "ازاي",
+# "ليه") stays on cloud: the small model guesses at those.
+# Actions, device questions, web lookups, code, Deep Think and
+# long messages are already excluded by _is_simple_chat.
+_LOCAL_FIRST_MAX_CHARS = 120
+_LOCAL_FIRST_NO_WORDS = {
+    # Explanation requests - the small model guesses at these.
+    # The verb "اشرح" (explain) usually arrives with an attached
+    # pronoun ("اشرحلي", "اشرحلنا"), so the common conjugated
+    # forms are listed too. "ازايك" (how are you) is deliberately
+    # NOT here - it is a greeting, and whole-word matching keeps
+    # it local.
+    "اشرح", "اشرحلي", "اشرحي", "اشرحلنا", "اشرحها", "اشرحهم",
+    "اشرحله", "اشرحلك",
+    "شرح", "شرحلي", "شرحها", "شرحه", "شرحي",
+    "ازاي", "إزاي", "ليه", "لماذا",
+    "why", "explain",
+}
+
+
+def _is_local_first(text: str, deep_think: bool = False) -> bool:
+    """True when a turn is trivial enough for the local Ollama model
+    first (rc.3): simple chat AND short AND not an explanation
+    request. Never True for Deep Think or anything _is_simple_chat
+    rejects (actions, device, web, code, long). Whole-word
+    matching, so "ازايك" (how are you) is not "ازاي" (how-to)."""
+    if deep_think:
+        return False
+    if not _is_simple_chat(text, deep_think):
+        return False
+    msg = (text or "").strip()
+    if len(msg) > _LOCAL_FIRST_MAX_CHARS:
+        return False
+    if _norm_words(msg) & _LOCAL_FIRST_NO_WORDS:
+        return False
+    return True
+
+
+def _now_line(lang: str) -> str:
+    """One honest line with the laptop's current time, appended to
+    the system prompt ONLY for a local-first attempt - the small
+    model has no clock of its own, so "الساعة كام؟" would otherwise
+    be a guess. datetime.now() is the machine's local time (Cairo
+    on this laptop); the line says "on the laptop", never a city,
+    so it stays true wherever the machine travels."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if lang == "ar":
+        return f"الوقت الحالي على جهاز صاحبك: {now}."
+    return f"The current time on your friend's laptop: {now}."
+
+
+def _with_now_line(messages: list, lang: str) -> list:
+    """Copy of a message list with the current-time line appended
+    to the system message (rc.3 local-first only). The caller's
+    list is never mutated - the cloud paths keep their exact
+    prompt."""
+    if not messages:
+        return list(messages)
+    head = dict(messages[0])
+    head["content"] = (str(head.get("content") or "") + "\n\n"
+                       + _now_line(lang))
+    return [head] + list(messages[1:])
+
+
 def _context_history(hist: list, store, language: str) -> tuple:
     """Split stored history into (recent, older_summary) for ONE
     request (item 1). Only the last _CHAT_HISTORY_SEND messages ride
@@ -1108,6 +1185,52 @@ def _reset_token_usage() -> None:
             st.update({"used": 0, "window_start": 0.0, "calls": 0,
                        "remaining": None, "reset_in": None,
                        "header_at": 0.0, "used_at_header": 0})
+    _reset_turn_usage()
+
+
+# rc.3 (cost line): cloud tokens spent on THIS turn only, summed
+# across every engine round in the turn (a tool loop can call Groq
+# several times). Reset at the start of each ask()/ask_with_tools()
+# call by the _with_cost_line wrapper; None until an engine reports
+# a usage field, so "unknown" never reads as 0.
+_TURN_USAGE = {"tokens": None}
+
+
+def _reset_turn_usage() -> None:
+    """Clear this turn's token total (tests + the cost-line wrapper)."""
+    _TURN_USAGE["tokens"] = None
+
+
+def _turn_tokens_for(engine: str):
+    """Cloud tokens spent on this turn for the cost line, or 0 for a
+    reply that used no cloud model (local Ollama runs on-device;
+    memory/browser replies are deterministic), or None when the
+    engine answered but reported no usage field - the UI shows
+    "—" then, never a made-up number."""
+    if engine in ("ollama", "memory", "browser"):
+        return 0
+    if engine in ("groq", "gemini"):
+        return _TURN_USAGE["tokens"]
+    return None
+
+
+def _with_cost_line(fn):
+    """Attach the measured cost line to an ask result: tokens_used
+    (this turn's cloud tokens, 0 for local/deterministic replies,
+    None when unknown) and elapsed_sec (wall time of the whole ask
+    call, one decimal). Additive only - the wrapped result dict
+    gains two keys, nothing else changes."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        _reset_turn_usage()
+        t0 = time.monotonic()
+        result = fn(*args, **kwargs)
+        if isinstance(result, dict):
+            result["elapsed_sec"] = round(time.monotonic() - t0, 1)
+            result["tokens_used"] = _turn_tokens_for(
+                result.get("engine") or "")
+        return result
+    return wrapper
 
 
 def _parse_reset_seconds(raw) -> float | None:
@@ -1163,6 +1286,13 @@ def _record_engine_usage(engine: str, usage, headers=None) -> None:
     total = prompt + completion
     if total <= 0 and not headers:
         return
+    if total > 0:
+        # rc.3: this turn's cloud-token total for the cost line
+        # (sums every engine round in the turn).
+        if _TURN_USAGE["tokens"] is None:
+            _TURN_USAGE["tokens"] = total
+        else:
+            _TURN_USAGE["tokens"] += total
     now = time.time()
     try:
         with _TOKEN_LOCK:
@@ -1323,6 +1453,7 @@ def _browser_intent_reply(user_text: str, lang: str, hist: list,
             "tools_disabled": False}
 
 
+@_with_cost_line
 def ask_with_tools(user_text: str, ai_name: str, user_name: str,
                    language: str, history: list | None = None,
                    owner_unlocked: bool = False,
@@ -1339,7 +1470,10 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
     Runs the agentic loop (max 5 tool rounds): model -> tool call ->
     permission dialog -> execute -> result back to the model -> reply.
     Returns {"reply": str, "engine": "groq"|"ollama"|"",
-             "tools_used": int, "tools_disabled": bool}.
+             "tools_used": int, "tools_disabled": bool,
+             "tokens_used": int | None, "elapsed_sec": float}.
+    (rc.3: tokens_used/elapsed_sec are attached by the
+    _with_cost_line wrapper - see _turn_tokens_for.)
     v1.4.1: engine is "" (empty) when NO engine answered - never
     "none" (that string leaked into the chat UI as literal text).
 
@@ -1477,6 +1611,25 @@ def ask_with_tools(user_text: str, ai_name: str, user_name: str,
         _groq_kwargs["deep_think"] = True
     if privacy_mode is not None:
         _groq_kwargs["privacy_mode"] = privacy_mode
+    # rc.3 (local-first): in auto mode a TRIVIAL turn (greeting, the
+    # time, a short factual ask - never actions, device questions,
+    # web lookups, code or Deep Think) tries the on-device Ollama
+    # model FIRST: it costs zero Groq/Gemini tokens. Ollama is slow
+    # on this laptop and may not be installed at all, so the attempt
+    # is capped at 15 s and any failure falls through to the
+    # Gemini/Groq chain below, silently - never a dead reply.
+    if choice == "auto" and _is_local_first(user_text, deep_think) \
+            and ollama_available():
+        reply, engine = _ask_local(
+            _with_now_line(messages, lang), lang,
+            timeout=_LOCAL_FIRST_TIMEOUT_SEC)
+        if engine:
+            info("brain", "Trivial turn answered locally (Ollama) - "
+                          "0 cloud tokens")
+            _record_turn(user_text, reply, engine, hist,
+                         learn=memory_enabled, language=lang)
+            return {"reply": reply, "engine": engine, "tools_used": 0,
+                    "tools_disabled": False}
     # rc.2 W8 (item 4): in auto mode a SIMPLE turn goes to Gemini
     # 2.5 Flash first (same routing as ask() - higher token limit,
     # Groq 120b kept for hard questions and tool use). A Gemini
@@ -1727,12 +1880,16 @@ def _record_turn(user_text: str, reply: str, engine: str,
                 warn("brain", f"Memory learn/rollover failed: {exc}")
 
 
+@_with_cost_line
 def ask(user_text: str, ai_name: str, user_name: str, language: str,
         history: list | None = None, owner_unlocked: bool = False,
         memory_enabled: bool = True, deep_think: bool = False,
         privacy_mode: bool | None = None,
         self_view: str = "", model_choice: str = "auto") -> dict:
-    """Ask the brain. Returns {"reply": str, "engine": "groq"|"ollama"|""}.
+    """Ask the brain. Returns {"reply": str, "engine": "groq"|"ollama"|"",
+    "tokens_used": int | None, "elapsed_sec": float}.
+    (rc.3: tokens_used/elapsed_sec are attached by the
+    _with_cost_line wrapper - see _turn_tokens_for.)
 
     v1.4.0: `history` lets another channel (WhatsApp guests) keep its own
     history instead of the shared in-app one. None = shared (unchanged).
@@ -1794,6 +1951,22 @@ def ask(user_text: str, ai_name: str, user_name: str, language: str,
                      learn=memory_enabled, language=lang)
         return {"reply": reply, "engine": ""}
     if online:
+        # rc.3 (local-first): in auto mode a TRIVIAL turn tries the
+        # on-device Ollama model FIRST (15 s cap, zero cloud tokens);
+        # any local failure falls through to the Gemini/Groq chain
+        # below, silently - never a dead reply. Same routing as
+        # ask_with_tools.
+        if choice == "auto" and _is_local_first(user_text, deep_think) \
+                and ollama_available():
+            reply, engine = _ask_local(
+                _with_now_line(messages, lang), lang,
+                timeout=_LOCAL_FIRST_TIMEOUT_SEC)
+            if engine:
+                info("brain", "Trivial turn answered locally (Ollama) - "
+                              "0 cloud tokens")
+                _record_turn(user_text, reply, engine, hist,
+                             learn=memory_enabled, language=lang)
+                return {"reply": reply, "engine": engine}
         # rc.2 W8 (item 4): in auto mode a SIMPLE turn (small-talk,
         # a short plain question - no tools, no device numbers, no
         # web, no reasoning) goes to Gemini 2.5 Flash first: its
@@ -2232,6 +2405,12 @@ def _ask_local(messages: list, lang: str = "ar",
     try:
         reply = _ollama(messages, timeout=timeout)
         info("brain", "Answered via local Ollama qwen2.5:3b")
+        # rc.3: a local reply costs 0 cloud tokens - say so in the
+        # diagnostics log too, so the per-reply token count stays
+        # truthful (the token bar only tracks Groq/Gemini, and a
+        # local turn must never inflate their counters).
+        info("brain", "ollama reply tokens: prompt=0 completion=0 "
+                      "total=0 (local - no cloud tokens used)")
         return reply, "ollama"
     except requests.Timeout as exc:
         error("brain", f"Ollama request timed out "
