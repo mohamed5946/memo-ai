@@ -161,9 +161,8 @@ def not_built_line(feature_ar: str, feature_en: str,
                    language: str = "ar") -> str:
     """Truthful line for a designed-but-not-built feature."""
     if language == "ar":
-        return (f"{feature_ar} متصممة بس لسه مش مبنية — مقدرش أعملها "
-                "دلوقتي، ولو سألك عنها اشرحله إنها جاية في نسخة جاية "
-                "وقدّم بديل.")
-    return (f"{feature_en} is designed but not built yet — I cannot do "
-            "it right now; if asked, explain it is coming in a later "
-            "version and offer an alternative.")
+        return (f"{feature_ar} متصممة بس لسه مش مبنية — لو سألك عنها "
+                "قول إنها جاية في نسخة جاية وقدّم بديل.")
+    return (f"{feature_en} is designed but not built yet — if asked, "
+            "say it is coming in a later version and offer an "
+            "alternative.")
