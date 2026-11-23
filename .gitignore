@@ -18,3 +18,7 @@ app/data/whatsapp_auth/
 
 # v1.6.2: downloaded-update record - runtime state, never committed
 app/data/update_downloaded.json
+# v1.6.4-rc.3: habit store (private usage data) + pre-mode settings
+# snapshot - runtime state, never committed
+app/data/habits.json
+app/data/mode_previous.json

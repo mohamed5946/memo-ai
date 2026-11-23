@@ -493,9 +493,16 @@ class Companion:
                     self.end_of_day_recap()
                 self.check_idle_and_checkin()
                 self.smart_battery_warning()
-                for text in self.suggest_routines():
-                    self._push("routine_suggestion",
-                               f"دلوقتي معادك المعتاد: {text} — نبدأ؟")
+                # v1.6.4-rc.3: study reminders are a real setting now
+                # (study_reminders_enabled, default True) - exam mode
+                # keeps them, work/quiet modes turn them off. The
+                # setting is synced into this copy on every save
+                # (main.Api.save_settings), so a mode switch applies
+                # without a restart.
+                if self.settings.get("study_reminders_enabled", True):
+                    for text in self.suggest_routines():
+                        self._push("routine_suggestion",
+                                   f"دلوقتي معادك المعتاد: {text} — نبدأ؟")
             except Exception as exc:
                 warn("companion", f"Companion loop failed: {exc}")
             self._stop.wait(60)
