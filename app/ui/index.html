@@ -399,7 +399,26 @@
     deepBtn.classList.toggle('gold', deepThink);
   });
   function hideHero() { if (hero) { hero.style.display = 'none'; } }
-  function addMsg(kind, text, engine) {
+  /* ---------- cost line (rc.3): real tokens / engine / time under
+     each AI reply. Every value is measured - tokens from the
+     engine's own usage field, elapsed timed around the brain call -
+     and a missing value shows "—", never a made-up number. A local
+     (Ollama) reply honestly shows 0 tokens. */
+  var ENGINE_NAMES = { groq: 'Groq', gemini: 'Gemini', ollama: 'Ollama (محلي)', memory: 'الذاكرة', browser: 'المتصفح' };
+  function fmtArNum(n, frac) {
+    var v = Number(n);
+    if (!isFinite(v)) { return '—'; }
+    try {
+      return v.toLocaleString('ar-EG', { minimumFractionDigits: frac || 0, maximumFractionDigits: frac || 0 });
+    } catch (e) { return String(v); }
+  }
+  function costLine(cost) {
+    var tok = (cost.tokens === null || cost.tokens === undefined) ? '—' : fmtArNum(cost.tokens, 0) + ' توكين';
+    var eng = ENGINE_NAMES[cost.engine] || cost.engine || '—';
+    var sec = (cost.elapsed === null || cost.elapsed === undefined) ? '—' : fmtArNum(cost.elapsed, 1) + ' ث';
+    return tok + ' · ' + eng + ' · ' + sec;
+  }
+  function addMsg(kind, text, engine, cost) {
     hideHero();
     var m = document.createElement('div');
     m.className = 'msg ' + kind;
@@ -413,7 +432,12 @@
       act.addEventListener('click', function () { sendChat('اعملها انت'); });
       m.appendChild(document.createElement('br'));
       m.appendChild(act);
-      if (engine) {
+      if (cost) {
+        var line = document.createElement('span');
+        line.className = 'meta';
+        line.textContent = costLine(cost);
+        m.appendChild(line);
+      } else if (engine) {
         var sm = document.createElement('small');
         sm.textContent = engine;
         m.appendChild(sm);
@@ -450,7 +474,10 @@
       typing.remove();
       var txt = (res && (res.reply || res.text || res.message)) || '';
       if (!txt) { txt = 'مفيش رد وصل — جرّب تاني.'; }
-      addMsg('ai', txt, res.engine || '');
+      // rc.3: the async chat_result carries the measured cost; a
+      // sync reply (rule / owner code) has no cost keys, so no line.
+      var hasCost = res && (res.tokens_used !== undefined || res.elapsed_sec !== undefined);
+      addMsg('ai', txt, res.engine || '', hasCost ? { tokens: res.tokens_used, engine: res.engine || '', elapsed: res.elapsed_sec } : null);
     }).catch(function (err) {
       typing.remove();
       fail('chat', err);
