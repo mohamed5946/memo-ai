@@ -156,6 +156,34 @@ DEFAULTS = {
     # v1.6.0: exam countdown - list of {"subject", "date": "YYYY-MM-DD"}.
     # Default EMPTY: no date is ever invented; the UI says "no date set".
     "exams": [],
+    # v1.6.4-rc.3: one-tap modes (OpenJarvis presets). "active_mode"
+    # is "" (normal) or one of "exam" / "work" / "quiet"; the mode
+    # bundles live in modes.py and only ever change REAL settings
+    # the app code reads (see the bundle table there). The pre-mode
+    # values are kept in data/mode_previous.json, never in settings.
+    "active_mode": "",
+    # v1.6.4-rc.3: exam mode - Windows + island toasts fire ONLY for
+    # important alerts (critical level, or an important notification).
+    # Read live in MemoApp._on_system_alert. Default False: every
+    # alert toasts as before.
+    "toasts_important_only": False,
+    # v1.6.4-rc.3: study reminders - the companion's "usual time"
+    # routine suggestions. Default True (they only ever fire at a
+    # time he actually studied before); exam mode keeps them on,
+    # work/quiet modes turn them off. Read in companion._loop.
+    "study_reminders_enabled": True,
+    # v1.6.4-rc.3: exam countdown pinned to the front (the chat
+    # welcome screen), not just the Device view. Default False:
+    # the welcome screen stays exactly as v1.6.3 shipped it.
+    "exam_countdown_pinned": False,
+    # v1.6.4-rc.3: habit learning (app/habits.py). Default ON: the
+    # store is local-only JSON under app/data, it records ONLY the
+    # hour + a coarse category (never message text), nothing is ever
+    # sent anywhere, and it can be switched off + wiped from
+    # Settings -> الأوضاع. ON because the morning suggestion only
+    # exists once real data has been recorded; OFF means the
+    # feature silently does nothing.
+    "habits_enabled": True,
 }
 
 

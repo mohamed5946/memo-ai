@@ -302,6 +302,17 @@ def translate_save_settings_patch(patch):
                      "routine_learning_enabled",
                      "island_clipboard_enabled"):
             settings[key] = _to_bool(value, False)
+        # -- v1.6.4-rc.3: one-tap modes + habit learning -------------
+        elif key in ("habits_enabled", "toasts_important_only",
+                     "study_reminders_enabled",
+                     "exam_countdown_pinned"):
+            settings[key] = _to_bool(value, False)
+        elif key == "active_mode":
+            mode = str(value or "").strip()
+            if mode in ("", "exam", "work", "quiet"):
+                settings[key] = mode
+            else:
+                drop(key)
         elif key == "model_choice":
             choice = str(value or "").strip().lower()
             if choice in ("auto", "groq", "gemini", "local"):
@@ -363,6 +374,10 @@ def with_v2_aliases(settings):
     out["av"] = out.get("avatar", "robot")
     out["lite"] = _to_int01(out.get("lite", 0), 0)
     out["muted"] = bool(out.get("muted", False))
+    # v1.6.4-rc.3: modes + habits. The UI toggle reads `habits`
+    # (0/1); the canonical `habits_enabled` bool rides along raw.
+    # `active_mode` (""/exam/work/quiet) rides along raw too.
+    out["habits"] = _to_int01(out.get("habits_enabled", True), 1)
     return out
 
 
@@ -439,6 +454,17 @@ def chat(api, text, opts=None):
             api.set_deep_think(bool(opts.get("deep_think")))
         except Exception:
             pass
+    # v1.6.4-rc.3: habit learning hook (bridge layer only - brain.py
+    # is untouched). Records hour + coarse category only; the text
+    # itself is categorized and dropped inside habits.record_chat,
+    # and the store respects the habits_enabled off switch. A
+    # failure here never blocks the chat.
+    try:
+        if isinstance(text, str) and text.strip():
+            _habits_mod().record_chat(
+                text, _current_settings(api))
+    except Exception:
+        pass
     raw = getattr(api, "_chat_raw", None) or api.chat
     res = raw(text) or {}
     if isinstance(res, dict) and res.get("chat_id") and "id" not in res:
@@ -622,6 +648,94 @@ def toggle_task(api, task_id):
 
 def delete_task(api, task_id):
     return _tasks_mod().delete_task(task_id)
+
+
+# -- modes + habits (v1.6.4-rc.3) ------------------------------------------
+# One-tap modes (modes.py) + local habit learning (habits.py). Both
+# are thin wrappers: modes apply through Api.save_settings (so the
+# live-apply paths run), habits read the live settings dict.
+
+def _modes_mod():
+    import modes as modes_mod
+    return modes_mod
+
+
+def _habits_mod():
+    import habits as habits_mod
+    return habits_mod
+
+
+def _current_settings(api):
+    """The live settings dict, or None (tests / early startup)."""
+    app = _app(api)
+    if app is not None:
+        return getattr(app, "settings", None)
+    return None
+
+
+def get_modes(api):
+    """The three modes + which one is active now."""
+    settings = _current_settings(api) or {}
+    return {"ok": True,
+            "modes": _modes_mod().list_modes(),
+            "active": _modes_mod().active_mode(settings)}
+
+
+def apply_mode(api, mode):
+    """Apply one mode ("exam" / "work" / "quiet") or "normal" (back
+    to the pre-mode settings). Persists through Api.save_settings
+    so monitor / notification / companion live-apply runs exactly
+    as for a manual save. Returns {"ok", "mode", ...}."""
+    mode = str(mode or "").strip()
+    settings = _current_settings(api) or {}
+    if mode == "normal":
+        res = _modes_mod().restore_normal(settings)
+    else:
+        res = _modes_mod().apply_mode(settings, mode)
+    if not res.get("ok"):
+        return {"ok": False, "error": res.get("error", "unknown_mode"),
+                "mode": ""}
+    try:
+        saved = api.save_settings(res["patch"]) or {}
+    except Exception as exc:
+        error("app", f"apply_mode save failed: {exc}")
+        return {"ok": False, "error": "save_failed", "mode": ""}
+    if saved.get("ok") is False:
+        return {"ok": False, "error": "save_failed", "mode": ""}
+    out = {"ok": True, "mode": res["mode"]}
+    if res.get("restored_from"):
+        out["restored_from"] = res["restored_from"]
+    return out
+
+
+def get_habit_suggestion(api):
+    """The morning suggestion from recorded habit data only. With
+    too little data -> {"ok": False, "reason": "not_enough_data"}
+    and the UI shows nothing - never a fake suggestion."""
+    try:
+        return _habits_mod().get_suggestion(_current_settings(api))
+    except Exception as exc:
+        error("app", f"get_habit_suggestion failed: {exc}")
+        return {"ok": False, "reason": "error"}
+
+
+def clear_habits(api):
+    """Wipe the local habit store (Settings -> الأوضاع)."""
+    try:
+        return _habits_mod().clear()
+    except Exception as exc:
+        error("app", f"clear_habits failed: {exc}")
+        return {"ok": False, "error": str(exc)}
+
+
+def get_habits_status(api):
+    """Honest habit status for Settings: enabled, event count, days
+    covered. Never returns message text (none is stored)."""
+    try:
+        return _habits_mod().status(_current_settings(api))
+    except Exception as exc:
+        error("app", f"get_habits_status failed: {exc}")
+        return {"ok": False, "enabled": True, "events": 0, "days": 0}
 
 
 # -- memory ----------------------------------------------------------------------

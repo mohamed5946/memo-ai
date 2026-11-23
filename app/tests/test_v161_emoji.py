@@ -207,7 +207,7 @@ class TestIconWiring(unittest.TestCase):
         sec = re.search(r"var SEC = \[(.*?)\];", html, re.S)
         self.assertIsNotNone(sec, "SEC list missing")
         sec_ids = re.findall(r"\['([a-z]+)',", sec.group(1))
-        self.assertEqual(len(sec_ids), 14, f"expected 14 sections, got {sec_ids}")
+        self.assertEqual(len(sec_ids), 15, f"expected 15 sections, got {sec_ids}")
         icon_block = html.split("var ICON = {")[1].split("\n  };")[0]
         icon_keys = set(re.findall(r"^\s*(\w+):", icon_block, re.M))
         for section in sec_ids:

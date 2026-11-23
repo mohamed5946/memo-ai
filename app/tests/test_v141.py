@@ -480,13 +480,13 @@ class TestWhatsAppSettings(unittest.TestCase):
 class TestSettingsReorg(unittest.TestCase):
     def test_menu_and_sections(self):
         html = _read("app/ui/index.html")
-        # v1.6.4 reskin: 13 Settings sections (SEC in index.html), each
+        # v1.6.4 reskin: 15 Settings sections (SEC in index.html), each
         # with a menu button (renderMenu) and a Bsec builder; the menu
         # and the section back button are rendered by renderMenu /
         # renderSec into #setRoot.
-        for section in ("general", "wa", "memory", "health", "notif",
+        for section in ("general", "modes", "wa", "memory", "health", "notif",
                         "sound", "avatar", "log", "update", "themes",
-                        "api", "self", "backup"):
+                        "api", "tokens", "self", "backup"):
             self.assertIn(f"['{section}',", html, section)
             self.assertIn(f"{section}: function ()", html, section)
         self.assertIn("function renderMenu()", html)

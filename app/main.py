@@ -811,6 +811,17 @@ class Api:
             _APP.settings[key] = value
         ok = save_settings(_APP.settings)
         info("app", "Settings saved from UI")
+        # v1.6.4-rc.3: the companion keeps its OWN copy of settings
+        # (Companion.__init__ does dict(settings)), so sync it here -
+        # otherwise a runtime change such as study_reminders_enabled
+        # (from a one-tap mode) would only take effect after a
+        # restart. The monitor snapshots the same way and is already
+        # restarted below for monitor_* keys.
+        try:
+            if _APP._companion is not None:
+                _APP._companion.settings.update(canonical)
+        except Exception:
+            pass
         autostart.set_enabled(bool(_APP.settings.get("autostart", True)))
         out = {"ok": ok}
         wa = split.get("whatsapp") or {}
@@ -826,7 +837,11 @@ class Api:
         # stop/start joins can take ~4s - run off the bridge thread.
         monitor_changed = any(k.startswith("monitor_") for k in canonical)
         wake_changed = "wakeword_enabled" in canonical
-        if monitor_changed or wake_changed:
+        # v1.6.4-rc.3: notifications_enabled applies live too (a mode
+        # turning it off must actually stop the watcher, not just
+        # change a value that is only read at startup).
+        notif_changed = "notifications_enabled" in canonical
+        if monitor_changed or wake_changed or notif_changed:
             def _apply_live():
                 if monitor_changed:
                     try:
@@ -844,6 +859,20 @@ class Api:
                             _APP.stop_wakeword()
                     except Exception as exc:
                         warn("app", f"Wake-word toggle after save failed: {exc}")
+                if notif_changed:
+                    try:
+                        if _APP.settings.get("notifications_enabled", True):
+                            if _APP._notif_watcher is None or \
+                                    not _APP._notif_watcher.running:
+                                _APP._start_notifications()
+                        elif _APP._notif_watcher is not None:
+                            _APP._notif_watcher.stop()
+                            _APP._notif_watcher = None
+                            info("app", "Notification watcher stopped "
+                                        "(disabled in settings)")
+                    except Exception as exc:
+                        warn("app", f"Notification watcher toggle after "
+                                    f"save failed: {exc}")
             threading.Thread(target=_apply_live, daemon=True).start()
         return out
 
@@ -1292,6 +1321,27 @@ class Api:
     @_log_slow
     def get_morning_brief(self):
         return bridge_v2.get_morning_brief(self)
+
+    # -- v1.6.4-rc.3: one-tap modes + habit learning ---------------
+    @_log_slow
+    def get_modes(self):
+        return bridge_v2.get_modes(self)
+
+    @_log_slow
+    def apply_mode(self, mode):
+        return bridge_v2.apply_mode(self, mode)
+
+    @_log_slow
+    def get_habit_suggestion(self):
+        return bridge_v2.get_habit_suggestion(self)
+
+    @_log_slow
+    def clear_habits(self):
+        return bridge_v2.clear_habits(self)
+
+    @_log_slow
+    def get_habits_status(self):
+        return bridge_v2.get_habits_status(self)
 
     @_log_slow
     def clean_cache(self, kind="temp"):
@@ -3442,7 +3492,23 @@ class MemoApp:
                     self._alerts.append(item)
                     if len(self._alerts) > 20:
                         self._alerts = self._alerts[-20:]
-            if self.settings.get("monitor_alert_toast", True):
+            # v1.6.4-rc.3: toast channels. "Important" = a critical
+            # alert, or an important notification (the watcher only
+            # ever forwards important ones). Exam mode
+            # (toasts_important_only) toasts only those; quiet mode
+            # (monitor_alert_toast off) toasts nothing at all. The
+            # ISLAND toast is gated on the SAME monitor_alert_toast
+            # toggle as the Windows toast - before rc.3 it fired
+            # whenever the island was enabled, so the toggle did not
+            # actually silence it. With toasts off the island never
+            # pops open on its own (hover/click still open it).
+            important = (item["level"] == "critical"
+                         or item["kind"] == "notification")
+            toasts_on = self.settings.get("monitor_alert_toast", True)
+            if toasts_on and self.settings.get(
+                    "toasts_important_only", False) and not important:
+                toasts_on = False
+            if toasts_on:
                 try:
                     import notifications as notif_mod
                     msg = item["message"]
@@ -3455,7 +3521,8 @@ class MemoApp:
             # toast). The page owns open/auto-collapse; Python only
             # hands it the payload (monitor.alert_to_toast).
             try:
-                if self.settings.get("island_enabled", False) \
+                if toasts_on \
+                        and self.settings.get("island_enabled", False) \
                         and self.island_window is not None:
                     import monitor as monitor_mod
                     import json as _json
@@ -4166,6 +4233,14 @@ class MemoApp:
                         pass
             threading.Thread(target=self._companion_morning_brief,
                              daemon=True).start()
+            # v1.6.4-rc.3: habit learning - record this app start
+            # (hour only, no text). Guarded: a store failure never
+            # blocks startup, and the off switch is respected.
+            try:
+                import habits as habits_mod
+                habits_mod.record_app_open(self.settings)
+            except Exception:
+                pass
         except Exception as exc:
             warn("app", f"Invite/companion brief failed: {exc}")
         # v1.5: always-listening wake word (best effort - the model
