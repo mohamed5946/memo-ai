@@ -47,6 +47,13 @@ HISTORY_KEEP = 40
 HISTORY_MAX = 60
 HISTORY_ROLLOVER = 20
 
+# Memory graph ("second brain" view, v1.6.4-rc.3): the view renders at
+# most this many records (the most important / most recent first) so
+# the canvas stays light on a weak laptop; the UI says so honestly
+# when the cap bites. Edges are capped too (strongest first).
+GRAPH_NODE_CAP = 100
+GRAPH_EDGE_CAP = 300
+
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
@@ -93,7 +100,19 @@ def _content_tokens(text: str) -> list:
     return [t for t in _tokens(text) if t not in _STOPWORDS]
 
 
+def _fresh_style() -> dict:
+    """A clean style profile. MUST copy the lists: dict(_DEFAULT_STYLE)
+    alone shares the module-level phrases/notes lists, so one store's
+    learned phrases would leak into every store created afterwards
+    in the same process (caught by the rc.3 graph tests)."""
+    style = dict(_DEFAULT_STYLE)
+    style["phrases"] = list(_DEFAULT_STYLE["phrases"])
+    style["notes"] = list(_DEFAULT_STYLE["notes"])
+    return style
+
+
 def _new_id(prefix: str) -> str:
+    return f"{prefix}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(2).hex()}"
     return f"{prefix}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(2).hex()}"
 
 
@@ -116,7 +135,7 @@ class MemoryStore:
     # -- persistence -------------------------------------------------------
     def _load(self) -> dict:
         data = {"version": 1, "facts": [], "rules": [],
-                "style": dict(_DEFAULT_STYLE), "routines": [],
+                "style": _fresh_style(), "routines": [],
                 "summary": "", "updated": _now_iso()}
         try:
             if self.path.exists():
@@ -189,7 +208,7 @@ class MemoryStore:
 
     def clear_all(self) -> None:
         self.data = {"version": 1, "facts": [], "rules": [],
-                     "style": dict(_DEFAULT_STYLE), "routines": [],
+                     "style": _fresh_style(), "routines": [],
                      "summary": "", "updated": _now_iso()}
         self.save()
         info("memory", "All memories wiped by the user")
@@ -290,6 +309,68 @@ class MemoryStore:
             f["hits"] = f.get("hits", 0) + 1
             out.append(f)
         return out
+
+    # -- graph view (v1.6.4-rc.3) ------------------------------------------
+    def graph_data(self, limit: int = GRAPH_NODE_CAP) -> dict:
+        """The memory knowledge graph: a VIEW over the live store, not
+        a second store. Every node is one real record (fact / learned
+        rule / routine / style phrase or note); every edge links two
+        records whose texts share >= 2 content tokens (Arabic-aware,
+        stopwords removed - the same tokenizer search() uses), with
+        the shared terms carried as the reason. An empty store gives
+        an empty graph - never demo nodes. Records past `limit` are
+        dropped (rules first, then high-priority facts, then newest)
+        and reported honestly via total / capped."""
+        records = []  # (kind, id, text, source, created, priority, hits)
+        for r in self.data.get("rules", []):
+            if isinstance(r, dict) and (r.get("text") or "").strip():
+                records.append(("rule", r.get("id", ""), r.get("text", ""),
+                                "correction", r.get("created", ""), "", 0))
+        facts = [f for f in self.data.get("facts", []) if isinstance(f, dict)
+                 and (f.get("text") or "").strip()]
+        facts.sort(key=lambda f: str(f.get("created", "")), reverse=True)
+        facts.sort(key=lambda f: 0 if f.get("priority") == "high" else 1)
+        for f in facts:
+            records.append(("fact", f.get("id", ""), f.get("text", ""),
+                            f.get("source", ""), f.get("created", ""),
+                            f.get("priority", "normal"),
+                            f.get("hits", 0)))
+        for r in self.data.get("routines", []):
+            if isinstance(r, dict) and (r.get("text") or "").strip():
+                records.append(("routine", r.get("id", ""), r.get("text", ""),
+                                "routine", r.get("created", ""), "", 0))
+        style = self.data.get("style", {}) or {}
+        for i, ph in enumerate(style.get("phrases", []) or []):
+            if str(ph).strip():
+                records.append(("style", f"style-phrase-{i}", str(ph),
+                                "style", "", "", 0))
+        for i, note in enumerate(style.get("notes", []) or []):
+            if str(note).strip():
+                records.append(("style", f"style-note-{i}", str(note),
+                                "style", "", "", 0))
+        total = len(records)
+        kept = records[:max(0, int(limit))]
+        nodes = []
+        for kind, rid, text, source, created, priority, hits in kept:
+            label = text if len(text) <= 30 else text[:29] + "…"
+            nodes.append({"id": rid, "kind": kind, "label": label,
+                          "text": text, "source": source,
+                          "created": created, "priority": priority,
+                          "hits": hits})
+        token_sets = [set(_content_tokens(n["text"])) for n in nodes]
+        edges = []
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                shared = sorted(token_sets[i] & token_sets[j])
+                if len(shared) >= 2:
+                    edges.append({"from": nodes[i]["id"],
+                                  "to": nodes[j]["id"],
+                                  "shared": shared[:3],
+                                  "weight": len(shared)})
+        edges.sort(key=lambda e: e["weight"], reverse=True)
+        edges = edges[:GRAPH_EDGE_CAP]
+        return {"nodes": nodes, "edges": edges, "total": total,
+                "capped": total > len(nodes), "limit": int(limit)}
 
     # -- prompt blocks --------------------------------------------------------
     def get_style_block(self, language: str = "ar") -> str:

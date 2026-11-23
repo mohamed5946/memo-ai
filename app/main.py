@@ -1401,6 +1401,10 @@ class Api:
         return bridge_v2.clear_memories(self)
 
     @_log_slow
+    def get_memory_graph(self):
+        return bridge_v2.get_memory_graph(self)
+
+    @_log_slow
     def get_log(self):
         return bridge_v2.get_log(self)
 
