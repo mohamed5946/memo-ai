@@ -104,6 +104,13 @@ DEFAULTS = {
     "monitor_battery_warn_percent": 20,
     "monitor_battery_critical_percent": 10,
     "monitor_cooldown_min": 30,
+    # rc.3 (d): token-limit-near rule thresholds (measured remaining
+    # tokens per engine, Groq 8000/min window) and the slow-reply
+    # rule threshold (measured reply seconds, well under the 180 s
+    # chat deadline in brain.py). See monitor.DEFAULT_MONITOR_SETTINGS.
+    "monitor_token_warn_remaining": 1000,
+    "monitor_token_critical_remaining": 200,
+    "monitor_slow_reply_sec": 30,
     "monitor_alert_in_app": True,   # show alerts inside the app
     "monitor_alert_toast": True,    # ... and as a Windows toast
     # v1.5: wake word (always-listening, offline). The phrase DERIVES

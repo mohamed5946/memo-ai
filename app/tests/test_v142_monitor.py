@@ -95,15 +95,23 @@ class TestRamAlertCooldown(unittest.TestCase):
 
         # Condition clears...
         self.assertEqual(mon.check_once(_healthy(), now=t0 + 300), [])
+        # rc.3 (b): the clear delivers ONE resolved notice through
+        # on_alert (in-app + toast) -- the check_once return list
+        # above stays [] (problem alerts only), but the callback saw
+        # the resolution. It fires exactly once per clear.
+        self.assertEqual(len(fired), 2)
+        self.assertEqual(fired[1]["kind"], "ram_low")
+        self.assertTrue(fired[1].get("resolved"))
+        self.assertEqual(fired[1]["level"], "info")
         # ...re-appears inside the cooldown -> still suppressed
         # (a flickering condition must not spam).
         self.assertEqual(mon.check_once(low, now=t0 + 600), [])
-        self.assertEqual(len(fired), 1)
+        self.assertEqual(len(fired), 2)
         # ...re-appears after the 30-min cooldown -> fires again.
         got = mon.check_once(low, now=t0 + 30 * 60 + 1)
         self.assertEqual(len(got), 1)
         self.assertEqual(got[0]["kind"], "ram_low")
-        self.assertEqual(len(fired), 2)
+        self.assertEqual(len(fired), 3)
 
     def test_ram_thresholds(self):
         # 84-86% is his normal idle: must NOT alert.
