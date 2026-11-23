@@ -3450,8 +3450,8 @@ class MemoApp:
                 except Exception:
                     pass
             # rc.3 (d): slow-reply rule measures the real turn time.
-        t0 = time.monotonic()
-        result = brain.ask_with_tools(
+            t0 = time.monotonic()
+            result = brain.ask_with_tools(
                 text, self.settings.get("ai_name", "LONA"),
                 self.settings.get("user_name", "Mohamed"),
                 self.settings.get("language", "ar"),
