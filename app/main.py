@@ -376,7 +376,7 @@ try:
 except Exception:
     wakeword_mod = None
 
-VERSION = "1.6.4-rc.2"
+VERSION = "1.6.4-rc.3"
 # v1.6.2: bigger default main window (was 960x720) -- more room for
 # the chat. Frameless since v1.6.2: the native title bar is gone and
 # the in-app header owns minimize/maximize/close + drag.
@@ -3449,7 +3449,9 @@ class MemoApp:
                             if self_view else temp_line
                 except Exception:
                     pass
-            result = brain.ask_with_tools(
+            # rc.3 (d): slow-reply rule measures the real turn time.
+        t0 = time.monotonic()
+        result = brain.ask_with_tools(
                 text, self.settings.get("ai_name", "LONA"),
                 self.settings.get("user_name", "Mohamed"),
                 self.settings.get("language", "ar"),
@@ -3469,6 +3471,13 @@ class MemoApp:
             result = {"reply": "حصلت مشكلة وأنا بنفذ، جرّب تاني.",
                       "engine": "", "tools_used": 0,
                       "tokens_used": None, "elapsed_sec": None}
+        # rc.3 (d): slow-reply rule (warns when a reply takes
+        # unusually long). Guarded - never blocks the chat.
+        try:
+            if self._monitor is not None:
+                self._monitor.check_reply_time(time.monotonic() - t0)
+        except Exception:
+            pass
         # v1.4.3: [[IMAGE:...]] is a machine token, not text - strip it
         # from the spoken/shown reply and attach the files as `images`
         # instead, so the UI renders them as real pictures. The tracker
@@ -3600,8 +3609,11 @@ class MemoApp:
         except Exception as exc:
             warn("app", f"System monitor unavailable: {exc}")
             return
+        # rc.3 (d): token-limit-near rule reads the measured remaining
+        # tokens from brain's tracker every poll.
         self._monitor = monitor_mod.SystemMonitor(
-            self.settings, on_alert=self._on_system_alert)
+            self.settings, on_alert=self._on_system_alert,
+            token_fn=brain.get_token_usage)
         # v1.4.3: the system_status tool reads through this live
         # monitor (warm CPU history, shared temperature cache).
         tools.set_monitor_provider(lambda: _APP._monitor)
