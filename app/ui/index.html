@@ -31,10 +31,11 @@
         <button class="item th on" data-v="chat" style="--i:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg><span>الشات</span></button>
         <button class="item th" data-v="device" style="--i:1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg><span>الجهاز</span></button>
         <button class="item th" data-v="tasks" style="--i:2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg><span>المهام</span></button>
-        <button class="item th" data-v="themes" style="--i:3"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg><span>الثيمات</span></button>
+        <button class="item th" data-v="graph" style="--i:3"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.5 7.5l3.5 8M16.5 7.5l-3.5 8M8.5 6h7"/></svg><span>الذاكرة</span></button>
+        <button class="item th" data-v="themes" style="--i:4"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg><span>الثيمات</span></button>
       </nav>
       <div class="sep"></div>
-      <button class="item th" id="setBtn" data-v="settings" style="--i:4"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.18 10.21L21.90 10.61L21.90 13.39L19.18 13.79L18.34 15.81L19.99 18.02L18.02 19.99L15.81 18.34L13.79 19.18L13.39 21.90L10.61 21.90L10.21 19.18L8.19 18.34L5.98 19.99L4.01 18.02L5.66 15.81L4.82 13.79L2.10 13.39L2.10 10.61L4.82 10.21L5.66 8.19L4.01 5.98L5.98 4.01L8.19 5.66L10.21 4.82L10.61 2.10L13.39 2.10L13.79 4.82L15.81 5.66L18.02 4.01L19.99 5.98L18.34 8.19Z"/><circle cx="12" cy="12" r="3"/></svg><span>الإعدادات</span></button>
+      <button class="item th" id="setBtn" data-v="settings" style="--i:5"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.18 10.21L21.90 10.61L21.90 13.39L19.18 13.79L18.34 15.81L19.99 18.02L18.02 19.99L15.81 18.34L13.79 19.18L13.39 21.90L10.61 21.90L10.21 19.18L8.19 18.34L5.98 19.99L4.01 18.02L5.66 15.81L4.82 13.79L2.10 13.39L2.10 10.61L4.82 10.21L5.66 8.19L4.01 5.98L5.98 4.01L8.19 5.66L10.21 4.82L10.61 2.10L13.39 2.10L13.79 4.82L15.81 5.66L18.02 4.01L19.99 5.98L18.34 8.19Z"/><circle cx="12" cy="12" r="3"/></svg><span>الإعدادات</span></button>
       <button class="round" id="fold" aria-label="طي القايمة"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
     </aside>
 
@@ -123,6 +124,31 @@
       <div class="view page" data-v="tasks" hidden>
         <div class="field th" style="--i:0"><input id="tIn" placeholder="مهمة جديدة" autocomplete="off" virtualkeyboardpolicy="manual"><button class="round gold" id="tAdd" aria-label="إضافة"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button></div>
         <ul class="tlist" id="tList"></ul>
+      </div>
+
+      <!-- v1.6.4-rc.3: memory knowledge graph ("second brain") — a
+           read-only view over the real memory store. Static 2D canvas,
+           no animation loop, renders only while this view is open. -->
+      <div class="view page" data-v="graph" hidden>
+        <div class="graph-bar th" style="--i:0">
+          <h3 class="sub" style="margin:0">خريطة الذاكرة</h3>
+          <span class="st" id="graphCount"></span>
+          <span style="flex:1"></span>
+          <button class="act" id="graphZoomOut" type="button" aria-label="تصغير">−</button>
+          <button class="act" id="graphZoomIn" type="button" aria-label="تكبير">+</button>
+          <button class="act" id="graphReset" type="button">إعادة الضبط</button>
+        </div>
+        <div class="graph-legend th" id="graphLegend" style="--i:1"></div>
+        <div class="graph-wrap th" style="--i:2">
+          <canvas id="graphCanvas"></canvas>
+          <div class="graph-empty" id="graphEmpty" hidden>
+            <b>لا توجد ذكريات محفوظة بعد</b>
+            <p>قولي «افتكر إن…» في الشات وأنا هحفظها، وهتظهر هنا على الخريطة.</p>
+            <button class="act" id="graphEmptyChat" type="button">روح للشات</button>
+          </div>
+        </div>
+        <p class="about th" id="graphCapNote" style="--i:3" hidden></p>
+        <div class="stat th" id="graphDetail" style="--i:4" hidden></div>
       </div>
 
       <div class="view page" data-v="settings" hidden>
@@ -376,6 +402,10 @@
     if (v === 'settings') { renderMenu(); refreshTokenUsage(); }
     if (v === 'device') { startDev(); } else { stopDev(); }
     if (v === 'chat') { refreshHabitSuggestion(); }
+    /* v1.6.4-rc.3: the memory graph renders only while its view is
+       open — leaving the view drops its data and clears the canvas,
+       so it never runs (no timers, no frames) in the background. */
+    if (v === 'graph') { loadGraph(); } else { unloadGraph(); }
     var active = document.querySelector('.view[data-v="' + v + '"]');
     if (active) { replayStagger(active); }
     replayStagger(document.getElementById('nav'));
@@ -409,6 +439,322 @@
   if (window.ResizeObserver) { new ResizeObserver(fit).observe(win); }
   else { window.addEventListener('resize', fit); }
   fit();
+
+  /* ---------- memory graph (v1.6.4-rc.3) ----------
+     "Second brain" view over the REAL memory store (bridge
+     get_memory_graph). Static 2D canvas, NO animation loop: the
+     layout is a bounded force relaxation run once at load (120
+     steps, <= 100 nodes), then the canvas is drawn only on demand
+     — load, pan, zoom, resize, selection. Leaving the view drops
+     the data and clears the canvas, so nothing keeps running.
+     Pan = drag, zoom = wheel or the +/− buttons, click a node =
+     its full record in the detail panel. */
+  var GRAPH_KINDS = {
+    fact: { label: 'حقيقة', color: '#F0C75E' },
+    rule: { label: 'قاعدة متعلمة', color: '#6FB7FF' },
+    routine: { label: 'روتين', color: '#7ED491' },
+    style: { label: 'أسلوب', color: '#FF9E7A' }
+  };
+  var graphData = null;   // {nodes, edges, total, capped, limit}
+  var graphNodes = [];    // nodes with layout x/y (world coords)
+  var graphById = {};
+  var graphSel = null;    // selected node id
+  var graphView = { scale: 1, ox: 0, oy: 0 };
+  var graphCanvas = document.getElementById('graphCanvas');
+  var graphCtx = graphCanvas.getContext('2d');
+  var graphDrag = null;   // {x, y, ox, oy, moved} while pointer down
+  function layoutGraph(nodes, edges) {
+    var kinds = ['rule', 'fact', 'routine', 'style'];
+    var byKind = {};
+    kinds.forEach(function (k) { byKind[k] = []; });
+    nodes.forEach(function (n) { (byKind[n.kind] || byKind.fact).push(n); });
+    /* Start grouped: each kind gets a sector of a circle. */
+    kinds.forEach(function (k, ki) {
+      var list = byKind[k];
+      var base = (ki / kinds.length) * Math.PI * 2;
+      list.forEach(function (n, i) {
+        var a = base + (list.length > 1 ? (i / (list.length - 1) - 0.5) * 1.1 : 0);
+        var r = 150 + (i % 3) * 45;
+        n.x = Math.cos(a) * r;
+        n.y = Math.sin(a) * r;
+        n.vx = 0; n.vy = 0;
+      });
+    });
+    /* Bounded relaxation: repulsion + edge springs + weak pull to
+       the centre. 120 steps, then it stops — no loop afterwards. */
+    var adj = {};
+    edges.forEach(function (e) {
+      (adj[e.from] = adj[e.from] || []).push(e.to);
+      (adj[e.to] = adj[e.to] || []).push(e.from);
+    });
+    for (var step = 0; step < 120; step++) {
+      for (var i = 0; i < nodes.length; i++) {
+        var a = nodes[i];
+        var fx = -a.x * 0.02, fy = -a.y * 0.02;
+        for (var j = 0; j < nodes.length; j++) {
+          if (i === j) { continue; }
+          var b = nodes[j];
+          var dx = a.x - b.x, dy = a.y - b.y;
+          var d2 = dx * dx + dy * dy + 1;
+          var f = 900 / d2;
+          fx += dx * f; fy += dy * f;
+        }
+        (adj[a.id] || []).forEach(function (oid) {
+          var nb = graphById[oid];
+          if (!nb) { return; }
+          var sx = nb.x - a.x, sy = nb.y - a.y;
+          var d = Math.sqrt(sx * sx + sy * sy) || 1;
+          var sf = (d - 90) * 0.2;
+          fx += sx / d * sf; fy += sy / d * sf;
+        });
+        a.vx = (a.vx + fx) * 0.6; a.vy = (a.vy + fy) * 0.6;
+        a.x += a.vx; a.y += a.vy;
+      }
+    }
+  }
+  function graphFit() {
+    if (!graphNodes.length) { return; }
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    graphNodes.forEach(function (n) {
+      if (n.x < minX) { minX = n.x; }
+      if (n.x > maxX) { maxX = n.x; }
+      if (n.y < minY) { minY = n.y; }
+      if (n.y > maxY) { maxY = n.y; }
+    });
+    var w = graphCanvas.clientWidth, h = graphCanvas.clientHeight;
+    if (!w || !h) { return; }
+    var bw = Math.max(maxX - minX, 1), bh = Math.max(maxY - minY, 1);
+    var s = Math.min(w / (bw + 80), h / (bh + 80));
+    graphView.scale = s;
+    graphView.ox = w / 2 - (minX + bw / 2) * s;
+    graphView.oy = h / 2 - (minY + bh / 2) * s;
+  }
+  function drawGraph() {
+    if (!graphData) { return; }
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = graphCanvas.clientWidth, h = graphCanvas.clientHeight;
+    if (!w || !h) { return; }
+    if (graphCanvas.width !== Math.round(w * dpr) ||
+        graphCanvas.height !== Math.round(h * dpr)) {
+      graphCanvas.width = Math.round(w * dpr);
+      graphCanvas.height = Math.round(h * dpr);
+    }
+    var ctx = graphCtx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    var ink = getComputedStyle(graphCanvas).color || '#fff';
+    ctx.strokeStyle = 'rgba(128,128,128,0.35)';
+    ctx.lineWidth = 1;
+    graphData.edges.forEach(function (e) {
+      var a = graphById[e.from], b = graphById[e.to];
+      if (!a || !b) { return; }
+      ctx.beginPath();
+      ctx.moveTo(a.x * graphView.scale + graphView.ox,
+                 a.y * graphView.scale + graphView.oy);
+      ctx.lineTo(b.x * graphView.scale + graphView.ox,
+                 b.y * graphView.scale + graphView.oy);
+      ctx.stroke();
+    });
+    graphNodes.forEach(function (n) {
+      var kind = GRAPH_KINDS[n.kind] || GRAPH_KINDS.fact;
+      var x = n.x * graphView.scale + graphView.ox;
+      var y = n.y * graphView.scale + graphView.oy;
+      var r = n.id === graphSel ? 11 : 8;
+      ctx.fillStyle = kind.color;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      if (n.id === graphSel) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      /* Labels only when the graph is small (or for the selected
+         node) — with 100 nodes full labels would be unreadable. */
+      if (graphNodes.length <= 30 || n.id === graphSel) {
+        ctx.fillStyle = ink;
+        ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+        ctx.fillText(n.label, x + 13, y + 4);
+      }
+    });
+  }
+  function fmtGraphDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) { return String(iso); }
+    function p(x) { return String(x).padStart(2, '0'); }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function selectGraphNode(n) {
+    graphSel = n.id;
+    var kind = GRAPH_KINDS[n.kind] || GRAPH_KINDS.fact;
+    var meta = [];
+    if (n.source) { meta.push('المصدر: ' + n.source); }
+    if (n.created) { meta.push('اتحفظت: ' + fmtGraphDate(n.created)); }
+    if (n.kind === 'fact' && n.priority === 'high') { meta.push('أولوية عالية'); }
+    if (n.kind === 'fact' && n.hits) { meta.push('اتستخدمت ' + n.hits + ' مرة'); }
+    var links = graphData.edges.filter(function (e) {
+      return e.from === n.id || e.to === n.id;
+    });
+    var det = document.getElementById('graphDetail');
+    det.innerHTML =
+      "<span>" + B.escapeHtml(kind.label) + "</span>" +
+      "<p style='margin:0'>" + B.escapeHtml(n.text) + "</p>" +
+      (meta.length ? "<small>" + B.escapeHtml(meta.join(' · ')) + "</small>" : '') +
+      (links.length ? "<small>مربوطة بـ " + links.length +
+        (links.length === 1 ? ' عنصر' : ' عناصر') +
+        (links[0].shared && links[0].shared.length ?
+          ' — كلمات مشتركة: ' + B.escapeHtml(links[0].shared.join('، ')) : '') +
+        "</small>" : '') +
+      "<div class='acts'><button class='act' id='graphOpenSettings' type='button'>افتح في الإعدادات</button>" +
+      "<button class='act' id='graphAsk' type='button'>اسأل لونا عنها</button></div>";
+    det.hidden = false;
+    document.getElementById('graphOpenSettings').addEventListener('click', function () {
+      show('settings'); renderSec('memory');
+    });
+    document.getElementById('graphAsk').addEventListener('click', function () {
+      show('chat');
+      chatInput.value = 'قولي أكتر عن: ' + n.text.slice(0, 100);
+      chatInput.focus();
+    });
+    drawGraph();
+  }
+  function graphClick(e) {
+    var rect = graphCanvas.getBoundingClientRect();
+    var px = e.clientX - rect.left, py = e.clientY - rect.top;
+    var wx = (px - graphView.ox) / graphView.scale;
+    var wy = (py - graphView.oy) / graphView.scale;
+    var best = null, bestD = 16 / graphView.scale + 6;
+    graphNodes.forEach(function (n) {
+      var d = Math.hypot(n.x - wx, n.y - wy);
+      if (d < bestD) { bestD = d; best = n; }
+    });
+    if (best) { selectGraphNode(best); }
+    else {
+      graphSel = null;
+      document.getElementById('graphDetail').hidden = true;
+      drawGraph();
+    }
+  }
+  function graphZoomAt(clientX, clientY, factor) {
+    if (!graphData || !graphData.nodes.length) { return; }
+    var rect = graphCanvas.getBoundingClientRect();
+    var px = clientX - rect.left, py = clientY - rect.top;
+    var ns = Math.min(4, Math.max(0.25, graphView.scale * factor));
+    graphView.ox = px - (px - graphView.ox) * (ns / graphView.scale);
+    graphView.oy = py - (py - graphView.oy) * (ns / graphView.scale);
+    graphView.scale = ns;
+    drawGraph();
+  }
+  function loadGraph() {
+    document.getElementById('graphEmpty').hidden = true;
+    document.getElementById('graphDetail').hidden = true;
+    graphSel = null;
+    B.call('get_memory_graph').then(function (res) {
+      graphData = res || { nodes: [], edges: [], total: 0, capped: false };
+      var countEl = document.getElementById('graphCount');
+      countEl.textContent = graphData.nodes.length ?
+        graphData.nodes.length + ' عنصر · ' + graphData.edges.length + ' رابط' : '';
+      var capEl = document.getElementById('graphCapNote');
+      if (graphData.capped) {
+        capEl.hidden = false;
+        capEl.textContent = 'معروض أهم ' + graphData.nodes.length + ' من ' +
+          graphData.total + ' عنصر — الأعلى أولوية والأحدث أولاً.';
+      } else { capEl.hidden = true; }
+      var counts = {};
+      graphData.nodes.forEach(function (n) {
+        counts[n.kind] = (counts[n.kind] || 0) + 1;
+      });
+      document.getElementById('graphLegend').innerHTML =
+        Object.keys(GRAPH_KINDS).filter(function (k) { return counts[k]; })
+          .map(function (k) {
+            return "<span><i style='background:" + GRAPH_KINDS[k].color +
+              "'></i>" + GRAPH_KINDS[k].label + ' (' + counts[k] + ')' + "</span>";
+          }).join('');
+      if (!graphData.nodes.length) {
+        graphNodes = []; graphById = {};
+        document.getElementById('graphEmpty').hidden = false;
+        drawGraph();
+        return;
+      }
+      graphNodes = graphData.nodes.map(function (n) {
+        var c = {};
+        Object.keys(n).forEach(function (k) { c[k] = n[k]; });
+        return c;
+      });
+      graphById = {};
+      graphNodes.forEach(function (n) { graphById[n.id] = n; });
+      layoutGraph(graphNodes, graphData.edges);
+      graphFit();
+      drawGraph();
+    }).catch(function (err) {
+      fail('get_memory_graph', err);
+      graphData = { nodes: [], edges: [], total: 0, capped: false };
+      graphNodes = []; graphById = {};
+      document.getElementById('graphEmpty').hidden = false;
+    });
+  }
+  function unloadGraph() {
+    graphData = null;
+    graphNodes = [];
+    graphById = {};
+    graphSel = null;
+    if (graphCtx && graphCanvas && graphCanvas.width) {
+      graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+    }
+  }
+  graphCanvas.addEventListener('pointerdown', function (e) {
+    if (!graphData || !graphData.nodes.length) { return; }
+    graphDrag = { x: e.clientX, y: e.clientY,
+                  ox: graphView.ox, oy: graphView.oy, moved: false };
+    try { graphCanvas.setPointerCapture(e.pointerId); } catch (err) { /* no capture */ }
+    graphCanvas.classList.add('dragging');
+  });
+  graphCanvas.addEventListener('pointermove', function (e) {
+    if (!graphDrag) { return; }
+    var dx = e.clientX - graphDrag.x, dy = e.clientY - graphDrag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) { graphDrag.moved = true; }
+    graphView.ox = graphDrag.ox + dx;
+    graphView.oy = graphDrag.oy + dy;
+    drawGraph();
+  });
+  function graphEndDrag(e) {
+    if (!graphDrag) { return; }
+    var wasClick = !graphDrag.moved;
+    graphDrag = null;
+    graphCanvas.classList.remove('dragging');
+    if (wasClick) { graphClick(e); }
+  }
+  graphCanvas.addEventListener('pointerup', graphEndDrag);
+  graphCanvas.addEventListener('pointercancel', function () {
+    graphDrag = null;
+    graphCanvas.classList.remove('dragging');
+  });
+  graphCanvas.addEventListener('wheel', function (e) {
+    if (!graphData || !graphData.nodes.length) { return; }
+    e.preventDefault();
+    graphZoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+  }, { passive: false });
+  document.getElementById('graphZoomIn').addEventListener('click', function () {
+    var rect = graphCanvas.getBoundingClientRect();
+    graphZoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.25);
+  });
+  document.getElementById('graphZoomOut').addEventListener('click', function () {
+    var rect = graphCanvas.getBoundingClientRect();
+    graphZoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1 / 1.25);
+  });
+  document.getElementById('graphReset').addEventListener('click', function () {
+    if (graphData && graphData.nodes.length) { graphFit(); drawGraph(); }
+  });
+  document.getElementById('graphEmptyChat').addEventListener('click', function () {
+    show('chat');
+    chatInput.focus();
+  });
+  window.addEventListener('resize', function () {
+    if (!graphData || !graphData.nodes.length) { return; }
+    var v = document.querySelector('.view[data-v="graph"]');
+    if (v && !v.hidden) { graphFit(); drawGraph(); }
+  });
 
   /* ---------- chat ---------- */
   var thread = document.getElementById('thread');
@@ -1277,6 +1623,7 @@
       }).join('');
       return "<div class='stat th'><span>الذاكرة المحفوظة</span><b style='font-size:15px'>" +
         (MEM.length ? MEM.length + ' عنصر محفوظ' : 'مفيش حاجة محفوظة لسه') + "</b></div>" +
+        "<div class='acts th'>" + btn('عرض خريطة الذاكرة', 'data-mgraph') + "</div>" +
         "<ul class='tlist'>" + items + "</ul>" +
         "<button class='act danger th' data-mclear>مسح كل الذاكرة</button>";
     },
@@ -1565,6 +1912,7 @@
         .catch(function (err) { fail('delete_memory', err); });
       return;
     }
+    if ('mgraph' in d) { show('graph'); return; }
     if ('mclear' in d) {
       if (b.dataset.arm) {
         B.call('clear_memories').then(function () { renderSec('memory'); })

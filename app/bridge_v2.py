@@ -782,6 +782,29 @@ def clear_memories(api):
     return api.clear_memory()
 
 
+def get_memory_graph(api):
+    """v1.6.4-rc.3 memory knowledge graph: a read-only VIEW over the
+    live MemoryStore (facts / learned rules / routines / style
+    phrases+notes as nodes; edges only between records sharing real
+    terms). The graph computation lives in memory.py next to the
+    store and its tokenizer - this adapter only fetches it and logs
+    the load. Never raises: on failure the UI gets an empty graph
+    and the real reason lands in the diagnostics log."""
+    try:
+        import memory as memory_mod
+        graph = memory_mod.get_store().graph_data()
+        info("memory-graph",
+             f"Graph loaded: {len(graph['nodes'])} nodes, "
+             f"{len(graph['edges'])} edges "
+             f"(total {graph['total']} records"
+             f"{', capped' if graph['capped'] else ''})")
+        return graph
+    except Exception as exc:
+        log_error_fn("memory-graph", f"get_memory_graph failed: {exc}")
+        return {"nodes": [], "edges": [], "total": 0,
+                "capped": False, "limit": 100}
+
+
 # -- WhatsApp ----------------------------------------------------------------------
 # v1 get_state(): {enabled, running, status, qr, linked_phone,
 # owner_configured, error, ...} with status in off / connecting /
